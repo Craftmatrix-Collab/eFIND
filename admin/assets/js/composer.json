@@ -1,0 +1,12 @@
+{
+    "require": {
+        "smalot/pdfparser": "^2.0",
+        "phpoffice/phpword": "^1.0",
+        "thiagoalessio/tesseract_ocr": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "YourNamespace\\": "src/"
+        }
+    }
+}
