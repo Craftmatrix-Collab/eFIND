@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     zip \
     unzip \
     libzip-dev \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip \
+    && docker-php-ext-install pdo_mysql mysqli mbstring exif pcntl bcmath gd zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -42,9 +42,11 @@ COPY . /var/www/html/
 # RUN composer install --no-dev --optimize-autoloader
 
 # Create uploads directory and set permissions
-RUN mkdir -p uploads/profiles uploads/reports \
+RUN mkdir -p uploads/profiles uploads/reports admin/logs \
     && chown -R www-data:www-data uploads \
     && chmod -R 755 uploads \
+    && chown -R www-data:www-data admin/logs \
+    && chmod -R 755 admin/logs \
     && cp assets/img/logo.jpg uploads/no-image.png || echo "Logo copied as fallback"
 
 # Set proper permissions for web files

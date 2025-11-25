@@ -1,9 +1,9 @@
 <?php
-// MariaDB Configuration
-$servername = "72.60.233.7";
-$username = "root";
-$password = "3xQ7fuQVu7SyYCnu15Hj44U0wf0ozulOH2U3Ggt8shqZ1K27MuvC3tHqY9dyOZd6";
-$dbname = "barangay_poblacion_south";
+// MariaDB Configuration (hardcoded external instance)
+$servername = '72.60.233.70';
+$username = 'mariadb';
+$password = 'HaCm2iWWmNdKfgX9vj9qUFMWyRux7DoVcc7oG42pzvo5h1X7f1B3SDIvMRPQVzrR';
+$dbname = 'default';
 $port = 9008;
 
 // Create MariaDB connection
@@ -24,11 +24,11 @@ define('RAG_SIMILARITY_THRESHOLD', 0.7);
 define('RAG_ENABLED', true);
 
 // MariaDB Configuration for PDO
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'barangay_poblacion_south');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_PORT', 3306);
+define('DB_HOST', $servername);
+define('DB_NAME', $dbname);
+define('DB_USER', $username);
+define('DB_PASS', $password);
+define('DB_PORT', $port);
 
 // Create PDO connection for MariaDB RAG chatbot
 try {
