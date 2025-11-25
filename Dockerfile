@@ -39,7 +39,7 @@ RUN echo '<VirtualHost *:80>\n\
 COPY . /var/www/html/
 
 # Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
+# RUN composer install --no-dev --optimize-autoloader
 
 # Create uploads directory and set permissions
 RUN mkdir -p uploads/profiles uploads/reports \
