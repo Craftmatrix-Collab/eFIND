@@ -1,0 +1,150 @@
+{
+  "name": "eFIND AI Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "efind-chat",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-trigger",
+      "name": "eFIND Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "message-exists",
+              "leftValue": "={{ $json.message }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "message-check",
+      "name": "Check if message exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "model": "gemini-1.5-flash",
+        "options": {
+          "maxOutputTokens": 1024,
+          "temperature": 0.7,
+          "topP": 0.8
+        },
+        "prompt": "You are an AI assistant for the eFIND (Electronic Filing and Information Navigation System) - a government document management system.\n\n**SYSTEM OVERVIEW:**\neFIND manages three document types:\n- **Ordinances**: Permanent legislative acts and laws\n- **Resolutions**: Temporary decisions and official opinions\n- **Meeting Minutes**: Official records of government meetings\n\n**YOUR ROLE:**\nHelp users with:\n1. Document search and navigation\n2. Understanding document types and purposes\n3. System features and how-to guides\n4. Uploading and managing documents\n\n**RESPONSE GUIDELINES:**\n- Be professional, helpful, and concise\n- Provide step-by-step instructions when needed\n- Suggest specific search terms or filters\n- If unsure, direct users to relevant system sections\n- Keep responses under 250 words\n\n**CURRENT QUERY:** {{ $json.message }}\n\nProvide a helpful response:",
+        "authentication": "geminiApi"
+      },
+      "id": "gemini-chat",
+      "name": "Google Gemini Chat",
+      "type": "n8n-nodes-base.googleGemini",
+      "typeVersion": 1,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "memory": "single",
+        "sessionId": "={{ $json.sessionId || $json.userId || 'default-session' }}",
+        "rememberHistory": true,
+        "maxHistory": 10
+      },
+      "id": "conversation-memory",
+      "name": "Conversation Memory",
+      "type": "n8n-nodes-base.memory",
+      "typeVersion": 1,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "response": "={{ { \"response\": $json[\"Google Gemini Chat\"].candidates[0].content.parts[0].text, \"success\": true } }}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "response": "={{ { \"response\": \"I apologize, but I didn't receive a valid message. Please try again.\", \"success\": false } }}"
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 500]
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "message-check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "message-check": {
+      "main": [
+        [
+          {
+            "node": "gemini-chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "error-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini-chat": {
+      "main": [
+        [
+          {
+            "node": "conversation-memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "conversation-memory": {
+      "main": [
+        [
+          {
+            "node": "webhook-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

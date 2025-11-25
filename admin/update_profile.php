@@ -1,0 +1,98 @@
+<?php
+session_start();
+include 'includes/config.php';
+include 'includes/logger.php'; // optional, safe if present
+
+// Logging helper (idempotent if already defined)
+if (!function_exists('logProfileUpdate')) {
+    function logProfileUpdate($userId, $userName, $userRole, $action, $description, $conn) {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'N/A';
+        $insertSql = "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, ip_address)
+                      VALUES (?, ?, ?, ?, ?, ?)";
+        if ($insertStmt = $conn->prepare($insertSql)) {
+            $insertStmt->bind_param(
+                "isssss",
+                $userId,
+                $userName,
+                $userRole,
+                $action,
+                $description,
+                $ip
+            );
+            $insertStmt->execute();
+            $insertStmt->close();
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Ensure user is authenticated
+    if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
+        $_SESSION['error'] = 'Unauthorized access. Please login first.';
+        header("Location: profile.php");
+        exit;
+    }
+
+    // Validate and sanitize input
+    $userId = intval($_SESSION['admin_id'] ?? $_SESSION['user_id']);
+    $fullName = trim($_POST['full_name'] ?? '');
+    $username = trim($_POST['username'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $contactNumber = trim($_POST['contact_number'] ?? '');
+    $isAdmin = isset($_SESSION['admin_id']);
+    $userRole = $isAdmin ? 'admin' : 'staff';
+    $userName = $fullName ?: ($username ?: 'Unknown');
+
+    if ($fullName === '' || $username === '' || $email === '') {
+        $_SESSION['error'] = 'Full name, username and email are required.';
+        header("Location: profile.php");
+        exit;
+    }
+
+    // Basic email validation
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $_SESSION['error'] = 'Invalid email address.';
+        header("Location: profile.php");
+        exit;
+    }
+
+    // Update user in database
+    $table = $isAdmin ? 'admin_users' : 'users';
+    $query = "UPDATE $table SET full_name = ?, username = ?, email = ?, contact_number = ?, updated_at = NOW() WHERE id = ?";
+    if ($stmt = $conn->prepare($query)) {
+        $stmt->bind_param("ssssi", $fullName, $username, $email, $contactNumber, $userId);
+        if ($stmt->execute()) {
+            // Log the profile update
+            $description = "User updated their profile information.";
+            logProfileUpdate($userId, $userName, $userRole, 'profile_update', $description, $conn);
+
+            // Update session values so UI reflects changes immediately
+            if ($isAdmin) {
+                $_SESSION['admin_name'] = $fullName;
+                $_SESSION['admin_username'] = $username;
+            } else {
+                $_SESSION['full_name'] = $fullName;
+                $_SESSION['username'] = $username;
+            }
+
+            $_SESSION['success'] = "Profile updated successfully!";
+            $stmt->close();
+            header("Location: profile.php");
+            exit;
+        } else {
+            $stmt->close();
+            $_SESSION['error'] = "Failed to update profile: " . $conn->error;
+            header("Location: profile.php");
+            exit;
+        }
+    } else {
+        $_SESSION['error'] = "Database error: " . $conn->error;
+        header("Location: profile.php");
+        exit;
+    }
+} else {
+    // Not a POST request — redirect back
+    header("Location: profile.php");
+    exit;
+}
+?>
