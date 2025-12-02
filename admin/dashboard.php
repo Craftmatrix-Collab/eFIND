@@ -1562,8 +1562,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             const chatInput = document.getElementById('chatInput');
             const sendMessage = document.getElementById('sendMessage');
             
-            // Webhook URL - Replace with your actual n8n webhook URL
-            const WEBHOOK_URL = 'https://n8n-efind.craftmatrix.org/webhook-test/5eaeb40b-8411-43ce-bee1-c32fc14e04f1';
+            // API Configuration - Use our PHP API middleware for security
+            // The API will handle n8n webhook communication securely
+            const API_URL = 'api.php/chat';  // Route through our API instead of direct n8n access
             
             // Session management
             let sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1633,10 +1634,10 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                         source: 'efind_dashboard'
                     };
                     
-                    console.log('Sending to webhook:', WEBHOOK_URL);
+                    console.log('Sending to API:', API_URL);
                     
-                    // Send to webhook
-                    const response = await fetch(WEBHOOK_URL, {
+                    // Send to API (which will forward to n8n)
+                    const response = await fetch(API_URL, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1645,7 +1646,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     });
                     
                     if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
+                        const errorText = await response.text();
+                        console.error('API Error Response:', errorText);
+                        throw new Error(`API error! status: ${response.status}`);
                     }
                     
                     const data = await response.json();
@@ -1654,9 +1657,15 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     // Hide typing indicator
                     hideTypingIndicator();
                     
-                    // Process response
+                    // Process response - API now returns standardized format
                     let botResponse = 'I apologize, but I encountered an issue processing your request. Please try again.';
                     
+                    // Check for fallback mode
+                    if (data && data.fallback) {
+                        console.warn('Fallback response received:', data.error);
+                    }
+                    
+                    // Standardized response handling (api.php returns 'output' field)
                     if (data && data.output) {
                         botResponse = data.output;
                     } else if (data && data.response) {
@@ -1674,17 +1683,22 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     messageHistory.push({ role: 'user', content: message });
                     messageHistory.push({ role: 'assistant', content: botResponse });
                     
-                    if (messageHistory.length > 10) {
-                        messageHistory = messageHistory.slice(-10);
+                    if (messageHistory.length > 20) {
+                        messageHistory = messageHistory.slice(-20);
                     }
                     
                 } catch (error) {
                     console.error('Error sending message:', error);
                     hideTypingIndicator();
                     
+                    // Log error details for debugging
+                    if (error.message) {
+                        console.error('Error details:', error.message);
+                    }
+                    
                     // Show error message
                     addMessageToChat(
-                        'Sorry, I\'m having trouble connecting to the assistant right now. Please try again in a moment.',
+                        'Sorry, I\'m having trouble connecting to the assistant right now. Please check your connection and try again.',
                         'bot'
                     );
                 }
