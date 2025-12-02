@@ -314,6 +314,13 @@ checkActivityLogsTable();
             --box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
 
+        /* MOBILE FIRST - Base styles for mobile devices */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             font-family: 'Poppins', sans-serif;
             background: linear-gradient(135deg, #f5f7fa, #e4e8f0);
@@ -322,32 +329,32 @@ checkActivityLogsTable();
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
+            padding: 10px;
             overflow-x: hidden;
+            font-size: 16px; /* Prevents zoom on iOS */
         }
 
         .login-wrapper {
             display: flex;
+            flex-direction: column;
             background-color: var(--white);
-            border-radius: 24px;
+            border-radius: 16px;
             box-shadow: var(--box-shadow);
             overflow: hidden;
-            max-width: 1100px;
             width: 100%;
-            min-height: 650px;
+            max-width: 100%;
             position: relative;
             z-index: 1;
-            transition: transform 0.5s ease;
+            transition: transform 0.3s ease;
         }
 
-        .login-wrapper:hover {
-            transform: translateY(-5px);
+        .login-wrapper:active {
+            transform: scale(0.98);
         }
 
         .logo-section {
-            flex: 1;
             background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
-            padding: 40px;
+            padding: 20px 15px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -356,54 +363,56 @@ checkActivityLogsTable();
             text-align: center;
             position: relative;
             overflow: hidden;
+            min-height: 180px;
         }
 
         .logo-section::before {
-            content: "";
-            position: absolute;
-            width: 300px;
-            height: 300px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 50%;
-            top: -100px;
-            right: -100px;
-        }
-
-        .logo-section::after {
             content: "";
             position: absolute;
             width: 200px;
             height: 200px;
             background: rgba(255, 255, 255, 0.08);
             border-radius: 50%;
-            bottom: -50px;
-            left: -50px;
+            top: -80px;
+            right: -80px;
+        }
+
+        .logo-section::after {
+            content: "";
+            position: absolute;
+            width: 150px;
+            height: 150px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 50%;
+            bottom: -40px;
+            left: -40px;
         }
 
         .logo-section img {
-            max-width: 80%;
+            max-width: 100%;
+            width: 140px;
             height: auto;
-            margin-bottom: 30px;
+            margin-bottom: 12px;
             z-index: 2;
-            transition: transform 0.5s ease;
+            transition: transform 0.3s ease;
         }
 
-        .logo-section:hover img {
-            transform: scale(1.05);
+        .logo-section:active img {
+            transform: scale(0.95);
         }
 
         .logo-section h1 {
             font-family: 'Montserrat', sans-serif;
             font-weight: 700;
-            margin-bottom: 10px;
-            font-size: 2.5rem;
+            margin-bottom: 0;
+            font-size: 1.3rem;
             z-index: 2;
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            line-height: 1.3;
         }
 
         .login-section {
-            flex: 1;
-            padding: 60px 40px;
+            padding: 30px 20px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -413,34 +422,34 @@ checkActivityLogsTable();
         }
 
         .branding {
-            margin-bottom: 40px;
+            margin-bottom: 25px;
             display: flex;
             flex-direction: column;
             align-items: center;
             position: relative;
+            width: 100%;
         }
 
         .efind-logo {
-            height: 120px;
-            width: 120px;
-            margin-bottom: 20px;
+            height: 80px;
+            width: 80px;
+            margin-bottom: 15px;
             object-fit: contain;
             filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
             transition: all 0.3s ease;
         }
 
-        .efind-logo:hover {
-            transform: rotate(5deg) scale(1.1);
-            filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.15));
+        .efind-logo:active {
+            transform: scale(0.95);
         }
 
         .brand-name {
             font-family: 'Playfair Display', serif;
             font-weight: 700;
             color: var(--secondary-blue);
-            font-size: 2.8rem;
+            font-size: 1.8rem;
             margin-bottom: 5px;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
             position: relative;
             display: inline-block;
         }
@@ -448,74 +457,60 @@ checkActivityLogsTable();
         .brand-name::after {
             content: "";
             position: absolute;
-            bottom: -8px;
+            bottom: -6px;
             left: 50%;
             transform: translateX(-50%);
-            width: 60px;
-            height: 4px;
+            width: 50px;
+            height: 3px;
             background: var(--accent-orange);
             border-radius: 2px;
-            transition: width 0.3s ease;
-        }
-
-        .brand-name:hover::after {
-            width: 100px;
         }
 
         .brand-subtitle {
             color: var(--medium-gray);
-            font-size: 1.1rem;
+            font-size: 0.9rem;
             font-style: italic;
-            margin-top: 15px;
+            margin-top: 12px;
+            padding: 0 10px;
+            line-height: 1.4;
         }
 
         .login-form {
             width: 100%;
-            max-width: 380px;
+            max-width: 100%;
             position: relative;
+            padding: 0 5px;
         }
 
         .login-form::before {
-            content: "";
-            position: absolute;
-            top: -20px;
-            left: -20px;
-            right: -20px;
-            bottom: -20px;
-            border: 2px dashed rgba(67, 97, 238, 0.2);
-            border-radius: 16px;
-            z-index: -1;
-            pointer-events: none;
-            animation: rotate 60s linear infinite;
-        }
-
-        @keyframes rotate {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            display: none; /* Hide decorative border on mobile */
         }
 
         .form-control {
-            height: 50px;
-            border-radius: 12px;
+            height: 48px;
+            border-radius: 10px;
             border: 2px solid #e9ecef;
-            padding: 12px 20px;
-            font-size: 1rem;
+            padding: 12px 16px;
+            font-size: 16px; /* Prevents iOS zoom */
             transition: all 0.3s;
             background-color: var(--light-gray);
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+            width: 100%;
+            -webkit-appearance: none; /* Remove iOS styling */
         }
 
         .form-control:focus {
             border-color: var(--primary-blue);
             box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
             background-color: var(--white);
+            outline: none;
         }
 
         .form-label {
             font-weight: 600;
             margin-bottom: 8px;
             color: var(--dark-gray);
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             text-align: left;
             display: block;
             position: relative;
@@ -528,8 +523,8 @@ checkActivityLogsTable();
             left: 0;
             top: 50%;
             transform: translateY(-50%);
-            width: 6px;
-            height: 6px;
+            width: 5px;
+            height: 5px;
             background: var(--primary-blue);
             border-radius: 50%;
         }
@@ -538,10 +533,10 @@ checkActivityLogsTable();
             background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
             color: white;
             border: none;
-            border-radius: 12px;
+            border-radius: 10px;
             padding: 14px;
             font-weight: 600;
-            font-size: 1.1rem;
+            font-size: 1rem;
             width: 100%;
             transition: all 0.3s;
             margin-top: 10px;
@@ -549,11 +544,14 @@ checkActivityLogsTable();
             overflow: hidden;
             box-shadow: 0 4px 15px rgba(67, 97, 238, 0.3);
             letter-spacing: 0.5px;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+            min-height: 48px; /* Touch-friendly size */
         }
 
-        .btn-login:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(67, 97, 238, 0.4);
+        .btn-login:active {
+            transform: scale(0.98);
+            box-shadow: 0 2px 10px rgba(67, 97, 238, 0.3);
         }
 
         .btn-login::before {
@@ -567,7 +565,7 @@ checkActivityLogsTable();
             transition: 0.5s;
         }
 
-        .btn-login:hover::before {
+        .btn-login:active::before {
             left: 100%;
         }
 
@@ -577,65 +575,55 @@ checkActivityLogsTable();
 
         .password-toggle-icon {
             position: absolute;
-            right: 15px;
+            right: 12px;
             top: 70%;
             transform: translateY(-50%);
             cursor: pointer;
             color: var(--medium-gray);
             transition: all 0.2s;
             background: rgba(0, 0, 0, 0.05);
-            width: 30px;
-            height: 30px;
+            width: 36px;
+            height: 36px;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
+            -webkit-tap-highlight-color: transparent;
         }
 
-        .password-toggle-icon:hover {
+        .password-toggle-icon:active {
             color: var(--primary-blue);
-            background: rgba(67, 97, 238, 0.1);
+            background: rgba(67, 97, 238, 0.15);
+            transform: translateY(-50%) scale(0.95);
         }
 
         .forgot-password {
             text-align: center;
-            margin-top: 5px;
-            margin-bottom: 20px;
+            margin-top: 8px;
+            margin-bottom: 15px;
         }
 
         .forgot-password a {
             color: var(--medium-gray);
             text-decoration: none;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             transition: all 0.2s;
             position: relative;
-            padding-bottom: 2px;
+            padding: 8px;
+            display: inline-block;
+            -webkit-tap-highlight-color: transparent;
         }
 
-        .forgot-password a::after {
-            content: "";
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 0;
-            height: 1px;
-            background: var(--primary-blue);
-            transition: width 0.3s;
-        }
-
-        .forgot-password a:hover {
+        .forgot-password a:active {
             color: var(--primary-blue);
-        }
-
-        .forgot-password a:hover::after {
-            width: 100%;
         }
 
         .register-link {
             text-align: center;
-            margin-top: 25px;
+            margin-top: 20px;
             color: var(--medium-gray);
-            font-size: 0.95rem;
+            font-size: 0.9rem;
+            line-height: 1.5;
         }
 
         .register-link a {
@@ -644,46 +632,36 @@ checkActivityLogsTable();
             font-weight: 500;
             transition: all 0.2s;
             position: relative;
+            padding: 8px;
+            display: inline-block;
+            -webkit-tap-highlight-color: transparent;
         }
 
-        .register-link a::after {
-            content: "";
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            width: 0;
-            height: 2px;
-            background: var(--accent-orange);
-            transition: width 0.3s;
-        }
-
-        .register-link a:hover {
+        .register-link a:active {
             color: var(--secondary-blue);
         }
 
-        .register-link a:hover::after {
-            width: 100%;
-        }
-
         .alert {
-            margin-bottom: 20px;
-            border-radius: 12px;
-            padding: 12px 16px;
-            font-size: 0.95rem;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 0.85rem;
             text-align: left;
             border-left: 4px solid #dc3545;
             background-color: rgba(220, 53, 69, 0.1);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            word-wrap: break-word;
         }
 
         .security-notice {
             background-color: rgba(67, 97, 238, 0.1);
             border-left: 4px solid var(--primary-blue);
             border-radius: 8px;
-            padding: 10px 15px;
-            margin-bottom: 20px;
-            font-size: 0.85rem;
+            padding: 10px 12px;
+            margin-bottom: 15px;
+            font-size: 0.8rem;
             text-align: center;
+            line-height: 1.4;
         }
 
         .security-notice i {
@@ -697,70 +675,292 @@ checkActivityLogsTable();
             height: 100%;
             overflow: hidden;
             z-index: -1;
+            pointer-events: none;
         }
 
         .shape {
             position: absolute;
-            opacity: 0.1;
-            transition: all 10s linear;
+            opacity: 0.08;
         }
 
         .shape-1 {
-            width: 100px;
-            height: 100px;
+            width: 80px;
+            height: 80px;
             background: var(--primary-blue);
             border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
-            top: 10%;
-            left: 10%;
+            top: 5%;
+            left: 5%;
             animation: float 15s infinite ease-in-out;
         }
 
         .shape-2 {
-            width: 80px;
-            height: 80px;
+            width: 60px;
+            height: 60px;
             background: var(--accent-orange);
             border-radius: 50%;
-            bottom: 15%;
-            right: 10%;
+            bottom: 10%;
+            right: 5%;
             animation: float 12s infinite ease-in-out reverse;
         }
 
         .shape-3 {
-            width: 120px;
-            height: 120px;
+            width: 90px;
+            height: 90px;
             background: var(--secondary-blue);
             border-radius: 50% 20% 50% 30%;
-            top: 50%;
-            right: 20%;
+            top: 40%;
+            right: 10%;
             animation: float 18s infinite ease-in-out;
         }
 
         @keyframes float {
             0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-20px) rotate(5deg); }
+            50% { transform: translateY(-15px) rotate(3deg); }
         }
 
-        @media (max-width: 768px) {
-            .login-wrapper {
-                flex-direction: column;
-                min-height: auto;
-            }
-            
-            .logo-section {
-                padding: 30px 20px;
-            }
-            
-            .login-section {
-                padding: 40px 20px;
+        /* TABLET BREAKPOINT - 768px and up */
+        @media (min-width: 768px) {
+            body {
+                padding: 20px;
             }
 
-            .brand-name {
-                font-size: 2.2rem;
+            .login-wrapper {
+                flex-direction: row;
+                border-radius: 24px;
+                max-width: 1000px;
+                min-height: 600px;
+            }
+
+            .login-wrapper:hover {
+                transform: translateY(-5px);
+            }
+
+            .logo-section {
+                flex: 1;
+                padding: 40px 30px;
+                min-height: auto;
+            }
+
+            .logo-section img {
+                width: 180px;
+                margin-bottom: 20px;
+            }
+
+            .logo-section:hover img {
+                transform: scale(1.05);
+            }
+
+            .logo-section h1 {
+                font-size: 2rem;
+            }
+
+            .login-section {
+                flex: 1;
+                padding: 50px 35px;
+            }
+
+            .branding {
+                margin-bottom: 35px;
             }
 
             .efind-logo {
-                height: 90px;
-                width: 90px;
+                height: 100px;
+                width: 100px;
+                margin-bottom: 18px;
+            }
+
+            .efind-logo:hover {
+                transform: rotate(5deg) scale(1.1);
+            }
+
+            .brand-name {
+                font-size: 2.3rem;
+            }
+
+            .brand-name::after {
+                width: 60px;
+                height: 4px;
+            }
+
+            .brand-name:hover::after {
+                width: 100px;
+            }
+
+            .brand-subtitle {
+                font-size: 1rem;
+            }
+
+            .login-form {
+                max-width: 400px;
+                padding: 0;
+            }
+
+            .login-form::before {
+                display: block;
+                content: "";
+                position: absolute;
+                top: -20px;
+                left: -20px;
+                right: -20px;
+                bottom: -20px;
+                border: 2px dashed rgba(67, 97, 238, 0.2);
+                border-radius: 16px;
+                z-index: -1;
+                pointer-events: none;
+                animation: rotate 60s linear infinite;
+            }
+
+            @keyframes rotate {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+
+            .form-control {
+                height: 50px;
+                border-radius: 12px;
+            }
+
+            .btn-login {
+                font-size: 1.1rem;
+                border-radius: 12px;
+            }
+
+            .btn-login:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 6px 20px rgba(67, 97, 238, 0.4);
+            }
+
+            .btn-login:hover::before {
+                left: 100%;
+            }
+
+            .password-toggle-icon {
+                width: 30px;
+                height: 30px;
+            }
+
+            .password-toggle-icon:hover {
+                color: var(--primary-blue);
+                background: rgba(67, 97, 238, 0.1);
+            }
+
+            .forgot-password a {
+                font-size: 0.9rem;
+            }
+
+            .forgot-password a::after {
+                content: "";
+                position: absolute;
+                bottom: 0;
+                left: 8px;
+                width: 0;
+                height: 1px;
+                background: var(--primary-blue);
+                transition: width 0.3s;
+            }
+
+            .forgot-password a:hover::after {
+                width: calc(100% - 16px);
+            }
+
+            .register-link {
+                font-size: 0.95rem;
+                margin-top: 25px;
+            }
+
+            .register-link a::after {
+                content: "";
+                position: absolute;
+                bottom: 0;
+                left: 8px;
+                width: 0;
+                height: 2px;
+                background: var(--accent-orange);
+                transition: width 0.3s;
+            }
+
+            .register-link a:hover::after {
+                width: calc(100% - 16px);
+            }
+
+            .shape-1 {
+                width: 100px;
+                height: 100px;
+                top: 10%;
+                left: 10%;
+            }
+
+            .shape-2 {
+                width: 80px;
+                height: 80px;
+                bottom: 15%;
+                right: 10%;
+            }
+
+            .shape-3 {
+                width: 120px;
+                height: 120px;
+                top: 50%;
+                right: 20%;
+            }
+
+            @keyframes float {
+                0%, 100% { transform: translateY(0) rotate(0deg); }
+                50% { transform: translateY(-20px) rotate(5deg); }
+            }
+        }
+
+        /* DESKTOP BREAKPOINT - 1024px and up */
+        @media (min-width: 1024px) {
+            .login-wrapper {
+                max-width: 1100px;
+                min-height: 650px;
+            }
+
+            .logo-section {
+                padding: 40px;
+            }
+
+            .logo-section img {
+                width: 200px;
+                margin-bottom: 30px;
+            }
+
+            .logo-section h1 {
+                font-size: 2.5rem;
+            }
+
+            .login-section {
+                padding: 60px 40px;
+            }
+
+            .branding {
+                margin-bottom: 40px;
+            }
+
+            .efind-logo {
+                height: 120px;
+                width: 120px;
+                margin-bottom: 20px;
+            }
+
+            .brand-name {
+                font-size: 2.8rem;
+                letter-spacing: 1px;
+            }
+
+            .brand-subtitle {
+                font-size: 1.1rem;
+            }
+
+            .alert {
+                font-size: 0.95rem;
+                padding: 12px 16px;
+            }
+
+            .security-notice {
+                font-size: 0.85rem;
+                padding: 10px 15px;
             }
         }
     </style>
