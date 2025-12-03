@@ -15,6 +15,9 @@
     # Prevent directory listing
     Options -Indexes
     
+    # Set default index file to login.php
+    DirectoryIndex login.php
+    
     # Block direct access to sensitive directories
     RewriteRule ^includes/ - [F,L]
     RewriteRule ^uploads/ - [F,L]
