@@ -7,6 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 include(__DIR__ . '/includes/auth.php');
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
+include(__DIR__ . '/includes/minio_helper.php');
 
 // Function to check if a file already exists in the uploads directory
 function isFileDuplicate($uploadDir, $fileName) {
@@ -394,13 +395,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $reference_number = generateReferenceNumber($conn);
         $image_path = null;
 
-        // Handle multiple file uploads
+        // Handle multiple file uploads to MinIO
         if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
-            $uploadDir = __DIR__ . '/uploads/';
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
+            $minioClient = new MinioS3Client();
             $image_paths = [];
+            
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                 if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                     continue;
@@ -410,20 +409,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header("Location: minutes_of_meeting.php");
                     exit();
                 }
+                
                 $fileName = basename($_FILES['image_file']['name'][$key]);
-                if (isFileDuplicate($uploadDir, $fileName)) {
-                    $_SESSION['error'] = "Error: A file with the name <strong>$fileName</strong> already exists. Please rename your file and try again.";
-                    header("Location: minutes_of_meeting.php");
-                    exit();
-                }
                 $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-                $uniqueFileName = uniqid() . '.' . $fileExt;
-                $targetPath = $uploadDir . $uniqueFileName;
-                if (move_uploaded_file($tmpName, $targetPath)) {
-                    $image_paths[] = 'uploads/' . $uniqueFileName;
+                $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
+                $objectName = 'minutes/' . date('Y/m/') . $uniqueFileName;
+                
+                // Upload to MinIO
+                $contentType = MinioS3Client::getMimeType($fileName);
+                $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
+                
+                if ($uploadResult['success']) {
+                    $image_paths[] = $uploadResult['url'];
                     logDocumentUpload('minute', $fileName, $uniqueFileName);
                 } else {
-                    $_SESSION['error'] = "Failed to upload file: $fileName. Please try again.";
+                    $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
                     header("Location: minutes_of_meeting.php");
                     exit();
                 }
@@ -457,13 +457,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $existing_image_path = $_POST['existing_image_path'];
         $image_path = $existing_image_path;
 
-        // Handle multiple file uploads for update
+        // Handle multiple file uploads for update to MinIO
         if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
-            $uploadDir = __DIR__ . '/uploads/';
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
+            $minioClient = new MinioS3Client();
             $image_paths = [];
+            
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                 if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                     continue;
@@ -473,20 +471,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header("Location: minutes_of_meeting.php");
                     exit();
                 }
+                
                 $fileName = basename($_FILES['image_file']['name'][$key]);
-                if (isFileDuplicate($uploadDir, $fileName)) {
-                    $_SESSION['error'] = "Error: A file with the name <strong>$fileName</strong> already exists. Please rename your file and try again.";
-                    header("Location: minutes_of_meeting.php");
-                    exit();
-                }
                 $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-                $uniqueFileName = uniqid() . '.' . $fileExt;
-                $targetPath = $uploadDir . $uniqueFileName;
-                if (move_uploaded_file($tmpName, $targetPath)) {
-                    $image_paths[] = 'uploads/' . $uniqueFileName;
+                $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
+                $objectName = 'minutes/' . date('Y/m/') . $uniqueFileName;
+                
+                // Upload to MinIO
+                $contentType = MinioS3Client::getMimeType($fileName);
+                $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
+                
+                if ($uploadResult['success']) {
+                    $image_paths[] = $uploadResult['url'];
                     logDocumentUpload('minute', $fileName, $uniqueFileName);
                 } else {
-                    $_SESSION['error'] = "Failed to upload file: $fileName. Please try again.";
+                    $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
                     header("Location: minutes_of_meeting.php");
                     exit();
                 }

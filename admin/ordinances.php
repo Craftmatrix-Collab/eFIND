@@ -7,6 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 include(__DIR__ . '/includes/auth.php');
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
+include(__DIR__ . '/includes/minio_helper.php');
 
 // Function to check if a file already exists in the uploads directory
 function isFileDuplicate($uploadDir, $fileName) {
@@ -435,36 +436,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = $_POST['status'];
         $content = trim($_POST['content']);
         $reference_number = generateReferenceNumber($conn);
-        // Handle file upload
+        // Handle file upload to MinIO
         $image_path = null;
         if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
-            $uploadDir = __DIR__ . '/uploads/';
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
             // Check if the file is a valid ordinance document
             if (!isValidOrdinanceDocument($_FILES['image_file'])) {
                 $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.";
                 header("Location: ordinances.php");
                 exit();
             }
+            
             $fileName = basename($_FILES['image_file']['name']);
-            $targetPath = $uploadDir . $fileName;
-            // Check for duplicate files
-            if (isFileDuplicate($uploadDir, $fileName)) {
-                $_SESSION['error'] = "Error: A file with the name <strong>$fileName</strong> already exists. Please rename your file and try again.";
-                header("Location: ordinances.php");
-                exit();
-            }
-            // Generate a unique filename to prevent conflicts
             $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-            $uniqueFileName = uniqid() . '.' . $fileExt;
-            $image_path = 'uploads/' . $uniqueFileName;
-            if (move_uploaded_file($_FILES['image_file']['tmp_name'], $uploadDir . $uniqueFileName)) {
-                // File uploaded successfully
+            $uniqueFileName = uniqid() . '_' . time() . '.' . $fileExt;
+            $objectName = 'ordinances/' . date('Y/m/') . $uniqueFileName;
+            
+            // Upload to MinIO
+            $minioClient = new MinioS3Client();
+            $contentType = MinioS3Client::getMimeType($fileName);
+            $uploadResult = $minioClient->uploadFile($_FILES['image_file']['tmp_name'], $objectName, $contentType);
+            
+            if ($uploadResult['success']) {
+                $image_path = $uploadResult['url']; // Store MinIO URL
                 logDocumentUpload('ordinance', $fileName, $uniqueFileName);
             } else {
-                $_SESSION['error'] = "Failed to upload file. Please try again.";
+                $_SESSION['error'] = "Failed to upload file to storage: " . $uploadResult['error'];
                 header("Location: ordinances.php");
                 exit();
             }
@@ -500,36 +496,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = $_POST['status'];
         $content = trim($_POST['content']);
         $existing_image_path = $_POST['existing_image_path'];
-        // Handle file upload for edit
+        // Handle file upload for edit to MinIO
         $image_path = $existing_image_path;
         if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
-            $uploadDir = __DIR__ . '/uploads/';
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
             // Check if the file is a valid ordinance document
             if (!isValidOrdinanceDocument($_FILES['image_file'])) {
                 $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.";
                 header("Location: ordinances.php");
                 exit();
             }
+            
             $fileName = basename($_FILES['image_file']['name']);
-            $targetPath = $uploadDir . $fileName;
-            // Check for duplicate files
-            if (isFileDuplicate($uploadDir, $fileName)) {
-                $_SESSION['error'] = "Error: A file with the name <strong>$fileName</strong> already exists. Please rename your file and try again.";
-                header("Location: ordinances.php");
-                exit();
-            }
-            // Generate a unique filename to prevent conflicts
             $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-            $uniqueFileName = uniqid() . '.' . $fileExt;
-            $image_path = 'uploads/' . $uniqueFileName;
-            if (move_uploaded_file($_FILES['image_file']['tmp_name'], $uploadDir . $uniqueFileName)) {
-                // File uploaded successfully
+            $uniqueFileName = uniqid() . '_' . time() . '.' . $fileExt;
+            $objectName = 'ordinances/' . date('Y/m/') . $uniqueFileName;
+            
+            // Upload to MinIO
+            $minioClient = new MinioS3Client();
+            $contentType = MinioS3Client::getMimeType($fileName);
+            $uploadResult = $minioClient->uploadFile($_FILES['image_file']['tmp_name'], $objectName, $contentType);
+            
+            if ($uploadResult['success']) {
+                $image_path = $uploadResult['url']; // Store MinIO URL
                 logDocumentUpload('ordinance', $fileName, $uniqueFileName);
             } else {
-                $_SESSION['error'] = "Failed to upload file. Please try again.";
+                $_SESSION['error'] = "Failed to upload file to storage: " . $uploadResult['error'];
                 header("Location: ordinances.php");
                 exit();
             }
