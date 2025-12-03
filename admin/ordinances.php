@@ -115,6 +115,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Ordinances Report - eFIND System</title>
+        <link rel="icon" type="image/png" href="images/eFind_logo.png">
         <style>
             @page {
                 size: A4;
@@ -468,8 +469,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit();
             }
         }
-        $stmt = $conn->prepare("INSERT INTO ordinances (title, ordinance_number, date_posted, ordinance_date, status, content, image_path, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssssssss", $title, $ordinance_number, $date_posted, $ordinance_date, $status, $content, $image_path, $reference_number);
+        // Set description as title or content preview if not provided
+        $description = !empty($content) ? substr($content, 0, 500) : $title;
+        
+        // Set required fields with defaults if not provided
+        $date_issued = $ordinance_date; // Use ordinance_date as date_issued
+        $file_path = $image_path ? $image_path : ''; // Use image_path or empty string
+        $uploaded_by = isset($_SESSION['username']) ? $_SESSION['username'] : 'admin';
+        
+        $stmt = $conn->prepare("INSERT INTO ordinances (title, description, ordinance_number, date_posted, ordinance_date, status, content, image_path, reference_number, date_issued, file_path, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssssssssss", $title, $description, $ordinance_number, $date_posted, $ordinance_date, $status, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by);
         if ($stmt->execute()) {
             $new_ordinance_id = $conn->insert_id;
             logDocumentAction('create', 'ordinance', $title, $new_ordinance_id, "New ordinance created with reference number: $reference_number");
@@ -525,8 +534,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit();
             }
         }
-        $stmt = $conn->prepare("UPDATE ordinances SET title = ?, ordinance_number = ?, date_posted = ?, ordinance_date = ?, status = ?, content = ?, image_path = ? WHERE id = ?");
-        $stmt->bind_param("sssssssi", $title, $ordinance_number, $date_posted, $ordinance_date, $status, $content, $image_path, $id);
+        
+        // Set description as title or content preview if not provided
+        $description = !empty($content) ? substr($content, 0, 500) : $title;
+        
+        $stmt = $conn->prepare("UPDATE ordinances SET title = ?, description = ?, ordinance_number = ?, date_posted = ?, ordinance_date = ?, status = ?, content = ?, image_path = ? WHERE id = ?");
+        $stmt->bind_param("ssssssssi", $title, $description, $ordinance_number, $date_posted, $ordinance_date, $status, $content, $image_path, $id);
         if ($stmt->execute()) {
             logDocumentUpdate('ordinance', $title, $id, "Ordinance updated: $title");
             $_SESSION['success'] = "Ordinance updated successfully!";

@@ -108,6 +108,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Resolutions Report - eFIND System</title>
+        <link rel="icon" type="image/png" href="images/eFind_logo.png">
         <style>
             @page {
                 size: A4;
