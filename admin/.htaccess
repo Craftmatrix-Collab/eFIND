@@ -41,11 +41,8 @@
     RewriteCond %{REQUEST_URI} !^/admin/(login|logout|register)\.php
     RewriteRule ^(.*)\.php$ /admin/$1 [R=301,L,QSA]
     
-    # Default index file (index.php for /admin/)
-    DirectoryIndex index.php
-    
-    # Allow direct access to login, logout, register, and 2FA verification
-    RewriteCond %{REQUEST_URI} ^/admin/(login|logout|register|forgot-password|verify-2fa)$
+    # Allow direct access to login, logout, and register
+    RewriteCond %{REQUEST_URI} ^/admin/(login|logout|register|forgot-password)$
     RewriteCond %{REQUEST_FILENAME}.php -f
     RewriteRule ^(.*)$ $1.php [L,QSA]
     
