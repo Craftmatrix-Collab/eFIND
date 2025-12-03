@@ -440,8 +440,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $image_path = implode('|', $image_paths);
             }
         }
-        $stmt = $conn->prepare("INSERT INTO resolutions (title, resolution_number, date_posted, resolution_date, content, image_path, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssssss", $title, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $reference_number);
+        
+        // Set required fields with defaults if not provided
+        $description = !empty($content) ? substr($content, 0, 500) : $title;
+        $date_issued = $resolution_date; // Use resolution_date as date_issued
+        if (empty($image_path)) {
+            $image_path = ''; // Set empty string if no file uploaded
+        }
+        
+        $stmt = $conn->prepare("INSERT INTO resolutions (title, description, resolution_number, date_posted, resolution_date, content, image_path, reference_number, date_issued) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssssssss", $title, $description, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $reference_number, $date_issued);
         if ($stmt->execute()) {
             $new_resolution_id = $conn->insert_id;
             logDocumentAction('create', 'resolution', $title, $new_resolution_id, "New resolution created with reference number: $reference_number");
@@ -500,8 +508,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $image_path = implode('|', $image_paths);
             }
         }
-        $stmt = $conn->prepare("UPDATE resolutions SET title = ?, resolution_number = ?, date_posted = ?, resolution_date = ?, content = ?, image_path = ? WHERE id = ?");
-        $stmt->bind_param("ssssssi", $title, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $id);
+        
+        // Set description as title or content preview if not provided
+        $description = !empty($content) ? substr($content, 0, 500) : $title;
+        
+        $stmt = $conn->prepare("UPDATE resolutions SET title = ?, description = ?, resolution_number = ?, date_posted = ?, resolution_date = ?, content = ?, image_path = ? WHERE id = ?");
+        $stmt->bind_param("sssssssi", $title, $description, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $id);
         if ($stmt->execute()) {
             logDocumentUpdate('resolution', $title, $id, "Resolution updated: $title");
             $_SESSION['success'] = "Resolution updated successfully!";
