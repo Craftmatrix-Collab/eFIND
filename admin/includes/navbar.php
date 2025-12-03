@@ -19,37 +19,36 @@
             </a>
         </div>
 
-            <!-- Profile Dropdown -->
-            <ul class="navbar-nav">
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                       <?php
-                // Check if session variables exist before using them
-                $profile_picture = $_SESSION['profile_picture'] ?? '';
-                $full_name = $_SESSION['full_name'] ?? 'Admin';
-                if (!empty($profile_picture)) {
-                    $profile_path = "uploads/profiles/" . $profile_picture;
-                    if (file_exists($profile_path)) {
-                        echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" width="50" height="50">';
-                    } else {
-                        echo '<i class="fas fa-user-circle me-2"></i>';
-                    }
+        <!-- Profile Dropdown -->
+        <ul class="navbar-nav ms-auto">
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                   <?php
+            // Check if session variables exist before using them
+            $profile_picture = $_SESSION['profile_picture'] ?? '';
+            $full_name = $_SESSION['full_name'] ?? 'Admin';
+            if (!empty($profile_picture)) {
+                $profile_path = "uploads/profiles/" . $profile_picture;
+                if (file_exists($profile_path)) {
+                    echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" width="50" height="50">';
                 } else {
                     echo '<i class="fas fa-user-circle me-2"></i>';
                 }
-                ?>
-                        <span><?php echo htmlspecialchars($full_name); ?></span>
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
-                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#profileModal">Profile</a></li>
-                        <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['role'] === 'admin'): ?>
-                        <?php endif; ?>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="logout.php">Logout</a></li>
-                    </ul>
-                </li>
-            </ul>
-        </div>
+            } else {
+                echo '<i class="fas fa-user-circle me-2"></i>';
+            }
+            ?>
+                    <span><?php echo htmlspecialchars($full_name); ?></span>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#profileModal">Profile</a></li>
+                    <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['role'] === 'admin'): ?>
+                    <?php endif; ?>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="logout.php">Logout</a></li>
+                </ul>
+            </li>
+        </ul>
     </div>
 </nav>
 
