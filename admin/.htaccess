@@ -27,27 +27,8 @@
         Require all denied
     </FilesMatch>
     
-    # Hide .php extensions for logged-in users
-    # This creates clean URLs like /admin/dashboard instead of /admin/dashboard.php
-    
-    # Skip if it's a directory
-    RewriteCond %{REQUEST_FILENAME} !-d
-    # Skip if it's an actual file (images, css, js, etc)
-    RewriteCond %{REQUEST_FILENAME} !-f
-    # Check if .php file exists
-    RewriteCond %{REQUEST_FILENAME}.php -f
-    # Rewrite to .php file
-    RewriteRule ^([^\.]+)$ $1.php [NC,L,QSA]
-    
-    # Redirect .php URLs to clean URLs (301 permanent redirect)
-    RewriteCond %{THE_REQUEST} ^GET\ /admin/(.*)\.php(\?.*)?\ HTTP
-    RewriteCond %{REQUEST_URI} !^/admin/(login|logout|register)\.php
-    RewriteRule ^(.*)\.php$ /admin/$1 [R=301,L,QSA]
-    
-    # Allow direct access to login, logout, and register
-    RewriteCond %{REQUEST_URI} ^/admin/(login|logout|register|forgot-password)$
-    RewriteCond %{REQUEST_FILENAME}.php -f
-    RewriteRule ^(.*)$ $1.php [L,QSA]
+    # Allow direct .php access (no URL rewriting to clean URLs)
+    # This ensures /admin/login.php and /admin/login both work without redirect loops
     
     # Block access to test files in production
     <FilesMatch "^(test_|debug_|phpinfo)">
@@ -63,10 +44,9 @@
     RedirectMatch 404 /\.git
     RedirectMatch 404 /\.svn
     
-    # Custom error pages
-    ErrorDocument 401 /admin/error/401.php
+    # Custom error pages - Use simple static HTML to avoid redirect loops
+    ErrorDocument 404 /404.html
     ErrorDocument 403 /admin/error/403.php
-    ErrorDocument 404 /admin/error/404.php
     ErrorDocument 500 /admin/error/500.php
 </IfModule>
 
@@ -122,6 +102,13 @@
     Require all denied
 </LimitExcept>
 
+# Force POST method for sensitive endpoints
+<FilesMatch "^(login|register|update_|add_|delete_|process_|api).*\.php$">
+    <LimitExcept POST>
+        Require all denied
+    </LimitExcept>
+</FilesMatch>
+
 # Rate limiting (requires mod_evasive or similar)
 # <IfModule mod_evasive24.c>
 #     DOSHashTableSize 3097
@@ -135,7 +122,7 @@
 # Block suspicious user agents
 <IfModule mod_rewrite.c>
     RewriteCond %{HTTP_USER_AGENT} (nikto|sqlmap|fimap|nessus|openvas|metasploit|havij|acunetix) [NC,OR]
-    RewriteCond %{HTTP_USER_AGENT} (morpheus|zmeu|attacks|wget|libwww-perl|python|nikto|curl|scan|java|winhttp|clshttp|loader) [NC]
+    RewriteCond %{HTTP_USER_AGENT} (morpheus|zmeu|attacks|libwww-perl|winhttp|clshttp|loader) [NC]
     RewriteRule .* - [F,L]
 </IfModule>
 

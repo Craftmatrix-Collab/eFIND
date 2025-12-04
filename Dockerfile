@@ -31,6 +31,8 @@ RUN echo '<VirtualHost *:80>\n\
         AllowOverride All\n\
         Require all granted\n\
     </Directory>\n\
+    # Prevent recursion in error documents\n\
+    LimitInternalRecursion 20\n\
     ErrorLog ${APACHE_LOG_DIR}/error.log\n\
     CustomLog ${APACHE_LOG_DIR}/access.log combined\n\
 </VirtualHost>' > /etc/apache2/sites-available/000-default.conf
@@ -58,7 +60,7 @@ RUN chown -R www-data:www-data /var/www/html \
 RUN echo 'RewriteEngine On\n\
 RewriteCond %{REQUEST_FILENAME} !-f\n\
 RewriteCond %{REQUEST_FILENAME} !-d\n\
-RewriteCond %{REQUEST_URI} !^/(service-worker\.js|manifest\.json|assets/)\n\
+RewriteCond %{REQUEST_URI} !^/(service-worker\.js|manifest\.json|assets/|admin/|404\.html)\n\
 RewriteRule ^(.*)$ index.php [QSA,L]\n\
 \n\
 # Set proper MIME types\n\
@@ -67,7 +69,7 @@ RewriteRule ^(.*)$ index.php [QSA,L]\n\
 </Files>\n\
 <Files "manifest.json">\n\
     Header set Content-Type "application/json"\n\
-</Files>' > /var/www/html/.htaccess
+</Files>' > /var/www/html/.htaccess.docker
 
 # Expose port 80
 EXPOSE 80

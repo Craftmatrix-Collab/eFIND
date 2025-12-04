@@ -2,6 +2,7 @@
 session_start();
 include 'includes/config.php';
 include 'includes/logger.php'; // optional, safe if present
+include 'includes/post_middleware.php'; // POST middleware for security
 
 // idempotent helper for logging profile/password changes
 if (!function_exists('logProfileUpdate')) {
@@ -25,10 +26,8 @@ if (!function_exists('logProfileUpdate')) {
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: profile.php");
-    exit;
-}
+// Enforce POST-only requests
+requirePostMethod();
 
 // ensure user authenticated
 if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {

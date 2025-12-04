@@ -28,26 +28,19 @@
     # Protect includes directory
     RewriteRule ^includes/ - [F,L]
     
-    # Hide .php extension for all files
-    # Skip if file is a directory
+    # Allow both .php and clean URLs without redirect loops
+    # Only rewrite if the file doesn't exist but a .php version does
+    RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    # Skip if file already exists
     RewriteCond %{REQUEST_FILENAME}\.php -f
-    # Rewrite to add .php extension
     RewriteRule ^([^\.]+)$ $1.php [NC,L]
-    
-    # Redirect .php URLs to clean URLs
-    RewriteCond %{THE_REQUEST} ^GET\ /(.*)\.php
-    RewriteRule ^(.*)\.php$ /$1 [R=301,L]
     
     # Force HTTPS in production (uncomment when ready)
     # RewriteCond %{HTTPS} off
     # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
     
-    # Custom error pages
-    ErrorDocument 403 /error/403.php
-    ErrorDocument 404 /error/404.php
-    ErrorDocument 500 /error/500.php
+    # Custom error pages - Use simple static HTML to avoid redirect loops
+    ErrorDocument 404 /404.html
 </IfModule>
 
 # PHP Security Settings

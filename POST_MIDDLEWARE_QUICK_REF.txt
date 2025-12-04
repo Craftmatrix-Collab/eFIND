@@ -1,0 +1,97 @@
+================================================================================
+POST MIDDLEWARE - QUICK REFERENCE CARD
+================================================================================
+
+📦 INCLUDE THE MIDDLEWARE
+-------------------------
+require_once 'includes/post_middleware.php';
+
+🔒 COMMON PATTERNS
+-----------------
+
+Pattern 1: Simple POST-only
+    requirePostMethod();
+
+Pattern 2: POST + CSRF
+    requirePostMiddleware([], true);
+
+Pattern 3: POST + CSRF + Required Fields
+    requirePostMiddleware(['username', 'email'], true);
+
+Pattern 4: Login (no CSRF)
+    requirePostMiddleware(['username', 'password'], false);
+
+Pattern 5: JSON API
+    requirePostMethod();
+    requireJsonContent();
+    $data = getJsonPostData();
+
+📝 GET USER INPUT
+-----------------
+$username = sanitizePost('username');
+$email = sanitizePost('email', 'default@email.com');
+$password = $_POST['password']; // Don't sanitize passwords!
+
+🌐 HTML FORM
+------------
+<form method="POST" action="process.php">
+    <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
+    <input type="text" name="username" required>
+    <button type="submit">Submit</button>
+</form>
+
+⚡ AJAX REQUEST
+---------------
+const formData = new FormData();
+formData.append('csrf_token', '<?php echo generateCsrfToken(); ?>');
+formData.append('username', 'john');
+
+fetch('api.php', {
+    method: 'POST',
+    body: formData
+}).then(r => r.json()).then(data => console.log(data));
+
+📤 SEND RESPONSE
+----------------
+sendJsonResponse(['success' => true, 'message' => 'Done'], 200);
+sendJsonResponse(['error' => 'Not found'], 404);
+
+🚨 ERROR CODES
+--------------
+400 - Missing required fields
+401 - Not authenticated
+403 - Invalid CSRF / Permission denied
+405 - Method not allowed (GET instead of POST)
+415 - Wrong Content-Type
+
+✅ COMPLETE EXAMPLE
+-------------------
+<?php
+require_once 'includes/post_middleware.php';
+require_once 'includes/auth.php';
+
+// Check auth
+if (!isLoggedIn()) {
+    sendJsonResponse(['error' => 'Login required'], 401);
+}
+
+// Enforce POST + CSRF + fields
+requirePostMiddleware(['action', 'data'], true);
+
+// Get input
+$action = sanitizePost('action');
+$data = sanitizePost('data');
+
+// Process...
+// ...
+
+// Send response
+sendJsonResponse(['success' => true]);
+?>
+
+📚 MORE INFO
+------------
+See: POST_MIDDLEWARE_GUIDE.md
+Examples: examples_post_middleware.php
+
+================================================================================
