@@ -103,7 +103,8 @@
 </LimitExcept>
 
 # Force POST method for sensitive endpoints
-<FilesMatch "^(login|register|update_|add_|delete_|process_|api).*\.php$">
+# Note: login.php and register.php need GET to display forms, POST to submit
+<FilesMatch "^(update_|add_|delete_|process_|api).*\.php$">
     <LimitExcept POST>
         Require all denied
     </LimitExcept>
