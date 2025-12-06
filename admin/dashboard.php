@@ -3,6 +3,12 @@ include('includes/auth.php');
 include('includes/config.php');
 include(__DIR__ . '/includes/logger.php');
 
+// Check if user is logged in - redirect to login if not
+if (!isLoggedIn()) {
+    header('Location: login.php');
+    exit();
+}
+
 // Set default time zone
 date_default_timezone_set('Asia/Manila');
 // Fetch counts for statistics cards
