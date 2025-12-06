@@ -8,6 +8,12 @@ include(__DIR__ . '/includes/auth.php');
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
 
+// Check if user is logged in - redirect to login if not
+if (!isLoggedIn()) {
+    header('Location: login.php');
+    exit();
+}
+
 // Generate CSRF token if not exists
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));

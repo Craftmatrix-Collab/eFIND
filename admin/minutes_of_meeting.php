@@ -9,6 +9,12 @@ include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
 include(__DIR__ . '/includes/minio_helper.php');
 
+// Check if user is logged in - redirect to login if not
+if (!isLoggedIn()) {
+    header('Location: login.php');
+    exit();
+}
+
 // Function to check if a file already exists in the uploads directory
 function isFileDuplicate($uploadDir, $fileName) {
     $targetPath = $uploadDir . basename($fileName);

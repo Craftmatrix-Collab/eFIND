@@ -14,6 +14,12 @@ include(__DIR__ . '/includes/auth.php');
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
 
+// Check if user is logged in - redirect to login if not
+if (!isLoggedIn()) {
+    header('Location: login.php');
+    exit();
+}
+
 // Verify database connection
 if ($conn->connect_error) {
     die("Database connection failed: " . $conn->connect_error);
