@@ -2974,5 +2974,8 @@ $count_stmt->close();
     <footer class="bg-white p-3">
         <?php include(__DIR__ . '/includes/footer.php'); ?>
     </footer>
+    
+    <!-- AI Chatbot Widget -->
+    <?php include(__DIR__ . '/includes/chatbot_widget.php'); ?>
 </body>
 </html>
