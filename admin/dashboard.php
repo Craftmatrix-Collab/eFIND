@@ -1804,5 +1804,12 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             });
         });
     </script>
+    
+    <footer class="bg-white p-3">
+        <?php include(__DIR__ . '/includes/footer.php'); ?>
+    </footer>
+    
+    <!-- AI Chatbot Widget -->
+    <?php include(__DIR__ . '/includes/chatbot_widget.php'); ?>
 </body>
 </html>

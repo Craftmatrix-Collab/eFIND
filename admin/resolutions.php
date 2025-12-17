@@ -1525,8 +1525,8 @@ $count_stmt->close();
                         </select>
                     </div>
                     <div class="col-md-1">
-                        <button type="submit" class="btn btn-primary-custom w-100">
-                            <i class="fas fa-search me-1"></i> Search
+                        <button type="submit" class="btn btn-primary-custom w-100" style="height: 45px; min-width: 100px;">
+                            <i class="fas fa-search"></i>
                         </button>
                     </div>
                 </div>
