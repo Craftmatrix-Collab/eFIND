@@ -1,10 +1,10 @@
 <?php
-// MariaDB Configuration (hardcoded external instance)
-$servername = '72.60.233.70';
+// MariaDB Configuration - Use environment variables with fallback
+$servername = getenv('DB_HOST') ?: '72.60.233.70';
 $username = 'root';  // Changed from 'mariadb' to 'root' - check external DB user permissions
 $password = '3xQ7fuQVu7SyYCnu15Hj44U0wf0ozulOH2U3Ggt8shqZ1K27MuvC3tHqY9dyOZd6';  // Using root password
 $dbname = 'barangay_poblacion_south';
-$port = 9008;
+$port = getenv('DB_PORT') ?: 9008;
  
 // Create MariaDB connection with improved settings
 try {

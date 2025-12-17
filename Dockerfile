@@ -26,6 +26,8 @@ RUN a2enmod rewrite headers
 
 # Configure Apache
 RUN echo '<VirtualHost *:80>\n\
+    ServerName localhost\n\
+    ServerAlias *.craftmatrix.org\n\
     DocumentRoot /var/www/html\n\
     <Directory /var/www/html>\n\
         AllowOverride All\n\
@@ -56,8 +58,11 @@ RUN chown -R www-data:www-data /var/www/html \
     && find /var/www/html -type d -exec chmod 755 {} \; \
     && find /var/www/html -type f -exec chmod 644 {} \;
 
-# Create .htaccess for URL rewriting and proper MIME types
-RUN echo 'RewriteEngine On\n\
+# Copy .htaccess if exists, otherwise create basic one
+RUN if [ -f /var/www/html/.htaccess ]; then \
+        echo ".htaccess already exists"; \
+    else \
+        echo 'RewriteEngine On\n\
 RewriteCond %{REQUEST_FILENAME} !-f\n\
 RewriteCond %{REQUEST_FILENAME} !-d\n\
 RewriteCond %{REQUEST_URI} !^/(service-worker\.js|manifest\.json|assets/|admin/|404\.html)\n\
@@ -69,7 +74,8 @@ RewriteRule ^(.*)$ index.php [QSA,L]\n\
 </Files>\n\
 <Files "manifest.json">\n\
     Header set Content-Type "application/json"\n\
-</Files>' > /var/www/html/.htaccess.docker
+</Files>' > /var/www/html/.htaccess; \
+    fi
 
 # Expose port 80
 EXPOSE 80

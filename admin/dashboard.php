@@ -1522,6 +1522,26 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             </div>
         </div>
     </div>
+    <!-- Image Modal -->
+    <div class="modal fade image-modal" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="imageModalLabel"><i class="fas fa-image me-2"></i>Document Image Preview</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img id="modalImage" src="" class="img-fluid rounded" alt="Document Image" style="max-height: 70vh;">
+                </div>
+                <div class="modal-footer">
+                    <a id="downloadImage" href="#" class="btn btn-primary" download>
+                        <i class="fas fa-download me-2"></i>Download Image
+                    </a>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- Chat Widget -->
 <div class="chat-widget">
     <div class="chat-container" id="chatContainer">
@@ -1763,6 +1783,25 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             
             // Initialize the chatbot
             initializeChatbot();
+        });
+        
+        // Handle image modal
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.image-link').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const imageSrc = this.getAttribute('data-image-src');
+                    const modalImage = document.getElementById('modalImage');
+                    const downloadLink = document.getElementById('downloadImage');
+                    
+                    modalImage.src = imageSrc;
+                    downloadLink.href = imageSrc;
+                    downloadLink.download = imageSrc.split('/').pop();
+                    
+                    const imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
+                    imageModal.show();
+                });
+            });
         });
     </script>
 </body>
