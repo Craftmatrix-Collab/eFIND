@@ -1,7 +1,6 @@
 <?php
 session_start();
 include 'includes/config.php';
-include 'includes/logger.php'; // optional, safe if present
 
 // Logging helper (idempotent if already defined)
 if (!function_exists('logProfileUpdate')) {
@@ -29,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Ensure user is authenticated
     if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
         $_SESSION['error'] = 'Unauthorized access. Please login first.';
-        header("Location: profile.php");
+        header("Location: edit_profile.php");
         exit;
     }
 
@@ -45,54 +44,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($fullName === '' || $username === '' || $email === '') {
         $_SESSION['error'] = 'Full name, username and email are required.';
-        header("Location: profile.php");
+        header("Location: edit_profile.php");
         exit;
     }
 
     // Basic email validation
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $_SESSION['error'] = 'Invalid email address.';
-        header("Location: profile.php");
+        header("Location: edit_profile.php");
         exit;
+    }
+
+    // Handle profile picture upload
+    $profilePicture = null;
+    if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
+        $uploadDir = 'uploads/profiles/';
+        
+        // Create directory if it doesn't exist
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+        
+        $fileExtension = strtolower(pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION));
+        $allowedExtensions = ['jpg', 'jpeg', 'png'];
+        
+        if (in_array($fileExtension, $allowedExtensions)) {
+            $newFileName = 'profile_' . $userId . '_' . time() . '.' . $fileExtension;
+            $uploadPath = $uploadDir . $newFileName;
+            
+            if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $uploadPath)) {
+                $profilePicture = $newFileName;
+            }
+        }
     }
 
     // Update user in database
     $table = $isAdmin ? 'admin_users' : 'users';
-    $query = "UPDATE $table SET full_name = ?, username = ?, email = ?, contact_number = ?, updated_at = NOW() WHERE id = ?";
-    if ($stmt = $conn->prepare($query)) {
-        $stmt->bind_param("ssssi", $fullName, $username, $email, $contactNumber, $userId);
-        if ($stmt->execute()) {
-            // Log the profile update
-            $description = "User updated their profile information.";
-            logProfileUpdate($userId, $userName, $userRole, 'profile_update', $description, $conn);
-
-            // Update session values so UI reflects changes immediately
-            if ($isAdmin) {
-                $_SESSION['admin_name'] = $fullName;
-                $_SESSION['admin_username'] = $username;
-            } else {
-                $_SESSION['full_name'] = $fullName;
-                $_SESSION['username'] = $username;
-            }
-
-            $_SESSION['success'] = "Profile updated successfully!";
-            $stmt->close();
-            header("Location: profile.php");
-            exit;
-        } else {
-            $stmt->close();
-            $_SESSION['error'] = "Failed to update profile: " . $conn->error;
-            header("Location: profile.php");
-            exit;
+    
+    if ($profilePicture) {
+        $query = "UPDATE $table SET full_name = ?, username = ?, email = ?, contact_number = ?, profile_picture = ?, updated_at = NOW() WHERE id = ?";
+        if ($stmt = $conn->prepare($query)) {
+            $stmt->bind_param("sssssi", $fullName, $username, $email, $contactNumber, $profilePicture, $userId);
         }
     } else {
-        $_SESSION['error'] = "Database error: " . $conn->error;
-        header("Location: profile.php");
+        $query = "UPDATE $table SET full_name = ?, username = ?, email = ?, contact_number = ?, updated_at = NOW() WHERE id = ?";
+        if ($stmt = $conn->prepare($query)) {
+            $stmt->bind_param("ssssi", $fullName, $username, $email, $contactNumber, $userId);
+        }
+    }
+    
+    if (isset($stmt) && $stmt->execute()) {
+        // Log the profile update
+        $description = "User updated their profile information.";
+        logProfileUpdate($userId, $userName, $userRole, 'profile_update', $description, $conn);
+
+        // Update session values so UI reflects changes immediately
+        if ($isAdmin) {
+            $_SESSION['admin_name'] = $fullName;
+            $_SESSION['admin_username'] = $username;
+        } else {
+            $_SESSION['full_name'] = $fullName;
+            $_SESSION['username'] = $username;
+        }
+
+        $_SESSION['success'] = "Profile updated successfully!";
+        $stmt->close();
+        header("Location: edit_profile.php");
+        exit;
+    } else {
+        if (isset($stmt)) $stmt->close();
+        $_SESSION['error'] = "Failed to update profile: " . $conn->error;
+        header("Location: edit_profile.php");
         exit;
     }
 } else {
     // Not a POST request — redirect back
-    header("Location: profile.php");
+    header("Location: edit_profile.php");
     exit;
 }
 ?>
