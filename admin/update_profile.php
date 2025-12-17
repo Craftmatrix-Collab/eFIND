@@ -2,6 +2,9 @@
 session_start();
 include 'includes/config.php';
 
+// Check if this is an AJAX request
+$is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
+
 // Logging helper (idempotent if already defined)
 if (!function_exists('logProfileUpdate')) {
     function logProfileUpdate($userId, $userName, $userRole, $action, $description, $conn) {
@@ -27,6 +30,11 @@ if (!function_exists('logProfileUpdate')) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Ensure user is authenticated
     if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Unauthorized access. Please login first.']);
+            exit;
+        }
         $_SESSION['error'] = 'Unauthorized access. Please login first.';
         header("Location: edit_profile.php");
         exit;
@@ -43,6 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $userName = $fullName ?: ($username ?: 'Unknown');
 
     if ($fullName === '' || $username === '' || $email === '') {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Full name, username and email are required.']);
+            exit;
+        }
         $_SESSION['error'] = 'Full name, username and email are required.';
         header("Location: edit_profile.php");
         exit;
@@ -50,6 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Basic email validation
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Invalid email address.']);
+            exit;
+        }
         $_SESSION['error'] = 'Invalid email address.';
         header("Location: edit_profile.php");
         exit;
@@ -107,18 +125,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['username'] = $username;
         }
 
-        $_SESSION['success'] = "Profile updated successfully!";
         $stmt->close();
+        
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true, 'message' => 'Profile updated successfully!']);
+            exit;
+        }
+        
+        $_SESSION['success'] = "Profile updated successfully!";
         header("Location: edit_profile.php");
         exit;
     } else {
         if (isset($stmt)) $stmt->close();
+        
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Failed to update profile: ' . $conn->error]);
+            exit;
+        }
+        
         $_SESSION['error'] = "Failed to update profile: " . $conn->error;
         header("Location: edit_profile.php");
         exit;
     }
 } else {
     // Not a POST request — redirect back
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
+        exit;
+    }
     header("Location: edit_profile.php");
     exit;
 }

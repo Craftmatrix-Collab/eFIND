@@ -162,45 +162,6 @@ document.getElementById('profile_picture').addEventListener('change', function(e
         reader.readAsDataURL(file);
     }
 });
-// Form validation
-document.getElementById('editProfileForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const contactNumber = document.getElementById('contact_number').value.trim();
-    if (contactNumber && !/^(\+63|0)9\d{9}$/.test(contactNumber)) {
-        alert('Please enter a valid Philippine mobile number (e.g., +639XXXXXXXXX or 09XXXXXXXXX)');
-        return false;
-    }
-    const email = document.getElementById('email').value.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        alert('Please enter a valid email address');
-        return false;
-    }
-    const formData = new FormData(this);
-    const saveBtn = document.getElementById('saveProfileChanges');
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
-    fetch('update_profile.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Profile updated successfully!');
-            location.reload(); // Reload the page to reflect changes
-        } else {
-            alert('Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred while saving. Please try again.');
-    })
-    .finally(() => {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = '<i class="fas fa-save me-1"></i> Save Changes';
-    });
-});
 // Phone number formatting
 document.getElementById('contact_number').addEventListener('input', function(e) {
     // Remove all non-digit characters
