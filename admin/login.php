@@ -987,6 +987,15 @@ checkActivityLogsTable();
             </div>
 
             <div class="login-form">
+                <?php if (isset($_SESSION['password_reset_success'])): ?>
+                    <div class="alert alert-success alert-dismissible fade show">
+                        <i class="fas fa-check-circle me-2"></i>
+                        Password reset successful! Please login with your new password.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    <?php unset($_SESSION['password_reset_success']); ?>
+                <?php endif; ?>
+
                 <?php if ($error): ?>
                     <div class="alert alert-danger alert-dismissible fade show">
                         <i class="fas fa-exclamation-triangle me-2"></i>

@@ -1,0 +1,205 @@
+================================================================================
+OTP FORGOT PASSWORD IMPLEMENTATION - SETUP GUIDE
+================================================================================
+
+IMPLEMENTATION COMPLETE! ✅
+
+Files Created:
+--------------
+1. composer.json                    - Dependency management
+2. verify-otp.php                   - OTP verification page
+3. reset-password.php               - New password creation page
+4. test-resend.php                  - Email testing script
+5. migration_otp_reset.sql          - Database migration
+6. OTP_IMPLEMENTATION_README.md     - Detailed documentation
+
+Files Modified:
+---------------
+1. forgot-password.php              - Now sends OTP via Resend
+2. login.php                        - Shows success message
+3. includes/config.php              - Added Resend configuration
+
+================================================================================
+QUICK START - 3 STEPS
+================================================================================
+
+STEP 1: Configure Resend API
+-----------------------------
+1. Sign up at: https://resend.com (FREE tier available)
+2. Get your API key from the dashboard
+3. Edit: includes/config.php
+   
+   Change these lines:
+   define('RESEND_API_KEY', 'YOUR_ACTUAL_API_KEY_HERE');
+   define('FROM_EMAIL', 'your-email@yourdomain.com');
+
+STEP 2: Run Database Migration
+-------------------------------
+Execute the SQL migration to add required columns:
+
+mysql -u root -p barangay_poblacion_south < migration_otp_reset.sql
+
+Or manually add columns to admin_users table:
+ALTER TABLE admin_users ADD COLUMN reset_token VARCHAR(255) NULL;
+ALTER TABLE admin_users ADD COLUMN reset_expires DATETIME NULL;
+
+STEP 3: Test the Implementation
+--------------------------------
+Test email sending:
+php test-resend.php your-email@example.com
+
+Test the full flow:
+1. Visit: forgot-password.php
+2. Enter your email
+3. Check email for OTP
+4. Enter OTP in verify-otp.php
+5. Create new password in reset-password.php
+6. Login with new credentials
+
+================================================================================
+HOW IT WORKS
+================================================================================
+
+User Flow:
+----------
+1. User clicks "Forgot Password" on login page
+2. Enters email address → forgot-password.php
+3. Receives 6-digit OTP via email (Resend)
+4. Enters OTP → verify-otp.php
+5. Creates new password → reset-password.php
+6. Success! Redirected to login page
+
+Security Features:
+------------------
+✓ 6-digit OTP (numeric)
+✓ 15-minute expiration
+✓ Maximum 5 attempts
+✓ Resend OTP functionality
+✓ Session-based verification
+✓ Password strength validation
+✓ Bcrypt password hashing
+
+================================================================================
+RESEND CONFIGURATION
+================================================================================
+
+Free Tier Limits:
+-----------------
+- 100 emails/day
+- 3,000 emails/month
+- Perfect for testing!
+
+Using Default Email (Testing Only):
+------------------------------------
+FROM_EMAIL: 'onboarding@resend.dev'
+This works for testing but use your own domain in production.
+
+Using Your Own Domain (Production):
+------------------------------------
+1. Add your domain in Resend dashboard
+2. Verify DNS records
+3. Update FROM_EMAIL to: noreply@yourdomain.com
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Email Not Received:
+-------------------
+□ Check spam/junk folder
+□ Verify API key is correct
+□ Confirm FROM_EMAIL is authorized
+□ Check error logs: logs/php_errors.log
+□ Test with: php test-resend.php your-email@example.com
+
+Database Errors:
+----------------
+□ Verify columns exist: reset_token, reset_expires
+□ Check database connection in config.php
+□ Run migration: migration_otp_reset.sql
+
+OTP Not Working:
+----------------
+□ Check OTP not expired (15 min limit)
+□ Clear browser cache/cookies
+□ Try resending OTP
+□ Verify session is active
+
+Composer Issues:
+----------------
+□ Run: php composer.phar install
+□ Check PHP version: php -v (need >= 7.4)
+□ Verify vendor/ folder exists
+
+================================================================================
+FILE STRUCTURE
+================================================================================
+
+/admin
+  ├── forgot-password.php          [Modified] Email input & OTP sender
+  ├── verify-otp.php               [New] OTP verification
+  ├── reset-password.php           [New] Password reset form
+  ├── login.php                    [Modified] Success message
+  ├── composer.json                [New] Dependencies
+  ├── composer.phar                [New] Composer binary
+  ├── vendor/                      [New] Resend SDK
+  ├── test-resend.php              [New] Email test script
+  ├── migration_otp_reset.sql      [New] Database migration
+  └── includes/
+      └── config.php               [Modified] Resend config
+
+================================================================================
+TESTING CHECKLIST
+================================================================================
+
+□ Step 1: Update RESEND_API_KEY in config.php
+□ Step 2: Run database migration
+□ Step 3: Test email with test-resend.php
+□ Step 4: Visit forgot-password.php
+□ Step 5: Enter valid email from admin_users table
+□ Step 6: Check email for OTP
+□ Step 7: Enter OTP in verify-otp.php
+□ Step 8: Try invalid OTP (should fail)
+□ Step 9: Try resend OTP button
+□ Step 10: Create new password in reset-password.php
+□ Step 11: Verify password strength validation
+□ Step 12: Login with new password
+□ Step 13: Confirm old password doesn't work
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Update API Key:
+   Edit: includes/config.php
+   Replace: RESEND_API_KEY with your actual key
+
+2. Run Migration:
+   Execute: migration_otp_reset.sql on your database
+
+3. Test Everything:
+   Run: php test-resend.php your-email@example.com
+
+4. Go Live:
+   - Use verified domain for FROM_EMAIL
+   - Monitor email delivery
+   - Check error logs regularly
+
+================================================================================
+SUPPORT & DOCUMENTATION
+================================================================================
+
+Resend Documentation: https://resend.com/docs
+Resend Dashboard: https://resend.com/overview
+PHP SDK Guide: https://resend.com/docs/send-with-php
+
+Questions?
+- Check OTP_IMPLEMENTATION_README.md for details
+- Review error logs in logs/php_errors.log
+- Test with test-resend.php script
+
+================================================================================
+Implementation Date: 2025-12-18
+Version: 1.0
+Status: READY FOR TESTING
+================================================================================

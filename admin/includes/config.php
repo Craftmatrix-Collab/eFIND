@@ -42,6 +42,10 @@ try {
 // OpenAI API Configuration
 define('OPENAI_API_KEY', 'your-openai-api-key-here');
 
+// Resend API Configuration
+define('RESEND_API_KEY', 're_3pZ4GAqn_D4oEzSYTzsxQvy9WjQosBHkk');
+define('FROM_EMAIL', 'no-reply@efind.craftmatrix.org');
+
 // MariaDB Configuration for PDO
 define('DB_HOST', $servername);
 define('DB_NAME', $dbname);
