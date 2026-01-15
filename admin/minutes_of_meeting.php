@@ -104,16 +104,21 @@ if ($downloadsTableResult->num_rows == 0) {
 }
 
 // Function to generate reference number for minutes
-function generateReferenceNumber($conn) {
-    $year = date('Y');
-    $month = date('m');
+function generateReferenceNumber($conn, $meeting_date = null) {
+    if ($meeting_date) {
+        $year = date('Y', strtotime($meeting_date));
+        $month = date('m', strtotime($meeting_date));
+    } else {
+        $year = date('Y');
+        $month = date('m');
+    }
     $stmt = $conn->prepare("SELECT COUNT(*) as count FROM minutes_of_meeting WHERE YEAR(meeting_date) = ? AND MONTH(meeting_date) = ?");
     $stmt->bind_param("ii", $year, $month);
     $stmt->execute();
     $result = $stmt->get_result();
     $count = $result->fetch_assoc()['count'] + 1;
     $stmt->close();
-    return sprintf("MOM-%04d-%02d-%03d", $year, $month, $count);
+    return sprintf("MOM%04d%02d%04d", $year, $month, $count);
 }
 
 // Handle download action
@@ -185,7 +190,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     if (!empty($printStartDate) && !empty($printEndDate) && strtotime($printStartDate) > strtotime($printEndDate)) {
         die("End date must be after start date.");
     }
-    $printQuery = "SELECT * FROM minutes_of_meeting WHERE 1=1";
+    $printQuery = "SELECT id, title, session_number, date_posted, meeting_date, content FROM minutes_of_meeting WHERE 1=1";
     $printConditions = [];
     $printParams = [];
     $printTypes = '';
@@ -293,7 +298,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <thead>
                     <tr>
                         <th class="col-id">ID</th>
-                        <th class="col-ref">Reference No.</th>
+                        <!-- <th class="col-ref">Reference No.</th> -->
                         <th class="col-title">Title</th>
                         <th class="col-date-posted">Date Posted</th>
                         <th class="col-meeting-date">Meeting Date</th>
@@ -312,7 +317,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             if ($count % 25 === 0) {
                 echo '</tbody></table></div><div class="page-break"></div><div class="table-container"><table><thead><tr>
                     <th class="col-id">ID</th>
-                    <th class="col-ref">Reference No.</th>
+                    <!-- <th class="col-ref">Reference No.</th> -->
                     <th class="col-title">Title</th>
                     <th class="col-date-posted">Date Posted</th>
                     <th class="col-meeting-date">Meeting Date</th>
@@ -323,7 +328,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             }
             echo '<tr>
                 <td>' . htmlspecialchars($minute['id']) . '</td>
-                <td><span class="reference-number">' . htmlspecialchars($minute['reference_number'] ?? 'N/A') . '</span></td>
+                <!-- <td><span class="reference-number">' . htmlspecialchars($minute['reference_number'] ?? 'N/A') . '</span></td> -->
                 <td>' . htmlspecialchars($minute['title']) . '</td>
                 <td>' . date('M d, Y', strtotime($minute['date_posted'])) . '</td>
                 <td>' . date('M d, Y', strtotime($minute['meeting_date'])) . '</td>
@@ -398,7 +403,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $date_posted = $_POST['date_posted'];
         $meeting_date = $_POST['meeting_date'];
         $content = trim($_POST['content']);
-        $reference_number = generateReferenceNumber($conn);
+        $reference_number = generateReferenceNumber($conn, $meeting_date);
         $image_path = null;
 
         // Handle multiple file uploads to MinIO
@@ -569,7 +574,7 @@ if (!empty($year)) {
 }
 
 // Build the query
-$query = "SELECT * FROM minutes_of_meeting";
+$query = "SELECT id, title, session_number, date_posted, meeting_date, content, image_path FROM minutes_of_meeting";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
 }
@@ -1538,7 +1543,7 @@ $count_stmt->close();
                         <thead class="table-dark">
                             <tr>
                                 <th>ID</th>
-                                <th>Reference No.</th>
+                                <!-- <th>Reference No.</th> -->
                                 <th>Title</th>
                                 <th>Date Posted</th>
                                 <th>Meeting Date</th>
@@ -1551,17 +1556,17 @@ $count_stmt->close();
                         <tbody id="minutesTableBody">
                             <?php if (empty($minutes)): ?>
                                 <tr>
-                                    <td colspan="10" class="text-center py-4">No minutes found</td>
+                                    <td colspan="8" class="text-center py-4">No minutes found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($minutes as $minute): ?>
                                     <tr data-id="<?php echo $minute['id']; ?>">
                                         <td><?php echo htmlspecialchars($minute['id']); ?></td>
-                                        <td>
+                                        <!-- <td>
                                             <span class="reference-number">
                                                 <?php echo !empty($minute['reference_number']) ? htmlspecialchars($minute['reference_number']) : 'N/A'; ?>
                                             </span>
-                                        </td>
+                                        </td> -->
                                         <td class="title text-start"><?php echo htmlspecialchars($minute['title']); ?></td>
                                         <td class="date-posted" data-date="<?php echo $minute['date_posted']; ?>">
                                             <?php echo date('M d, Y', strtotime($minute['date_posted'])); ?>

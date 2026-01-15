@@ -87,8 +87,6 @@ ini_set('display_errors', 0); // Disable display errors in production
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/../../logs/php_errors.log');
 
-// Session Configuration
-if (session_status() == PHP_SESSION_NONE) {
-    session_start();
-}
+// Note: Session start is handled by individual pages
+// Each page calls session_start() before including this config file
 ?>

@@ -8,107 +8,147 @@ use Resend\Resend;
 $message = '';
 $error = '';
 
+// Generate CSRF token if not exists
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
-    $email = trim($_POST['email']);
-
-    if (empty($email)) {
-        $error = "Email address is required.";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = "Please enter a valid email address.";
+    // CSRF Protection
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $error = "Invalid request. Please try again.";
     } else {
-        // Check if email exists in database
-        $query = "SELECT id, username, full_name FROM admin_users WHERE email = ?";
-        $stmt = $conn->prepare($query);
+        // Rate Limiting Check
+        if (!isset($_SESSION['forgot_attempts'])) {
+            $_SESSION['forgot_attempts'] = 0;
+            $_SESSION['forgot_first_attempt'] = time();
+        }
         
-        if ($stmt) {
-            $stmt->bind_param("s", $email);
-            $stmt->execute();
-            $result = $stmt->get_result();
+        // Reset counter if 15 minutes have passed
+        $time_passed = time() - $_SESSION['forgot_first_attempt'];
+        if ($time_passed >= 900) { // 15 minutes
+            $_SESSION['forgot_attempts'] = 0;
+            $_SESSION['forgot_first_attempt'] = time();
+        }
+        
+        // Check if too many attempts
+        if ($_SESSION['forgot_attempts'] >= 3) {
+            $remaining = 900 - $time_passed;
+            $minutes = ceil($remaining / 60);
+            $error = "Too many attempts. Please try again in $minutes minute(s).";
+        } else {
+            $email = trim($_POST['email']);
 
-            if ($result->num_rows == 1) {
-                $user = $result->fetch_assoc();
-                
-                // Generate 6-digit OTP
-                $otp = sprintf("%06d", mt_rand(0, 999999));
-                $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
-                
-                // Store OTP in database
-                $update_query = "UPDATE admin_users SET reset_token = ?, reset_expires = ? WHERE id = ?";
-                $update_stmt = $conn->prepare($update_query);
-                $update_stmt->bind_param("ssi", $otp, $expires, $user['id']);
-                $update_stmt->execute();
-                $update_stmt->close();
-                
-                // Send OTP via Resend
-                try {
-                    $resend = Resend::client(RESEND_API_KEY);
-                    
-                    $html_content = "
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <style>
-                            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                            .header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-                            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-                            .otp-box { background: white; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; border: 2px dashed #4361ee; }
-                            .otp-code { font-size: 32px; font-weight: bold; color: #4361ee; letter-spacing: 5px; }
-                            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-                        </style>
-                    </head>
-                    <body>
-                        <div class='container'>
-                            <div class='header'>
-                                <h1>Password Reset OTP</h1>
-                            </div>
-                            <div class='content'>
-                                <p>Hello " . htmlspecialchars($user['full_name']) . ",</p>
-                                <p>We received a request to reset your password for your eFIND System account.</p>
-                                <div class='otp-box'>
-                                    <p style='margin: 0; color: #666;'>Your OTP Code:</p>
-                                    <div class='otp-code'>" . $otp . "</div>
-                                </div>
-                                <p><strong>This code will expire in 15 minutes.</strong></p>
-                                <p>If you didn't request this, please ignore this email.</p>
-                                <div class='footer'>
-                                    <p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p>
-                                </div>
-                            </div>
-                        </div>
-                    </body>
-                    </html>
-                    ";
-                    
-                    $resend->emails->send([
-                        'from' => FROM_EMAIL,
-                        'to' => [$email],
-                        'subject' => 'Password Reset OTP - eFIND System',
-                        'html' => $html_content
-                    ]);
-                    
-                    // Store email in session for OTP verification
-                    $_SESSION['reset_email'] = $email;
-                    
-                    // Redirect to OTP verification page
-                    header("Location: verify-otp.php");
-                    exit();
-                    
-                } catch (Exception $e) {
-                    $error = "Failed to send OTP. Please try again later.";
-                    error_log("Resend Error: " . $e->getMessage());
-                }
+            if (empty($email)) {
+                $error = "Email address is required.";
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $error = "Please enter a valid email address.";
             } else {
-                $error = "No account found with that email address.";
+                $_SESSION['forgot_attempts']++;
+                
+                // Check if email exists in database
+                $query = "SELECT id, username, full_name FROM admin_users WHERE email = ?";
+                $stmt = $conn->prepare($query);
+                
+                if ($stmt) {
+                    $stmt->bind_param("s", $email);
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+
+                    if ($result->num_rows == 1) {
+                        $user = $result->fetch_assoc();
+                        
+                        // Generate 6-digit OTP using cryptographically secure method
+                        $otp = sprintf("%06d", random_int(0, 999999));
+                        $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
+                        
+                        // Store OTP in database
+                        $update_query = "UPDATE admin_users SET reset_token = ?, reset_expires = ? WHERE id = ?";
+                        $update_stmt = $conn->prepare($update_query);
+                        $update_stmt->bind_param("ssi", $otp, $expires, $user['id']);
+                        $update_stmt->execute();
+                        $update_stmt->close();
+                        
+                        // Send OTP via Resend
+                        try {
+                            $resend = Resend::client(RESEND_API_KEY);
+                            
+                            $html_content = "
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <style>
+                                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                                    .header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                                    .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
+                                    .otp-box { background: white; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; border: 2px dashed #4361ee; }
+                                    .otp-code { font-size: 32px; font-weight: bold; color: #4361ee; letter-spacing: 5px; }
+                                    .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+                                </style>
+                            </head>
+                            <body>
+                                <div class='container'>
+                                    <div class='header'>
+                                        <h1>Password Reset OTP</h1>
+                                    </div>
+                                    <div class='content'>
+                                        <p>Hello " . htmlspecialchars($user['full_name']) . ",</p>
+                                        <p>We received a request to reset your password for your eFIND System account.</p>
+                                        <div class='otp-box'>
+                                            <p style='margin: 0; color: #666;'>Your OTP Code:</p>
+                                            <div class='otp-code'>" . $otp . "</div>
+                                        </div>
+                                        <p><strong>This code will expire in 15 minutes.</strong></p>
+                                        <p>If you didn't request this, please ignore this email.</p>
+                                        <div class='footer'>
+                                            <p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </body>
+                            </html>
+                            ";
+                            
+                            $resend->emails->send([
+                                'from' => FROM_EMAIL,
+                                'to' => [$email],
+                                'subject' => 'Password Reset OTP - eFIND System',
+                                'html' => $html_content
+                            ]);
+                            
+                            // Store email in session for OTP verification
+                            $_SESSION['reset_email'] = $email;
+                            
+                            // Redirect to OTP verification page
+                            $stmt->close();
+                            $conn->close();
+                            header("Location: verify-otp.php");
+                            exit();
+                            
+                        } catch (Exception $e) {
+                            $error = "Failed to send OTP. Please try again later.";
+                            error_log("Resend Error: " . $e->getMessage());
+                            $stmt->close();
+                            $conn->close();
+                        }
+                    } else {
+                        // Prevent user enumeration - show generic message
+                        $error = "If this email is registered, we've sent you a password reset code.";
+                    }
+                    
+                    $stmt->close();
+                } else {
+                    $error = "Database error. Please try again later.";
+                    error_log("Database prepare failed: " . $conn->error);
+                }
             }
             
-            $stmt->close();
-        } else {
-            $error = "Database error. Please try again later.";
+            if (!headers_sent()) {
+                $conn->close();
+            }
         }
     }
-    
-    $conn->close();
 }
 ?>
 
@@ -577,6 +617,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                 </div>
 
                 <form method="post" action="forgot-password.php">
+                    <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                    
                     <div class="mb-3">
                         <label for="email" class="form-label">Email Address</label>
                         <input type="email" class="form-control" id="email" name="email" required

@@ -57,16 +57,21 @@ if ($tableResult->num_rows == 0) {
 }
 
 // Function to generate reference number for resolutions
-function generateReferenceNumber($conn) {
-    $year = date('Y');
-    $month = date('m');
+function generateReferenceNumber($conn, $resolution_date = null) {
+    if ($resolution_date) {
+        $year = date('Y', strtotime($resolution_date));
+        $month = date('m', strtotime($resolution_date));
+    } else {
+        $year = date('Y');
+        $month = date('m');
+    }
     $stmt = $conn->prepare("SELECT COUNT(*) as count FROM resolutions WHERE YEAR(resolution_date) = ? AND MONTH(resolution_date) = ?");
     $stmt->bind_param("ii", $year, $month);
     $stmt->execute();
     $result = $stmt->get_result();
     $count = $result->fetch_assoc()['count'] + 1;
     $stmt->close();
-    return sprintf("RES-%04d-%02d-%03d", $year, $month, $count);
+    return sprintf("RES%04d%02d%04d", $year, $month, $count);
 }
 
 // Handle print action
@@ -78,7 +83,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         die("End date must be after start date.");
     }
     // Build query with filters for print
-    $printQuery = "SELECT * FROM resolutions WHERE 1=1";
+    $printQuery = "SELECT id, title, resolution_number, date_posted, resolution_date, content FROM resolutions WHERE 1=1";
     $printConditions = [];
     $printParams = [];
     $printTypes = '';
@@ -302,7 +307,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <thead>
                     <tr>
                         <th class="col-id">ID</th>
-                        <th class="col-ref">Reference No.</th>
+                        <!-- <th class="col-ref">Reference No.</th> -->
                         <th class="col-title">Title</th>
                         <th class="col-number">Resolution Number</th>
                         <th class="col-date-posted">Date Posted</th>
@@ -321,7 +326,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             if ($count % 25 === 0) {
                 echo '</tbody></table></div><div class="page-break"></div><div class="table-container"><table><thead><tr>
                     <th class="col-id">ID</th>
-                    <th class="col-ref">Reference No.</th>
+                    <!-- <th class="col-ref">Reference No.</th> -->
                     <th class="col-title">Title</th>
                     <th class="col-number">Resolution Number</th>
                     <th class="col-date-posted">Date Posted</th>
@@ -332,7 +337,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             }
             echo '<tr>
                 <td>' . htmlspecialchars($resolution['id']) . '</td>
-                <td><span class="reference-number">' . htmlspecialchars($resolution['reference_number'] ?? 'N/A') . '</span></td>
+                <!-- <td><span class="reference-number">' . htmlspecialchars($resolution['reference_number'] ?? 'N/A') . '</span></td> -->
                 <td>' . htmlspecialchars($resolution['title']) . '</td>
                 <td>' . htmlspecialchars($resolution['resolution_number']) . '</td>
                 <td>' . date('M d, Y', strtotime($resolution['date_posted'])) . '</td>
@@ -407,7 +412,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $date_posted = $_POST['date_posted'];
         $resolution_date = $_POST['resolution_date'];
         $content = trim($_POST['content']);
-        $reference_number = generateReferenceNumber($conn);
+        $reference_number = generateReferenceNumber($conn, $resolution_date);
         $image_path = null;
         // Handle multiple file uploads to MinIO
         if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
@@ -585,7 +590,7 @@ if (!empty($year)) {
 }
 
 // Build the query
-$query = "SELECT * FROM resolutions";
+$query = "SELECT id, title, description, resolution_number, date_posted, resolution_date, content, image_path, date_issued FROM resolutions";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
 }
@@ -1550,7 +1555,7 @@ $count_stmt->close();
                         <thead class="table-dark">
                             <tr>
                                 <th>ID</th>
-                                <th>Reference No.</th>
+                                <!-- <th>Reference No.</th> -->
                                 <th>Title</th>
                                 <th>Resolution Number</th>
                                 <th>Date Posted</th>
@@ -1563,17 +1568,17 @@ $count_stmt->close();
                         <tbody id="resolutionsTableBody">
                             <?php if (empty($resolutions)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-4">No resolutions found</td>
+                                    <td colspan="8" class="text-center py-4">No resolutions found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($resolutions as $resolution): ?>
                                     <tr data-id="<?php echo $resolution['id']; ?>">
                                         <td><?php echo htmlspecialchars($resolution['id']); ?></td>
-                                        <td>
+                                        <!-- <td>
                                             <span class="reference-number">
                                                 <?php echo !empty($resolution['reference_number']) ? htmlspecialchars($resolution['reference_number']) : 'N/A'; ?>
                                             </span>
-                                        </td>
+                                        </td> -->
                                         <td class="title text-start"><?php echo htmlspecialchars($resolution['title']); ?></td>
                                         <td><?php echo htmlspecialchars($resolution['resolution_number']); ?></td>
                                         <td class="date-posted" data-date="<?php echo $resolution['date_posted']; ?>">

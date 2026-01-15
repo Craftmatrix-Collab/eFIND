@@ -57,16 +57,21 @@ if ($tableResult->num_rows == 0) {
 }
 
 // Function to generate reference number for ordinances
-function generateReferenceNumber($conn) {
-    $year = date('Y');
-    $month = date('m');
+function generateReferenceNumber($conn, $ordinance_date = null) {
+    if ($ordinance_date) {
+        $year = date('Y', strtotime($ordinance_date));
+        $month = date('m', strtotime($ordinance_date));
+    } else {
+        $year = date('Y');
+        $month = date('m');
+    }
     $stmt = $conn->prepare("SELECT COUNT(*) as count FROM ordinances WHERE YEAR(ordinance_date) = ? AND MONTH(ordinance_date) = ?");
     $stmt->bind_param("ii", $year, $month);
     $stmt->execute();
     $result = $stmt->get_result();
     $count = $result->fetch_assoc()['count'] + 1;
     $stmt->close();
-    return sprintf("ORD-%04d-%02d-%03d", $year, $month, $count);
+    return sprintf("ORD%04d%02d%04d", $year, $month, $count);
 }
 
 // Handle print action
@@ -80,7 +85,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     }
 
     // Build query with filters for print
-    $printQuery = "SELECT * FROM ordinances WHERE 1=1";
+    $printQuery = "SELECT id, title, ordinance_number, date_posted, ordinance_date, content, status FROM ordinances WHERE 1=1";
     $printConditions = [];
     $printParams = [];
     $printTypes = '';
@@ -313,7 +318,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <thead>
                     <tr>
                         <th class="col-id">ID</th>
-                        <th class="col-ref">Reference No.</th>
+                        <!-- <th class="col-ref">Reference No.</th> -->
                         <th class="col-title">Title</th>
                         <th class="col-date-posted">Date Posted</th>
                         <th class="col-ordinance-date">Ordinance Date</th>
@@ -334,7 +339,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             if ($count % 25 === 0) {
                 echo '</tbody></table></div><div class="page-break"></div><div class="table-container"><table><thead><tr>
                     <th class="col-id">ID</th>
-                    <th class="col-ref">Reference No.</th>
+                    <!-- <th class="col-ref">Reference No.</th> -->
                     <th class="col-title">Title</th>
                     <th class="col-date-posted">Date Posted</th>
                     <th class="col-ordinance-date">Ordinance Date</th>
@@ -346,7 +351,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             
             echo '<tr>
                 <td>' . htmlspecialchars($ordinance['id']) . '</td>
-                <td><span class="reference-number">' . htmlspecialchars($ordinance['reference_number'] ?? 'N/A') . '</span></td>
+                <!-- <td><span class="reference-number">' . htmlspecialchars($ordinance['reference_number'] ?? 'N/A') . '</span></td> -->
                 <td>' . htmlspecialchars($ordinance['title']) . '</td>
                 <td>' . date('M d, Y', strtotime($ordinance['date_posted'])) . '</td>
                 <td>' . date('M d, Y', strtotime($ordinance['ordinance_date'])) . '</td>
@@ -441,7 +446,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $ordinance_date = $_POST['ordinance_date'];
         $status = $_POST['status'];
         $content = trim($_POST['content']);
-        $reference_number = generateReferenceNumber($conn);
+        $reference_number = generateReferenceNumber($conn, $ordinance_date);
         // Handle file upload to MinIO
         $image_path = null;
         if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
@@ -603,7 +608,7 @@ if (!empty($year)) {
 }
 
 // Build the query
-$query = "SELECT * FROM ordinances";
+$query = "SELECT id, title, description, ordinance_number, date_posted, ordinance_date, status, content, image_path, date_issued, file_path, uploaded_by FROM ordinances";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
 }
@@ -1487,7 +1492,7 @@ $count_stmt->close();
                         <thead class="table-dark">
                             <tr>
                                 <th>ID</th>
-                                <th>Reference No.</th>
+                                <!-- <th>Reference No.</th> -->
                                 <th>Title</th>
                                 <th>Date Posted</th>
                                 <th>Ordinance Date</th>
@@ -1501,17 +1506,17 @@ $count_stmt->close();
                         <tbody id="ordinancesTableBody">
                             <?php if (empty($ordinances)): ?>
                                 <tr>
-                                    <td colspan="10" class="text-center py-4">No ordinances found</td>
+                                    <td colspan="9" class="text-center py-4">No ordinances found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($ordinances as $ordinance): ?>
                                     <tr data-id="<?php echo $ordinance['id']; ?>">
                                         <td><?php echo htmlspecialchars($ordinance['id']); ?></td>
-                                        <td>
+                                        <!-- <td>
                                             <span class="reference-number">
                                                 <?php echo !empty($ordinance['reference_number']) ? htmlspecialchars($ordinance['reference_number']) : 'N/A'; ?>
                                             </span>
-                                        </td>
+                                        </td> -->
                                         <td class="title text-start"><?php echo htmlspecialchars($ordinance['title']); ?></td>
                                         <td class="date-posted" data-date="<?php echo $ordinance['date_posted']; ?>">
                                             <?php echo date('M d, Y', strtotime($ordinance['date_posted'])); ?>
