@@ -1435,9 +1435,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
         </div>
     </div>
     <!-- Chatbot Button -->
-    <button class="chatbot-btn" id="chatbotToggle">
+    <!-- <button class="chatbot-btn" id="chatbotToggle">
         <i class="fas fa-robot"></i>
-    </button>
+    </button> -->
 
     <!-- Chatbot Container -->
     <div class="chatbot-container" id="chatbotContainer">
