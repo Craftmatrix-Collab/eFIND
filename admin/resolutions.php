@@ -1606,7 +1606,6 @@ $count_stmt->close();
                                                     <button type="button" class="btn btn-sm btn-outline-warning p-1 ocr-btn"
                                                             data-image-src="<?php echo htmlspecialchars($resolution['image_path']); ?>"
                                                             data-resolution-id="<?php echo $resolution['id']; ?>"
-                                                            data-bs-toggle="modal" data-bs-target="#ocrModal"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="OCR">
                                                         <i class="fas fa-magnifying-glass"></i>
                                                     </button>
@@ -2019,6 +2018,12 @@ $count_stmt->close();
             // Delete button handlers
             document.querySelectorAll('.delete-btn').forEach(button => {
                 button.addEventListener('click', function() {
+                    // Hide tooltip when clicked
+                    const tooltip = bootstrap.Tooltip.getInstance(this);
+                    if (tooltip) {
+                        tooltip.hide();
+                    }
+                    
                     const id = this.getAttribute('data-id');
                     const title = this.getAttribute('data-title');
                     document.getElementById('deleteItemTitle').textContent = title;
@@ -2097,13 +2102,42 @@ $count_stmt->close();
             window.location.href = url.toString();
         }
         document.addEventListener('DOMContentLoaded', function() {
-            // Initialize tooltips
-            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl, {
-                    delay: { "show": 100, "hide": 100 }
+            // Initialize tooltips with proper configuration
+            function initializeTooltips() {
+                // Dispose existing tooltips first to prevent duplicates
+                const existingTooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+                existingTooltips.forEach(element => {
+                    const existingTooltip = bootstrap.Tooltip.getInstance(element);
+                    if (existingTooltip) {
+                        existingTooltip.dispose();
+                    }
+                });
+                
+                // Initialize new tooltips
+                const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl, {
+                        delay: { "show": 300, "hide": 100 },
+                        trigger: 'hover',
+                        boundary: 'window'
+                    });
+                });
+            }
+            
+            // Initialize tooltips on page load
+            initializeTooltips();
+            
+            // Hide tooltips when clicking anywhere
+            document.addEventListener('click', function() {
+                const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+                tooltips.forEach(element => {
+                    const tooltip = bootstrap.Tooltip.getInstance(element);
+                    if (tooltip) {
+                        tooltip.hide();
+                    }
                 });
             });
+            
             // Initialize pagination position
             updatePaginationPosition();
             window.addEventListener('resize', updatePaginationPosition);
@@ -2125,6 +2159,13 @@ $count_stmt->close();
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
+                    
+                    // Hide tooltip when clicked
+                    const tooltip = bootstrap.Tooltip.getInstance(this);
+                    if (tooltip) {
+                        tooltip.hide();
+                    }
+                    
                     const imageSrcs = this.getAttribute('data-image-src').split('|');
                     const carouselInner = document.getElementById('carouselInner');
                     const carouselIndicators = document.getElementById('carouselIndicators');
@@ -2172,6 +2213,12 @@ $count_stmt->close();
             // Edit button functionality
             document.querySelectorAll('.edit-btn').forEach(button => {
                 button.addEventListener('click', function() {
+                    // Hide tooltip when clicked
+                    const tooltip = bootstrap.Tooltip.getInstance(this);
+                    if (tooltip) {
+                        tooltip.hide();
+                    }
+                    
                     const id = this.getAttribute('data-id');
                     fetch(`?action=get_resolution&id=${id}`)
                         .then(response => response.json())
@@ -2224,6 +2271,16 @@ $count_stmt->close();
             // OCR button functionality
             document.querySelectorAll('.ocr-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
+                    // Hide tooltip when clicked
+                    const tooltip = bootstrap.Tooltip.getInstance(btn);
+                    if (tooltip) {
+                        tooltip.hide();
+                    }
+                    
+                    // Open the OCR modal
+                    const ocrModal = new bootstrap.Modal(document.getElementById('ocrModal'));
+                    ocrModal.show();
+                    
                     const imageSrcs = btn.getAttribute('data-image-src').split('|');
                     const resolutionId = btn.closest('tr').getAttribute('data-id');
                     const ocrLoading = document.getElementById('ocrLoading');
