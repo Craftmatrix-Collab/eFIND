@@ -1553,7 +1553,7 @@ $count_stmt->close();
                         <thead class="table-dark">
                             <tr>
                                 <th>ID</th>
-                                <th>Reference No.</th>
+                                <!-- <th>Reference No.</th> -->
                                 <th>Title</th>
                                 <th>Resolution Number</th>
                                 <th>Date Posted</th>
@@ -1572,11 +1572,11 @@ $count_stmt->close();
                                 <?php foreach ($resolutions as $resolution): ?>
                                     <tr data-id="<?php echo $resolution['id']; ?>">
                                         <td><?php echo htmlspecialchars($resolution['id']); ?></td>
-                                        <td>
+                                        <!-- <td>
                                             <span class="reference-number">
                                                 <?php echo !empty($resolution['reference_number']) ? htmlspecialchars($resolution['reference_number']) : 'N/A'; ?>
                                             </span>
-                                        </td>
+                                        </td> -->
                                         <td class="title text-start"><?php echo htmlspecialchars($resolution['title']); ?></td>
                                         <td><?php echo htmlspecialchars($resolution['resolution_number']); ?></td>
                                         <td class="date-posted" data-date="<?php echo $resolution['date_posted']; ?>">
