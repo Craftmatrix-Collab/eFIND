@@ -83,7 +83,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         die("End date must be after start date.");
     }
     // Build query with filters for print
-    $printQuery = "SELECT id, title, resolution_number, date_posted, resolution_date, content FROM resolutions WHERE 1=1";
+    $printQuery = "SELECT id, title, resolution_number, date_posted, resolution_date, content, reference_number FROM resolutions WHERE 1=1";
     $printConditions = [];
     $printParams = [];
     $printTypes = '';
@@ -307,18 +307,17 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <thead>
                     <tr>
                         <th class="col-id">ID</th>
-                        <!-- <th class="col-ref">Reference No.</th> -->
+                        <th class="col-ref">Reference No.</th>
                         <th class="col-title">Title</th>
                         <th class="col-number">Resolution Number</th>
                         <th class="col-date-posted">Date Posted</th>
                         <th class="col-resolution-date">Resolution Date</th>
                         <th class="col-content">Content Preview</th>
-                        <th class="col-status">Status</th>
                     </tr>
                 </thead>
                 <tbody>';
     if (empty($printResolutions)) {
-        echo '<tr><td colspan="8" style="text-align: center;">No resolutions found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="7" style="text-align: center;">No resolutions found for the selected criteria.</td></tr>';
     } else {
         $count = 0;
         foreach ($printResolutions as $resolution) {
@@ -326,18 +325,17 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             if ($count % 25 === 0) {
                 echo '</tbody></table></div><div class="page-break"></div><div class="table-container"><table><thead><tr>
                     <th class="col-id">ID</th>
-                    <!-- <th class="col-ref">Reference No.</th> -->
+                    <th class="col-ref">Reference No.</th>
                     <th class="col-title">Title</th>
                     <th class="col-number">Resolution Number</th>
                     <th class="col-date-posted">Date Posted</th>
                     <th class="col-resolution-date">Resolution Date</th>
                     <th class="col-content">Content Preview</th>
-                    <th class="col-status">Status</th>
                 </tr></thead><tbody>';
             }
             echo '<tr>
                 <td>' . htmlspecialchars($resolution['id']) . '</td>
-                <!-- <td><span class="reference-number">' . htmlspecialchars($resolution['reference_number'] ?? 'N/A') . '</span></td> -->
+                <td><span class="reference-number">' . htmlspecialchars($resolution['reference_number'] ?? 'N/A') . '</span></td>
                 <td>' . htmlspecialchars($resolution['title']) . '</td>
                 <td>' . htmlspecialchars($resolution['resolution_number']) . '</td>
                 <td>' . date('M d, Y', strtotime($resolution['date_posted'])) . '</td>
@@ -590,7 +588,7 @@ if (!empty($year)) {
 }
 
 // Build the query
-$query = "SELECT id, title, description, resolution_number, date_posted, resolution_date, content, image_path, date_issued FROM resolutions";
+$query = "SELECT id, title, description, resolution_number, date_posted, resolution_date, content, image_path, date_issued, reference_number FROM resolutions";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
 }
@@ -1555,7 +1553,7 @@ $count_stmt->close();
                         <thead class="table-dark">
                             <tr>
                                 <th>ID</th>
-                                <!-- <th>Reference No.</th> -->
+                                <th>Reference No.</th>
                                 <th>Title</th>
                                 <th>Resolution Number</th>
                                 <th>Date Posted</th>
@@ -1574,11 +1572,11 @@ $count_stmt->close();
                                 <?php foreach ($resolutions as $resolution): ?>
                                     <tr data-id="<?php echo $resolution['id']; ?>">
                                         <td><?php echo htmlspecialchars($resolution['id']); ?></td>
-                                        <!-- <td>
+                                        <td>
                                             <span class="reference-number">
                                                 <?php echo !empty($resolution['reference_number']) ? htmlspecialchars($resolution['reference_number']) : 'N/A'; ?>
                                             </span>
-                                        </td> -->
+                                        </td>
                                         <td class="title text-start"><?php echo htmlspecialchars($resolution['title']); ?></td>
                                         <td><?php echo htmlspecialchars($resolution['resolution_number']); ?></td>
                                         <td class="date-posted" data-date="<?php echo $resolution['date_posted']; ?>">
