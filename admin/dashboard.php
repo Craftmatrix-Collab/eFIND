@@ -1283,7 +1283,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                 <tr>
                                     <th>Type</th>
                                     <th>Title</th>
-                                    <th>Reference No.</th>
+                                    <!-- <th>Reference No.</th> -->
                                     <th>Date Posted</th>
                                     <th>Content Preview</th>
                                     <th>Image</th>
@@ -1292,7 +1292,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                             <tbody>
                                 <?php if (empty($all_documents)): ?>
                                     <tr>
-                                        <td colspan="6" class="text-center py-4 text-muted">
+                                        <td colspan="5" class="text-center py-4 text-muted">
                                             <i class="fas fa-file fa-2x mb-3"></i>
                                             <p>No documents found</p>
                                         </td>
@@ -1317,11 +1317,11 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                                     <strong><?= htmlspecialchars($document['title']) ?></strong>
                                                 </div>
                                             </td>
-                                            <td>
+                                            <!-- <td>
                                                 <?= !empty($document['reference_number']) ?
                                                     '<span class="badge bg-light text-dark">' . htmlspecialchars($document['reference_number']) . '</span>' :
                                                     '<span class="badge bg-light text-dark">N/A</span>' ?>
-                                            </td>
+                                            </td> -->
                                             <td>
                                                 <small class="text-truncate-2">
                                                     <?= date('F j, Y', strtotime($document['date_posted'])) ?>
