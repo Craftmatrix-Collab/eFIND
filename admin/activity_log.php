@@ -173,14 +173,14 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     <th>Document Type</th>
                     <th>Document ID</th>
                     <th>Details</th>
-                    <th>IP Address</th>
+                    <!-- <th>IP Address</th> -->
                     <th>Date/Time</th>
                 </tr>
             </thead>
             <tbody>';
 
     if (empty($printLogs)) {
-        echo '<tr><td colspan="10" style="text-align: center;">No activity logs found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="9" style="text-align: center;">No activity logs found for the selected criteria.</td></tr>';
     } else {
         foreach ($printLogs as $log) {
             echo '<tr>
@@ -214,7 +214,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <td>' . htmlspecialchars(ucfirst($log['document_type'] ?? 'N/A')) . '</td>
                 <td>' . htmlspecialchars($log['document_id'] ?? 'N/A') . '</td>
                 <td>' . htmlspecialchars($log['details'] ?? 'N/A') . '</td>
-                <td>' . htmlspecialchars($log['ip_address'] ?? 'N/A') . '</td>
+                <!-- <td>' . htmlspecialchars($log['ip_address'] ?? 'N/A') . '</td> -->
                 <td>' . date('M d, Y H:i:s', strtotime($log['log_time'] ?? $log['created_at'])) . '</td>
             </tr>';
         }
@@ -1211,14 +1211,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                     <th>Description</th>
                     <th>Document Type</th>
                     <th>Details</th>
-                    <th>IP Address</th>
+                    <!-- <th>IP Address</th> -->
                     <th>Date/Time</th>
                 </tr>
             </thead>
             <tbody id="logsTableBody">
                 <?php if (empty($logs)): ?>
                     <tr>
-                        <td colspan="8" class="text-center py-4">No activity logs found</td>
+                        <td colspan="7" class="text-center py-4">No activity logs found</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($logs as $log): ?>
@@ -1279,7 +1279,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                                     <?php echo $details; ?>
                                 <?php endif; ?>
                             </td>
-                            <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($log['ip_address'] ?? 'N/A'); ?></span></td>
+                            <!-- <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($log['ip_address'] ?? 'N/A'); ?></span></td> -->
                             <td><?php echo date('M d, Y H:i:s', strtotime($log['log_time'] ?? $log['created_at'])); ?></td>
                         </tr>
                     <?php endforeach; ?>
