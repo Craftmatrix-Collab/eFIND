@@ -29,22 +29,6 @@
         font-size: 24px;
     }
     
-    .chatbot-badge {
-        position: absolute;
-        top: -5px;
-        right: -5px;
-        background: #ff6d00;
-        color: white;
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        font-size: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-    }
-    
     /* Chatbot Container */
     .chatbot-widget {
         position: fixed;
@@ -390,7 +374,6 @@
 <!-- Chatbot Float Button -->
 <button class="chatbot-float-btn" id="chatbotFloatBtn" onclick="toggleChatbot()">
     <i class="fas fa-comments"></i>
-    <span class="chatbot-badge" id="chatbotBadge" style="display: none;">1</span>
 </button>
 
 <!-- Chatbot Widget -->
@@ -466,14 +449,12 @@ function initChatbotSession() {
 function toggleChatbot() {
     const widget = document.getElementById('chatbotWidget');
     const floatBtn = document.getElementById('chatbotFloatBtn');
-    const badge = document.getElementById('chatbotBadge');
     
     chatbotIsOpen = !chatbotIsOpen;
     
     if (chatbotIsOpen) {
         widget.classList.add('active');
         floatBtn.style.transform = 'rotate(180deg)';
-        badge.style.display = 'none';
         initChatbotSession();
         
         // Focus input
@@ -655,23 +636,8 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Show badge notification
-function showChatbotNotification() {
-    if (!chatbotIsOpen) {
-        const badge = document.getElementById('chatbotBadge');
-        badge.style.display = 'flex';
-    }
-}
-
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initChatbotSession();
-    
-    // Show notification after 5 seconds if not opened
-    setTimeout(() => {
-        if (!chatbotIsOpen) {
-            showChatbotNotification();
-        }
-    }, 5000);
 });
 </script>

@@ -959,6 +959,64 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             color: white;
         }
         /* Sticky Pagination Container */
+        .pagination-container {
+            position: sticky;
+            bottom: 0;
+            background: var(--white);
+            padding: 15px 20px;
+            margin-top: 0;
+            border-top: 2px solid var(--light-blue);
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            border-radius: 0 0 16px 16px;
+            margin-bottom: 50px;
+        }
+        .pagination-info {
+            font-weight: 600;
+            color: var(--secondary-blue);
+            background-color: rgba(67, 97, 238, 0.1);
+            padding: 8px 15px;
+            border-radius: 8px;
+            border: 1px solid var(--light-blue);
+        }
+        /* Pagination Styles */
+        .pagination {
+            margin-bottom: 0;
+            justify-content: center;
+        }
+        .page-link {
+            border: 1px solid var(--light-blue);
+            color: var(--primary-blue);
+            font-weight: 500;
+            padding: 8px 15px;
+            border-radius: 6px;
+            margin: 0 3px;
+            transition: all 0.3s;
+        }
+        .page-link:hover {
+            background-color: var(--primary-blue);
+            color: white;
+            border-color: var(--primary-blue);
+            transform: translateY(-2px);
+        }
+        .page-item.active .page-link {
+            background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
+            border-color: var(--primary-blue);
+            color: white;
+        }
+        .page-item.disabled .page-link {
+            color: var(--medium-gray);
+            background-color: var(--light-gray);
+            border-color: var(--light-blue);
+        }
+        /* Ensure arrows are always visible and styled */
+        .page-item:first-child .page-link,
+        .page-item:last-child .page-link {
+            background-color: var(--primary-blue);
+            color: white;
+            border-color: var(--primary-blue);
+            font-weight: 600;
+        }
         
         .page-item:first-child .page-link:hover,
         .page-item:last-child .page-link:hover {

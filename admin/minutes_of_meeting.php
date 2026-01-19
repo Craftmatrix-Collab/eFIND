@@ -1594,10 +1594,6 @@ $count_stmt->close();
                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="View Images">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
-                                                    <a href="?action=download&id=<?php echo $minute['id']; ?>" class="btn btn-sm btn-outline-info p-1 download-btn"
-                                                       data-bs-toggle="tooltip" data-bs-placement="top" title="Download Document">
-                                                        <i class="fas fa-download"></i>
-                                                    </a>
                                                     <button type="button" class="btn btn-sm btn-outline-warning p-1 ocr-btn"
                                                             data-image-src="<?php echo htmlspecialchars($minute['image_path']); ?>"
                                                             data-minute-id="<?php echo $minute['id']; ?>"
