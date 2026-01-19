@@ -3,7 +3,7 @@
     /* Chatbot Button */
     .chatbot-float-btn {
         position: fixed;
-        bottom: 80px;
+        bottom: 100px;
         right: 20px;
         width: 60px;
         height: 60px;
@@ -48,7 +48,7 @@
     /* Chatbot Container */
     .chatbot-widget {
         position: fixed;
-        bottom: 150px;
+        bottom: 170px;
         right: 20px;
         width: 400px;
         height: 600px;
