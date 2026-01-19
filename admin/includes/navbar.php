@@ -22,7 +22,7 @@
         <!-- Profile Dropdown -->
         <ul class="navbar-nav ms-auto">
             <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
                    <?php
             // Check if session variables exist before using them
             $profile_picture = $_SESSION['profile_picture'] ?? '';
@@ -30,22 +30,22 @@
             if (!empty($profile_picture)) {
                 $profile_path = "uploads/profiles/" . $profile_picture;
                 if (file_exists($profile_path)) {
-                    echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" width="50" height="50">';
+                    echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">';
                 } else {
-                    echo '<i class="fas fa-user-circle me-2"></i>';
+                    echo '<i class="fas fa-user-circle me-2" style="font-size: 1.5rem;"></i>';
                 }
             } else {
-                echo '<i class="fas fa-user-circle me-2"></i>';
+                echo '<i class="fas fa-user-circle me-2" style="font-size: 1.5rem;"></i>';
             }
             ?>
-                    <span><?php echo htmlspecialchars($full_name); ?></span>
+                    <span class="text-white"><?php echo htmlspecialchars($full_name); ?></span>
                 </a>
-                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
-                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#profileModal">Profile</a></li>
+                <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="profileDropdown">
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#profileModal"><i class="fas fa-user me-2"></i>Profile</a></li>
                     <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['role'] === 'admin'): ?>
                     <?php endif; ?>
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="logout.php">Logout</a></li>
+                    <li><a class="dropdown-item text-danger" href="logout.php"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
                 </ul>
             </li>
         </ul>
@@ -161,6 +161,78 @@
 
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<style>
+/* Profile Dropdown Styles */
+.dropdown-menu {
+    min-width: 200px;
+    border-radius: 8px;
+    border: none;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    margin-top: 10px;
+}
+
+.dropdown-item {
+    padding: 10px 20px;
+    transition: all 0.2s;
+}
+
+.dropdown-item:hover {
+    background-color: #e8f0fe;
+    color: #4361ee;
+}
+
+.dropdown-item i {
+    width: 20px;
+}
+
+.nav-link.dropdown-toggle {
+    transition: all 0.2s;
+}
+
+.nav-link.dropdown-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+/* Fix dropdown toggle arrow */
+.dropdown-toggle::after {
+    margin-left: 8px;
+    vertical-align: middle;
+}
+</style>
+<script>
+// Ensure dropdown works properly
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Bootstrap dropdowns
+    var dropdownElementList = [].slice.call(document.querySelectorAll('[data-bs-toggle="dropdown"]'));
+    var dropdownList = dropdownElementList.map(function (dropdownToggleEl) {
+        return new bootstrap.Dropdown(dropdownToggleEl, {
+            autoClose: true,
+            boundary: 'viewport'
+        });
+    });
+
+    // Handle profile dropdown click
+    const profileDropdown = document.getElementById('profileDropdown');
+    if (profileDropdown) {
+        profileDropdown.addEventListener('click', function(e) {
+            e.preventDefault();
+            const dropdown = bootstrap.Dropdown.getInstance(profileDropdown) || new bootstrap.Dropdown(profileDropdown);
+            dropdown.toggle();
+        });
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        const dropdown = document.querySelector('.dropdown-menu.show');
+        if (dropdown && !e.target.closest('.dropdown')) {
+            const bsDropdown = bootstrap.Dropdown.getInstance(document.querySelector('[data-bs-toggle="dropdown"]'));
+            if (bsDropdown) {
+                bsDropdown.hide();
+            }
+        }
+    });
+});
 <script>
 $(document).ready(function() {
     // Load profile content when profile modal is shown
@@ -321,4 +393,11 @@ document.getElementById('addStaffForm').addEventListener('submit', function(e) {
   });
 });
 
+// Initialize Bootstrap tooltips and popovers
+document.addEventListener('DOMContentLoaded', function() {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
 </script>
