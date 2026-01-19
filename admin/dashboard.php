@@ -1313,7 +1313,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                 </div>
             </div>
             <!-- Documents Table Section -->
-            <div class="documents-table-section card mb-2">
+            <div class="documents-table-section card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-table me-2"></i>All Documents Overview</h5>
                     <div class="table-controls">
