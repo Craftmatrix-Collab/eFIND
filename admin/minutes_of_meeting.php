@@ -2606,23 +2606,69 @@ $count_stmt->close();
                         if (text && text.trim().length > 0) {
                             combinedText += cleanOcrText(text) + '\n\n---\n\n';
                         }
-                    } else if (fileExtension === 'pdf') {
+                    } else if (fileExtension === 'pdf' || fileExtension === 'docx' || fileExtension === 'doc') {
+                        // Use server-side extraction for PDF and DOCX files
                         processingElement.innerHTML = `
                             <div class="d-flex align-items-center">
                                 <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
                                 <div>
-                                    <div>Extracting text from PDF file ${i + 1} of ${files.length}...</div>
-                                    <small class="text-muted" id="filePdfProgress">Initializing...</small>
+                                    <div>Extracting text from ${fileExtension.toUpperCase()} file ${i + 1} of ${files.length}...</div>
+                                    <small class="text-muted">Using server-side extraction</small>
                                 </div>
                             </div>
                         `;
-
-                        const text = await new Promise((resolve) => {
-                            extractTextFromPDF(URL.createObjectURL(file), resolve);
-                        });
-
-                        if (text && text.trim().length > 0) {
-                            combinedText += cleanOcrText(text) + '\n\n---\n\n';
+                        
+                        try {
+                            // Upload file and extract text using server-side PHP
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            formData.append('extract_text', '1');
+                            formData.append('use_ocr', '1');
+                            formData.append('force_upload', '1');
+                            
+                            const response = await fetch('/upload_handler.php?action=upload', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (result.success && result.extraction && result.extraction.success) {
+                                const extractedText = result.extraction.text;
+                                if (extractedText && extractedText.trim().length > 0) {
+                                    combinedText += cleanOcrText(extractedText) + '\n\n---\n\n';
+                                    processingElement.innerHTML = `
+                                        <div class="alert alert-success">
+                                            <i class="fas fa-check-circle me-2"></i>
+                                            Successfully extracted ${result.extraction.word_count} words from ${file.name}
+                                        </div>
+                                    `;
+                                } else {
+                                    processingElement.innerHTML = `
+                                        <div class="alert alert-warning">
+                                            <i class="fas fa-exclamation-triangle me-2"></i>
+                                            No text found in ${file.name}. File might be empty or encrypted.
+                                        </div>
+                                    `;
+                                }
+                            } else {
+                                const errorMsg = result.extraction ? result.extraction.message : result.message;
+                                processingElement.innerHTML = `
+                                    <div class="alert alert-warning">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        Could not extract text from ${file.name}: ${errorMsg}
+                                        <br><small>Please fill the form manually.</small>
+                                    </div>
+                                `;
+                            }
+                        } catch (error) {
+                            console.error('Server extraction error:', error);
+                            processingElement.innerHTML = `
+                                <div class="alert alert-danger">
+                                    <i class="fas fa-exclamation-circle me-2"></i>
+                                    Error extracting text from ${file.name}: ${error.message}
+                                </div>
+                            `;
                         }
                     } else {
                         processingElement.innerHTML = `
@@ -2714,23 +2760,69 @@ $count_stmt->close();
                         if (text && text.trim().length > 0) {
                             combinedText += cleanOcrText(text) + '\n\n---\n\n';
                         }
-                    } else if (fileExtension === 'pdf') {
+                    } else if (fileExtension === 'pdf' || fileExtension === 'docx' || fileExtension === 'doc') {
+                        // Use server-side extraction for PDF and DOCX files
                         processingElement.innerHTML = `
                             <div class="d-flex align-items-center">
                                 <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
                                 <div>
-                                    <div>Extracting text from PDF file ${i + 1} of ${files.length}...</div>
-                                    <small class="text-muted" id="filePdfProgress">Initializing...</small>
+                                    <div>Extracting text from ${fileExtension.toUpperCase()} file ${i + 1} of ${files.length}...</div>
+                                    <small class="text-muted">Using server-side extraction</small>
                                 </div>
                             </div>
                         `;
-
-                        const text = await new Promise((resolve) => {
-                            extractTextFromPDF(URL.createObjectURL(file), resolve);
-                        });
-
-                        if (text && text.trim().length > 0) {
-                            combinedText += cleanOcrText(text) + '\n\n---\n\n';
+                        
+                        try {
+                            // Upload file and extract text using server-side PHP
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            formData.append('extract_text', '1');
+                            formData.append('use_ocr', '1');
+                            formData.append('force_upload', '1');
+                            
+                            const response = await fetch('/upload_handler.php?action=upload', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (result.success && result.extraction && result.extraction.success) {
+                                const extractedText = result.extraction.text;
+                                if (extractedText && extractedText.trim().length > 0) {
+                                    combinedText += cleanOcrText(extractedText) + '\n\n---\n\n';
+                                    processingElement.innerHTML = `
+                                        <div class="alert alert-success">
+                                            <i class="fas fa-check-circle me-2"></i>
+                                            Successfully extracted ${result.extraction.word_count} words from ${file.name}
+                                        </div>
+                                    `;
+                                } else {
+                                    processingElement.innerHTML = `
+                                        <div class="alert alert-warning">
+                                            <i class="fas fa-exclamation-triangle me-2"></i>
+                                            No text found in ${file.name}. File might be empty or encrypted.
+                                        </div>
+                                    `;
+                                }
+                            } else {
+                                const errorMsg = result.extraction ? result.extraction.message : result.message;
+                                processingElement.innerHTML = `
+                                    <div class="alert alert-warning">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        Could not extract text from ${file.name}: ${errorMsg}
+                                        <br><small>Please fill the form manually.</small>
+                                    </div>
+                                `;
+                            }
+                        } catch (error) {
+                            console.error('Server extraction error:', error);
+                            processingElement.innerHTML = `
+                                <div class="alert alert-danger">
+                                    <i class="fas fa-exclamation-circle me-2"></i>
+                                    Error extracting text from ${file.name}: ${error.message}
+                                </div>
+                            `;
                         }
                     } else {
                         processingElement.innerHTML = `
