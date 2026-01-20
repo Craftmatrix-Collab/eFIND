@@ -4,6 +4,11 @@ error_reporting(E_ALL);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/chatbot_errors.log');
 
+// Start session for user tracking
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
@@ -13,6 +18,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit(0);
 }
+
+// Database connection
+require_once(__DIR__ . '/includes/config.php');
 
 // N8N Configuration - PRODUCTION WEBHOOK URL
 // IMPORTANT: This is the ACTIVE production webhook
@@ -25,10 +33,12 @@ $N8N_WEBHOOK_URL = "https://n8n-efind.craftmatrix.org/webhook/5eaeb40b-8411-43ce
 class BarangayChatbotAPI {
     private $n8nWebhookUrl;
     private $logFile;
+    private $db;
     
-    public function __construct($webhookUrl) {
+    public function __construct($webhookUrl, $dbConnection = null) {
         $this->n8nWebhookUrl = $webhookUrl;
         $this->logFile = __DIR__ . '/logs/chatbot_activity.log';
+        $this->db = $dbConnection;
         
         // Create logs directory if it doesn't exist
         $logDir = __DIR__ . '/logs';
@@ -130,15 +140,23 @@ class BarangayChatbotAPI {
         
         $this->log("Chat request - User: $userId, Session: $sessionId, Message: " . substr($userMessage, 0, 50));
         
+        // Log user question to database
+        $this->logChatToDatabase($userId, $userMessage, 'user_message', $sessionId);
+        
         try {
             // Send to n8n webhook with full context
             $n8nResponse = $this->sendToN8N($input);
             
             $this->log("N8N response received successfully");
             
+            $botResponse = $n8nResponse['output'] ?? $n8nResponse['response'] ?? $n8nResponse['message'] ?? 'Response received';
+            
+            // Log bot response to database
+            $this->logChatToDatabase($userId, $botResponse, 'bot_response', $sessionId, $userMessage);
+            
             // Standardized response format
             return $this->jsonResponse([
-                'output' => $n8nResponse['output'] ?? $n8nResponse['response'] ?? $n8nResponse['message'] ?? 'Response received',
+                'output' => $botResponse,
                 'timestamp' => date('c'),
                 'sources' => $n8nResponse['sources'] ?? [],
                 'confidence' => $n8nResponse['confidence'] ?? 0.9,
@@ -158,6 +176,9 @@ class BarangayChatbotAPI {
                 ? "The chatbot service is currently being configured. Please ensure the n8n workflow is activated in production mode. Contact the administrator if this persists."
                 : "I'm currently experiencing technical difficulties. Please contact the barangay office directly for immediate assistance, or try again in a moment.";
             
+            // Log error response to database
+            $this->logChatToDatabase($userId, $fallbackMessage, 'bot_error', $sessionId, $userMessage);
+            
             // Fallback response if n8n is unavailable
             return $this->jsonResponse([
                 'output' => $fallbackMessage,
@@ -166,6 +187,79 @@ class BarangayChatbotAPI {
                 'error' => $errorMsg,
                 'status' => 'fallback'
             ], 200); // Return 200 to prevent client-side error handling
+        }
+    }
+    
+    private function logChatToDatabase($userId, $message, $actionType, $sessionId, $context = '') {
+        if (!$this->db) {
+            return;
+        }
+        
+        // Get user information
+        $userName = 'Guest';
+        $userRole = 'guest';
+        $userIdInt = 0;
+        
+        if ($userId !== 'guest' && is_numeric($userId)) {
+            $userIdInt = intval($userId);
+            $stmt = $this->db->prepare("SELECT username, full_name, role FROM users WHERE id = ? LIMIT 1");
+            if ($stmt) {
+                $stmt->bind_param("i", $userIdInt);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                if ($row = $result->fetch_assoc()) {
+                    $userName = $row['full_name'] ?? $row['username'];
+                    $userRole = $row['role'] ?? 'user';
+                }
+                $stmt->close();
+            }
+        } elseif (isset($_SESSION['user_id'])) {
+            $userIdInt = intval($_SESSION['user_id']);
+            $userName = $_SESSION['username'] ?? $_SESSION['full_name'] ?? 'User';
+            $userRole = $_SESSION['role'] ?? 'user';
+        }
+        
+        // Prepare action and description based on type
+        $action = 'chatbot';
+        $description = '';
+        $details = '';
+        
+        switch ($actionType) {
+            case 'user_message':
+                $description = "Asked chatbot: " . substr($message, 0, 100);
+                $details = "User Question: " . $message . " | Session: " . $sessionId;
+                break;
+            case 'bot_response':
+                $description = "Chatbot responded";
+                $details = "Bot Response: " . substr($message, 0, 200) . " | Context: " . substr($context, 0, 100) . " | Session: " . $sessionId;
+                break;
+            case 'bot_error':
+                $description = "Chatbot error occurred";
+                $details = "Error: " . $message . " | User Question: " . $context . " | Session: " . $sessionId;
+                break;
+        }
+        
+        $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        
+        // Insert into activity_logs
+        $stmt = $this->db->prepare(
+            "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, log_time) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())"
+        );
+        
+        if ($stmt) {
+            $stmt->bind_param(
+                "issssss",
+                $userIdInt,
+                $userName,
+                $userRole,
+                $action,
+                $description,
+                $details,
+                $ipAddress
+            );
+            $stmt->execute();
+            $stmt->close();
         }
     }
     
@@ -264,6 +358,6 @@ class BarangayChatbotAPI {
 }
 
 // Initialize and handle request
-$api = new BarangayChatbotAPI($N8N_WEBHOOK_URL);
+$api = new BarangayChatbotAPI($N8N_WEBHOOK_URL, $conn ?? null);
 $api->handleRequest();
 ?>

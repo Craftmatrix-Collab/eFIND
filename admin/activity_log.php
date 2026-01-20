@@ -132,6 +132,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             .badge-user_create { background-color: #d5f5e3; color: #186a3b; }
             .badge-user_update { background-color: #fef9e7; color: #7d6608; }
             .badge-user_delete { background-color: #fadbd8; color: #78281f; }
+            .badge-chatbot { background-color: #e3d7ff; color: #5a1f7c; }
             .user-role-admin { background-color: #e74c3c; color: white; }
             .user-role-staff { background-color: #3498db; color: white; }
             .user-role-user { background-color: #2ecc71; color: white; }
@@ -206,6 +207,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                         case 'user_create': echo 'badge-user_create'; break;
                         case 'user_update': echo 'badge-user_update'; break;
                         case 'user_delete': echo 'badge-user_delete'; break;
+                        case 'chatbot': echo 'badge-chatbot'; break;
                         default: echo 'badge-system';
                     }
                     echo '">' . htmlspecialchars(ucfirst(str_replace('_', ' ', $log['action']))) . '</span>
@@ -725,6 +727,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
         .badge-system { background-color: #e2e3e5; color: #383d41; }
         .badge-create { background-color: #cce7ff; color: #004085; }
         .badge-search { background-color: #f8f9fa; color: #212529; }
+        .badge-chatbot { background-color: #e3d7ff; color: #5a1f7c; }
         .document-link {
             color: var(--primary-blue);
             text-decoration: none;
@@ -1153,6 +1156,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                                 <option value="delete" <?php echo $filter_action === 'delete' ? 'selected' : ''; ?>>Delete</option>
                                 <option value="profile_update" <?php echo $filter_action === 'profile_update' ? 'selected' : ''; ?>>Profile Update</option>
                                 <option value="password_change" <?php echo $filter_action === 'password_change' ? 'selected' : ''; ?>>Password Change</option>
+                                <option value="chatbot" <?php echo $filter_action === 'chatbot' ? 'selected' : ''; ?>>Chatbot</option>
                             </select>
                         </div>
                         <div class="col-md-2">
@@ -1244,6 +1248,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                                             case 'password_change': echo 'badge-password_change'; break;
                                             case 'create': echo 'badge-create'; break;
                                             case 'search': echo 'badge-search'; break;
+                                            case 'chatbot': echo 'badge-chatbot'; break;
                                             default: echo 'badge-system';
                                         }
                                     ?>">
