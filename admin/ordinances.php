@@ -21,9 +21,17 @@ function isFileDuplicate($uploadDir, $fileName) {
     return file_exists($targetPath);
 }
 
-// Function to validate if the file is an ordinance document (image or PDF)
+// Function to validate if the file is an ordinance document (image, PDF, or DOCX)
 function isValidOrdinanceDocument($file) {
-    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf'];
+    $allowedTypes = [
+        'image/jpeg', 
+        'image/png', 
+        'image/gif', 
+        'image/bmp', 
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+        'application/msword' // DOC
+    ];
     return in_array($file['type'], $allowedTypes);
 }
 
@@ -452,7 +460,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             // Check if the file is a valid ordinance document
             if (!isValidOrdinanceDocument($_FILES['image_file'])) {
-                $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.";
+                $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
                 header("Location: ordinances.php");
                 exit();
             }
@@ -512,7 +520,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
             // Check if the file is a valid ordinance document
             if (!isValidOrdinanceDocument($_FILES['image_file'])) {
-                $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.";
+                $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
                 header("Location: ordinances.php");
                 exit();
             }
@@ -2311,10 +2319,10 @@ $count_stmt->close();
                 const fileInput = document.getElementById('image_file');
                 if (fileInput.files.length > 0) {
                     const file = fileInput.files[0];
-                    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf'];
+                    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
                     if (!allowedTypes.includes(file.type)) {
                         e.preventDefault();
-                        alert('Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.');
+                        alert('Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.');
                     }
                 }
             });
@@ -2323,10 +2331,10 @@ $count_stmt->close();
                 const fileInput = document.getElementById('editImageFile');
                 if (fileInput.files.length > 0) {
                     const file = fileInput.files[0];
-                    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf'];
+                    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
                     if (!allowedTypes.includes(file.type)) {
                         e.preventDefault();
-                        alert('Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.');
+                        alert('Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.');
                     }
                 }
             });

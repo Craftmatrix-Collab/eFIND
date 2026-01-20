@@ -21,9 +21,17 @@ function isFileDuplicate($uploadDir, $fileName) {
     return file_exists($targetPath);
 }
 
-// Function to validate if the file is a minutes document (image or PDF)
+// Function to validate if the file is a minutes document (image, PDF, or DOCX)
 function isValidMinutesDocument($file) {
-    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf'];
+    $allowedTypes = [
+        'image/jpeg', 
+        'image/png', 
+        'image/gif', 
+        'image/bmp', 
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+        'application/msword' // DOC
+    ];
     return in_array($file['type'], $allowedTypes);
 }
 
@@ -416,7 +424,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     continue;
                 }
                 if (!isValidMinutesDocument(['type' => $_FILES['image_file']['type'][$key]])) {
-                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.";
+                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
                     header("Location: minutes_of_meeting.php");
                     exit();
                 }
@@ -478,7 +486,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     continue;
                 }
                 if (!isValidMinutesDocument(['type' => $_FILES['image_file']['type'][$key]])) {
-                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.";
+                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
                     header("Location: minutes_of_meeting.php");
                     exit();
                 }
@@ -2461,10 +2469,10 @@ $count_stmt->close();
                 if (fileInput.files.length > 0) {
                     for (let i = 0; i < fileInput.files.length; i++) {
                         const file = fileInput.files[i];
-                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf'];
+                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
                         if (!allowedTypes.includes(file.type)) {
                             e.preventDefault();
-                            alert('Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.');
+                            alert('Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.');
                             return;
                         }
                     }
@@ -2477,10 +2485,10 @@ $count_stmt->close();
                 if (fileInput.files.length > 0) {
                     for (let i = 0; i < fileInput.files.length; i++) {
                         const file = fileInput.files[i];
-                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf'];
+                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
                         if (!allowedTypes.includes(file.type)) {
                             e.preventDefault();
-                            alert('Invalid file type. Only JPG, PNG, GIF, BMP, or PDF files are allowed.');
+                            alert('Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.');
                             return;
                         }
                     }
