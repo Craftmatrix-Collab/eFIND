@@ -2626,7 +2626,7 @@ $count_stmt->close();
                             formData.append('use_ocr', '1');
                             formData.append('force_upload', '1');
                             
-                            const response = await fetch('/upload_handler.php?action=upload', {
+                            const response = await fetch('../upload_handler.php?action=upload', {
                                 method: 'POST',
                                 body: formData
                             });
@@ -2780,7 +2780,7 @@ $count_stmt->close();
                             formData.append('use_ocr', '1');
                             formData.append('force_upload', '1');
                             
-                            const response = await fetch('/upload_handler.php?action=upload', {
+                            const response = await fetch('../upload_handler.php?action=upload', {
                                 method: 'POST',
                                 body: formData
                             });
