@@ -2020,8 +2020,36 @@ $count_stmt->close();
                     const modalImage = document.getElementById('modalImage');
                     const downloadLink = document.getElementById('downloadImage');
                     modalImage.src = imageSrc;
-                    downloadLink.href = imageSrc;
-                    downloadLink.download = imageSrc.split('/').pop();
+                    
+                    // Set up download button to force download instead of opening
+                    downloadLink.replaceWith(downloadLink.cloneNode(true));
+                    const newDownloadLink = document.getElementById('downloadImage');
+                    
+                    newDownloadLink.addEventListener('click', async function(e) {
+                        e.preventDefault();
+                        
+                        try {
+                            // Fetch the image as blob
+                            const response = await fetch(imageSrc);
+                            const blob = await response.blob();
+                            
+                            // Create download link
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = url;
+                            a.download = imageSrc.split('/').pop();
+                            
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+                        } catch (error) {
+                            console.error('Error downloading image:', error);
+                            alert('Failed to download image. Please try again.');
+                        }
+                    });
+                    
                     const imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
                     imageModal.show();
                 });

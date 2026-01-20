@@ -2148,9 +2148,59 @@ $count_stmt->close();
                         carouselIndicators.style.display = 'flex';
                     }
 
+                    // Set download button to download ALL images
                     const downloadLink = document.getElementById('downloadImage');
-                    downloadLink.href = imageSrcs[0];
-                    downloadLink.download = imageSrcs[0].split('/').pop();
+                    // Remove old click handlers
+                    downloadLink.replaceWith(downloadLink.cloneNode(true));
+                    const newDownloadLink = document.getElementById('downloadImage');
+                    
+                    newDownloadLink.addEventListener('click', async function(e) {
+                        e.preventDefault();
+                        
+                        // Change button text to show downloading
+                        const originalHTML = this.innerHTML;
+                        this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Downloading...';
+                        this.style.pointerEvents = 'none';
+                        
+                        // Download each image with delay to avoid overwhelming browser
+                        for (let i = 0; i < imageSrcs.length; i++) {
+                            try {
+                                // Fetch the image as blob
+                                const response = await fetch(imageSrcs[i]);
+                                const blob = await response.blob();
+                                
+                                // Create download link
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.style.display = 'none';
+                                a.href = url;
+                                
+                                // Set filename with page number
+                                const originalFilename = imageSrcs[i].split('/').pop();
+                                const fileExtension = originalFilename.split('.').pop();
+                                const baseFilename = originalFilename.replace('.' + fileExtension, '');
+                                a.download = imageSrcs.length > 1 ? 
+                                    `${baseFilename}_page${i + 1}.${fileExtension}` : 
+                                    originalFilename;
+                                
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                                
+                                // Small delay between downloads
+                                if (i < imageSrcs.length - 1) {
+                                    await new Promise(resolve => setTimeout(resolve, 500));
+                                }
+                            } catch (error) {
+                                console.error(`Error downloading image ${i + 1}:`, error);
+                            }
+                        }
+                        
+                        // Reset button
+                        this.innerHTML = originalHTML;
+                        this.style.pointerEvents = 'auto';
+                    });
 
                     const imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
                     imageModal.show();
