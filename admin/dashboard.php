@@ -196,6 +196,8 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@700&display=swap" rel="stylesheet">
     <!-- jQuery (required for navbar functionality) -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Bootstrap Bundle JS (includes Popper) - loaded early for navbar dropdowns -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- n8n Chat Script -->
     <script src="https://cdn.jsdelivr.net/npm/@n8n/chat@latest/dist/n8n-chat.umd.js"></script>
     <!-- Custom CSS -->
@@ -1864,9 +1866,6 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             });
         });
     </script>
-    
-    <!-- Bootstrap Bundle JS (includes Popper) -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <footer class="bg-white p-3">
         <?php include(__DIR__ . '/includes/footer.php'); ?>

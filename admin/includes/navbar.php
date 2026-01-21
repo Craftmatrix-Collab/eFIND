@@ -41,7 +41,7 @@
                     <span class="text-white"><?php echo htmlspecialchars($full_name); ?></span>
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="profileDropdown">
-                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#profileModal"><i class="fas fa-user me-2"></i>Profile</a></li>
+                    <li><a class="dropdown-item" href="javascript:void(0);" data-bs-toggle="modal" data-bs-target="#profileModal"><i class="fas fa-user me-2"></i>Profile</a></li>
                     <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['role'] === 'admin'): ?>
                     <?php endif; ?>
                     <li><hr class="dropdown-divider"></li>
@@ -199,40 +199,6 @@
     vertical-align: middle;
 }
 </style>
-<script>
-// Ensure dropdown works properly
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Bootstrap dropdowns
-    var dropdownElementList = [].slice.call(document.querySelectorAll('[data-bs-toggle="dropdown"]'));
-    var dropdownList = dropdownElementList.map(function (dropdownToggleEl) {
-        return new bootstrap.Dropdown(dropdownToggleEl, {
-            autoClose: true,
-            boundary: 'viewport'
-        });
-    });
-
-    // Handle profile dropdown click
-    const profileDropdown = document.getElementById('profileDropdown');
-    if (profileDropdown) {
-        profileDropdown.addEventListener('click', function(e) {
-            e.preventDefault();
-            const dropdown = bootstrap.Dropdown.getInstance(profileDropdown) || new bootstrap.Dropdown(profileDropdown);
-            dropdown.toggle();
-        });
-    }
-
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function(e) {
-        const dropdown = document.querySelector('.dropdown-menu.show');
-        if (dropdown && !e.target.closest('.dropdown')) {
-            const bsDropdown = bootstrap.Dropdown.getInstance(document.querySelector('[data-bs-toggle="dropdown"]'));
-            if (bsDropdown) {
-                bsDropdown.hide();
-            }
-        }
-    });
-});
-</script>
 <script>
 $(document).ready(function() {
     // Load profile content when profile modal is shown
