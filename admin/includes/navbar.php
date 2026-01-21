@@ -233,6 +233,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+</script>
 <script>
 $(document).ready(function() {
     // Load profile content when profile modal is shown
