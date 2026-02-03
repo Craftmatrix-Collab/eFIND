@@ -34,7 +34,7 @@
                     <i class="fas fa-chart-bar me-2"></i> Meeting Minutes
                 </a>
             </li>
-            <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['role'] === 'admin'): ?>
+            <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true): ?>
                 <li class="<?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'active' : '' ?>">
                     <a href="users.php" class="d-flex align-items-center py-2 px-3 text-white text-decoration-none <?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'bg-dark text-dark rounded' : '' ?>">
                         <i class="fas fa-user me-2"></i> Users
