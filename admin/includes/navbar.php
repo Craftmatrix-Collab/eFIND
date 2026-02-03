@@ -295,8 +295,15 @@ $(document).ready(function() {
             success: function(response) {
                 $('#profileModalBody').html(response);
             },
-            error: function() {
-                $('#profileModalBody').html('<div class="alert alert-danger">Error loading profile. Please try again.</div>');
+            error: function(xhr, status, error) {
+                console.error('Profile load error:', xhr.responseText);
+                $('#profileModalBody').html(
+                    '<div class="alert alert-danger">' +
+                    '<i class="fas fa-exclamation-circle me-2"></i>' +
+                    'Error loading profile. Please try again.' +
+                    '<br><small>Details: ' + (xhr.responseText ? xhr.responseText.substring(0, 200) : error) + '</small>' +
+                    '</div>'
+                );
             }
         });
     });
@@ -309,8 +316,15 @@ $(document).ready(function() {
             success: function(response) {
                 $('#editProfileModalBody').html(response);
             },
-            error: function() {
-                $('#editProfileModalBody').html('<div class="alert alert-danger">Error loading edit form. Please try again.</div>');
+            error: function(xhr, status, error) {
+                console.error('Edit profile load error:', xhr.responseText);
+                $('#editProfileModalBody').html(
+                    '<div class="alert alert-danger">' +
+                    '<i class="fas fa-exclamation-circle me-2"></i>' +
+                    'Error loading edit form. Please try again.' +
+                    '<br><small>Details: ' + (xhr.responseText ? xhr.responseText.substring(0, 200) : error) + '</small>' +
+                    '</div>'
+                );
             }
         });
     });

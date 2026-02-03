@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
     die('<div class="alert alert-danger alert-dismissible fade show">
             <i class="fas fa-exclamation-circle me-2"></i>Unauthorized access. Please login first.
