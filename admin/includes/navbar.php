@@ -168,35 +168,121 @@
     border: none;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
     margin-top: 10px;
+    z-index: 10500 !important; /* Higher than navbar (1050) and alerts (9999) */
+    position: absolute !important;
 }
 
 .dropdown-item {
     padding: 10px 20px;
     transition: all 0.2s;
+    cursor: pointer;
 }
 
 .dropdown-item:hover {
     background-color: #e8f0fe;
     color: #4361ee;
+    transform: translateX(5px);
+}
+
+.dropdown-item:active {
+    background-color: #d1e3fc;
+    color: #3651d4;
 }
 
 .dropdown-item i {
     width: 20px;
+    transition: transform 0.2s;
+}
+
+.dropdown-item:hover i {
+    transform: scale(1.1);
 }
 
 .nav-link.dropdown-toggle {
-    transition: all 0.2s;
+    transition: all 0.3s;
+    padding: 8px 15px;
 }
 
 .nav-link.dropdown-toggle:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.15);
     border-radius: 8px;
+    transform: translateY(-2px);
+}
+
+.nav-link.dropdown-toggle:active {
+    transform: translateY(0);
 }
 
 /* Fix dropdown toggle arrow */
 .dropdown-toggle::after {
     margin-left: 8px;
     vertical-align: middle;
+    transition: transform 0.3s;
+}
+
+.dropdown-toggle[aria-expanded="true"]::after {
+    transform: rotate(180deg);
+}
+
+/* Smooth dropdown animation */
+.dropdown-menu.show {
+    animation: dropdownFadeIn 0.2s ease-in-out;
+}
+
+@keyframes dropdownFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Mobile/Responsive adjustments */
+@media (max-width: 992px) {
+    .navbar {
+        margin-left: 0 !important;
+    }
+    
+    .dropdown-menu {
+        min-width: 180px;
+        right: 10px !important;
+        left: auto !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .nav-link.dropdown-toggle {
+        padding: 6px 10px;
+        font-size: 0.9rem;
+    }
+    
+    .dropdown-menu {
+        min-width: 160px;
+        font-size: 0.9rem;
+    }
+    
+    .dropdown-item {
+        padding: 8px 15px;
+    }
+    
+    .nav-link.dropdown-toggle img,
+    .nav-link.dropdown-toggle i {
+        width: 32px;
+        height: 32px;
+        font-size: 1.3rem;
+    }
+}
+
+/* Ensure dropdown doesn't get cut off */
+.navbar-nav {
+    position: static;
+}
+
+.nav-item.dropdown {
+    position: relative;
 }
 </style>
 <script>
@@ -364,6 +450,31 @@ document.addEventListener('DOMContentLoaded', function() {
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Ensure dropdown works properly
+    const dropdownElementList = document.querySelectorAll('.dropdown-toggle');
+    const dropdownList = [...dropdownElementList].map(dropdownToggleEl => new bootstrap.Dropdown(dropdownToggleEl));
+    
+    // Add visual feedback when dropdown opens/closes
+    const profileDropdown = document.getElementById('profileDropdown');
+    if (profileDropdown) {
+        profileDropdown.addEventListener('shown.bs.dropdown', function () {
+            this.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+        });
+        
+        profileDropdown.addEventListener('hidden.bs.dropdown', function () {
+            this.style.backgroundColor = '';
+        });
+    }
+    
+    // Prevent dropdown from closing when clicking inside (except on links)
+    document.querySelectorAll('.dropdown-menu').forEach(function(dropdown) {
+        dropdown.addEventListener('click', function(e) {
+            if (e.target.tagName !== 'A' && !e.target.closest('a')) {
+                e.stopPropagation();
+            }
+        });
     });
 });
 </script>
