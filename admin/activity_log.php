@@ -217,7 +217,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <td>' . htmlspecialchars($log['document_id'] ?? 'N/A') . '</td>
                 <td>' . htmlspecialchars($log['details'] ?? 'N/A') . '</td>
                 <!-- <td>' . htmlspecialchars($log['ip_address'] ?? 'N/A') . '</td> -->
-                <td>' . date('M d, Y h:i:s A', strtotime($log['log_time'] ?? $log['created_at'])) . '</td>
+                <td>' . formatPhilippineTime($log['log_time'] ?? $log['created_at']) . '</td>
             </tr>';
         }
     }
@@ -1285,7 +1285,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                                 <?php endif; ?>
                             </td>
                             <!-- <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($log['ip_address'] ?? 'N/A'); ?></span></td> -->
-                            <td><?php echo date('M d, Y h:i:s A', strtotime($log['log_time'] ?? $log['created_at'])); ?></td>
+                            <td><?php echo formatPhilippineTime($log['log_time'] ?? $log['created_at']); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>

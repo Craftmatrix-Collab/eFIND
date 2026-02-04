@@ -1,6 +1,32 @@
 <?php
 // includes/logger.php
 
+// Helper function to format timestamp for display
+if (!function_exists('formatPhilippineTime')) {
+    /**
+     * Format a timestamp to Philippine Time
+     * @param string $datetime - Database datetime string
+     * @param string $format - PHP date format (default: 'M d, Y h:i:s A')
+     * @return string Formatted datetime string in Philippine Time
+     */
+    function formatPhilippineTime($datetime, $format = 'M d, Y h:i:s A') {
+        if (empty($datetime)) {
+            return 'N/A';
+        }
+        
+        // Since database is now set to Asia/Manila timezone (+08:00)
+        // and PHP default timezone is also Asia/Manila,
+        // we can use the standard date() function
+        $timestamp = strtotime($datetime);
+        
+        if ($timestamp === false) {
+            return 'Invalid Date';
+        }
+        
+        return date($format, $timestamp);
+    }
+}
+
 // Check if function doesn't exist to avoid redeclaration errors
 if (!function_exists('checkActivityLogsTable')) {
     /**

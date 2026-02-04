@@ -5,6 +5,9 @@ $username = 'root';  // Changed from 'mariadb' to 'root' - check external DB use
 $password = '3xQ7fuQVu7SyYCnu15Hj44U0wf0ozulOH2U3Ggt8shqZ1K27MuvC3tHqY9dyOZd6';  // Using root password
 $dbname = 'barangay_poblacion_south';
 $port = getenv('DB_PORT') ?: 9008;
+
+// Set default timezone to Philippine Time (Asia/Manila = UTC+8)
+date_default_timezone_set('Asia/Manila');
  
 // Create MariaDB connection with improved settings
 try {
@@ -30,6 +33,9 @@ try {
     if (!@$conn->set_charset("utf8mb4")) {
         error_log("Error loading character set utf8mb4: " . $conn->error);
     }
+    
+    // Set database session timezone to Philippine Time
+    @$conn->query("SET time_zone = '+08:00'");
     
     // Enable autocommit
     @$conn->autocommit(TRUE);
