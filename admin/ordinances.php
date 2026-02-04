@@ -457,12 +457,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $reference_number = generateReferenceNumber($conn, $ordinance_date);
         // Handle multiple file uploads to MinIO
         $image_path = null;
-        if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
+        if (isset($_FILES['image_file']) && !empty($_FILES['image_file']['name'][0])) {
             $minioClient = new MinioS3Client();
             $image_paths = [];
             
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
-                if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
+                // Skip if no file or error
+                if (empty($_FILES['image_file']['name'][$key]) || $_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                     continue;
                 }
                 if (!isValidOrdinanceDocument(['type' => $_FILES['image_file']['type'][$key]])) {
@@ -526,12 +527,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $existing_image_path = $_POST['existing_image_path'];
         // Handle multiple file uploads for update to MinIO
         $image_path = $existing_image_path;
-        if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
+        if (isset($_FILES['image_file']) && !empty($_FILES['image_file']['name'][0])) {
             $minioClient = new MinioS3Client();
             $image_paths = [];
             
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
-                if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
+                // Skip if no file or error
+                if (empty($_FILES['image_file']['name'][$key]) || $_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                     continue;
                 }
                 if (!isValidOrdinanceDocument(['type' => $_FILES['image_file']['type'][$key]])) {
@@ -1783,6 +1785,9 @@ $count_stmt->close();
                             <div class="file-upload">
                                 <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png,.pdf" multiple onchange="processFilesWithAutoFill(this)">
                                 <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
+                                <div id="fileCount" class="mt-1" style="display: none;">
+                                    <span class="badge bg-info"><span id="fileCountNumber">0</span> file(s) selected</span>
+                                </div>
                             </div>
                             <div id="ocrProcessing" class="mt-2" style="display: none;">
                                 <div class="d-flex align-items-center">
@@ -2503,6 +2508,15 @@ $count_stmt->close();
         // NEW FUNCTION: Process multiple files with auto-fill feature
         async function processFilesWithAutoFill(input) {
             const files = input.files;
+            
+            // Show file count
+            const fileCountDiv = document.getElementById('fileCount');
+            const fileCountNumber = document.getElementById('fileCountNumber');
+            if (fileCountDiv && fileCountNumber && files.length > 0) {
+                fileCountNumber.textContent = files.length;
+                fileCountDiv.style.display = 'block';
+            }
+            
             if (!files || files.length === 0) return;
             const autoFillSection = document.getElementById('autoFillSection');
             const autoFillProgressBar = document.getElementById('autoFillProgressBar');
