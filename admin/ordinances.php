@@ -455,33 +455,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = $_POST['status'];
         $content = trim($_POST['content']);
         $reference_number = generateReferenceNumber($conn, $ordinance_date);
-        // Handle file upload to MinIO
+        // Handle multiple file uploads to MinIO
         $image_path = null;
-        if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
-            // Check if the file is a valid ordinance document
-            if (!isValidOrdinanceDocument($_FILES['image_file'])) {
-                $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
-                header("Location: ordinances.php");
-                exit();
-            }
-            
-            $fileName = basename($_FILES['image_file']['name']);
-            $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-            $uniqueFileName = uniqid() . '_' . time() . '.' . $fileExt;
-            $objectName = 'ordinances/' . date('Y/m/') . $uniqueFileName;
-            
-            // Upload to MinIO
+        if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
             $minioClient = new MinioS3Client();
-            $contentType = MinioS3Client::getMimeType($fileName);
-            $uploadResult = $minioClient->uploadFile($_FILES['image_file']['tmp_name'], $objectName, $contentType);
+            $image_paths = [];
             
-            if ($uploadResult['success']) {
-                $image_path = $uploadResult['url']; // Store MinIO URL
-                logDocumentUpload('ordinance', $fileName, $uniqueFileName);
-            } else {
-                $_SESSION['error'] = "Failed to upload file to storage: " . $uploadResult['error'];
-                header("Location: ordinances.php");
-                exit();
+            foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
+                if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
+                    continue;
+                }
+                if (!isValidOrdinanceDocument(['type' => $_FILES['image_file']['type'][$key]])) {
+                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
+                    header("Location: ordinances.php");
+                    exit();
+                }
+                
+                $fileName = basename($_FILES['image_file']['name'][$key]);
+                $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
+                $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
+                $objectName = 'ordinances/' . date('Y/m/') . $uniqueFileName;
+                
+                // Upload to MinIO
+                $contentType = MinioS3Client::getMimeType($fileName);
+                $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
+                
+                if ($uploadResult['success']) {
+                    $image_paths[] = $uploadResult['url'];
+                    logDocumentUpload('ordinance', $fileName, $uniqueFileName);
+                } else {
+                    $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
+                    header("Location: ordinances.php");
+                    exit();
+                }
+            }
+            if (!empty($image_paths)) {
+                $image_path = implode('|', $image_paths);
             }
         }
         // Set description as title or content preview if not provided
@@ -515,33 +524,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = $_POST['status'];
         $content = trim($_POST['content']);
         $existing_image_path = $_POST['existing_image_path'];
-        // Handle file upload for edit to MinIO
+        // Handle multiple file uploads for update to MinIO
         $image_path = $existing_image_path;
-        if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
-            // Check if the file is a valid ordinance document
-            if (!isValidOrdinanceDocument($_FILES['image_file'])) {
-                $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
-                header("Location: ordinances.php");
-                exit();
-            }
-            
-            $fileName = basename($_FILES['image_file']['name']);
-            $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-            $uniqueFileName = uniqid() . '_' . time() . '.' . $fileExt;
-            $objectName = 'ordinances/' . date('Y/m/') . $uniqueFileName;
-            
-            // Upload to MinIO
+        if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
             $minioClient = new MinioS3Client();
-            $contentType = MinioS3Client::getMimeType($fileName);
-            $uploadResult = $minioClient->uploadFile($_FILES['image_file']['tmp_name'], $objectName, $contentType);
+            $image_paths = [];
             
-            if ($uploadResult['success']) {
-                $image_path = $uploadResult['url']; // Store MinIO URL
-                logDocumentUpload('ordinance', $fileName, $uniqueFileName);
-            } else {
-                $_SESSION['error'] = "Failed to upload file to storage: " . $uploadResult['error'];
-                header("Location: ordinances.php");
-                exit();
+            foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
+                if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
+                    continue;
+                }
+                if (!isValidOrdinanceDocument(['type' => $_FILES['image_file']['type'][$key]])) {
+                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
+                    header("Location: ordinances.php");
+                    exit();
+                }
+                
+                $fileName = basename($_FILES['image_file']['name'][$key]);
+                $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
+                $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
+                $objectName = 'ordinances/' . date('Y/m/') . $uniqueFileName;
+                
+                // Upload to MinIO
+                $contentType = MinioS3Client::getMimeType($fileName);
+                $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
+                
+                if ($uploadResult['success']) {
+                    $image_paths[] = $uploadResult['url'];
+                    logDocumentUpload('ordinance', $fileName, $uniqueFileName);
+                } else {
+                    $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
+                    header("Location: ordinances.php");
+                    exit();
+                }
+            }
+            if (!empty($image_paths)) {
+                $image_path = implode('|', $image_paths);
             }
         }
         
@@ -1763,8 +1781,8 @@ $count_stmt->close();
                         <div class="mb-3">
                             <label class="form-label">Image File (JPG, PNG, PDF)</label>
                             <div class="file-upload">
-                                <input type="file" class="form-control" id="image_file" name="image_file" accept=".jpg,.jpeg,.png,.pdf" onchange="processFileWithAutoFill(this)">
-                                <small class="text-muted">Max file size: 5MB. The system will automatically detect and fill fields from the document.</small>
+                                <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png,.pdf" multiple onchange="processFilesWithAutoFill(this)">
+                                <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
                             </div>
                             <div id="ocrProcessing" class="mt-2" style="display: none;">
                                 <div class="d-flex align-items-center">
@@ -1831,8 +1849,8 @@ $count_stmt->close();
                         <div class="mb-3">
                             <label class="form-label">Image File (JPG, PNG, PDF)</label>
                             <div class="file-upload">
-                                <input type="file" class="form-control" id="editImageFile" name="image_file" accept=".jpg,.jpeg,.png,.pdf" onchange="processFile(this, 'edit')">
-                                <small class="text-muted">Max file size: 5MB</small>
+                                <input type="file" class="form-control" id="editImageFile" name="image_file[]" accept=".jpg,.jpeg,.png,.pdf" multiple onchange="processFiles(this, 'edit')">
+                                <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2).</small>
                             </div>
                             <div id="currentImageInfo" class="current-file"></div>
                             <div id="editOcrProcessing" class="mt-2" style="display: none;">
@@ -2481,6 +2499,163 @@ $count_stmt->close();
                 console.error('Error auto-saving OCR content:', error);
             });
         }
+        
+        // NEW FUNCTION: Process multiple files with auto-fill feature
+        async function processFilesWithAutoFill(input) {
+            const files = input.files;
+            if (!files || files.length === 0) return;
+            const autoFillSection = document.getElementById('autoFillSection');
+            const autoFillProgressBar = document.getElementById('autoFillProgressBar');
+            const autoFillResults = document.getElementById('autoFillResults');
+            const processingElement = document.getElementById('ocrProcessing');
+            autoFillSection.style.display = 'block';
+            processingElement.style.display = 'block';
+            autoFillProgressBar.style.width = '0%';
+            autoFillResults.innerHTML = '';
+            processingElement.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                    <span>Uploading and analyzing ${files.length} document(s)...</span>
+                </div>
+            `;
+            try {
+                let combinedText = '';
+                let processedFiles = 0;
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const fileExtension = file.name.split('.').pop().toLowerCase();
+                    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'tif'];
+                    if (imageExtensions.includes(fileExtension)) {
+                        processingElement.innerHTML = `
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                <div>
+                                    <div>Performing OCR on file ${i + 1} of ${files.length}...</div>
+                                    <small class="text-muted" id="fileOcrProgress">Initializing...</small>
+                                </div>
+                            </div>
+                        `;
+                        const { data: { text } } = await Tesseract.recognize(
+                            URL.createObjectURL(file),
+                            'eng',
+                            {
+                                logger: progress => {
+                                    const progressElement = document.getElementById('fileOcrProgress');
+                                    if (progressElement) {
+                                        if (progress.status === 'recognizing text') {
+                                            const percent = Math.round(progress.progress * 100);
+                                            progressElement.textContent = `Processing: ${percent}%`;
+                                            autoFillProgressBar.style.width = `${50 + (percent * 0.4)}%`;
+                                        } else {
+                                            progressElement.textContent = `Status: ${progress.status}`;
+                                        }
+                                    }
+                                }
+                            }
+                        );
+                        if (text && text.trim().length > 0) {
+                            combinedText += cleanOcrText(text) + '\n\n---\n\n';
+                        }
+                    } else if (fileExtension === 'pdf' || fileExtension === 'docx' || fileExtension === 'doc') {
+                        // Use server-side extraction for PDF and DOCX files
+                        processingElement.innerHTML = `
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                <div>
+                                    <div>Extracting text from ${fileExtension.toUpperCase()} file ${i + 1} of ${files.length}...</div>
+                                    <small class="text-muted">Using server-side extraction</small>
+                                </div>
+                            </div>
+                        `;
+                        
+                        try {
+                            // Upload file and extract text using server-side PHP
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            formData.append('extract_text', '1');
+                            formData.append('use_ocr', '1');
+                            formData.append('force_upload', '1');
+                            
+                            const response = await fetch('../upload_handler.php?action=upload', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (result.success && result.extraction && result.extraction.success) {
+                                const extractedText = result.extraction.text;
+                                if (extractedText && extractedText.trim().length > 0) {
+                                    combinedText += cleanOcrText(extractedText) + '\n\n---\n\n';
+                                    processingElement.innerHTML = `
+                                        <div class="alert alert-success">
+                                            <i class="fas fa-check-circle me-2"></i>
+                                            Successfully extracted ${result.extraction.word_count} words from ${file.name}
+                                        </div>
+                                    `;
+                                } else {
+                                    processingElement.innerHTML = `
+                                        <div class="alert alert-warning">
+                                            <i class="fas fa-exclamation-triangle me-2"></i>
+                                            No text found in ${file.name}. File might be empty or encrypted.
+                                        </div>
+                                    `;
+                                }
+                            } else {
+                                const errorMsg = result.extraction ? result.extraction.message : result.message;
+                                processingElement.innerHTML = `
+                                    <div class="alert alert-warning">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        Could not extract text from ${file.name}: ${errorMsg}
+                                        <br><small>Please fill the form manually.</small>
+                                    </div>
+                                `;
+                            }
+                        } catch (error) {
+                            console.error('Server extraction error:', error);
+                            processingElement.innerHTML = `
+                                <div class="alert alert-danger">
+                                    <i class="fas fa-exclamation-circle me-2"></i>
+                                    Error extracting text from ${file.name}: ${error.message}
+                                </div>
+                            `;
+                        }
+                    } else {
+                        processingElement.innerHTML = `
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                File uploaded: ${file.name}. Please fill the form manually.
+                            </div>
+                        `;
+                    }
+                    processedFiles++;
+                    autoFillProgressBar.style.width = `${(processedFiles / files.length) * 100}%`;
+                }
+                if (combinedText.trim().length > 0) {
+                    const detectedFields = analyzeDocumentContent(combinedText);
+                    updateFormWithDetectedData(detectedFields);
+                    showAutoFillResults(detectedFields);
+                } else {
+                    processingElement.innerHTML = `
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            No text could be extracted from the files. Please fill the form manually.
+                        </div>
+                    `;
+                }
+                autoFillProgressBar.style.width = '100%';
+            } catch (error) {
+                console.error('Error:', error);
+                processingElement.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        Error processing files: ${error.message}
+                    </div>
+                `;
+                autoFillProgressBar.style.width = '100%';
+            }
+        }
+        
         // NEW FUNCTION: Process file with auto-fill feature
         async function processFileWithAutoFill(input) {
             const file = input.files[0];
@@ -2846,153 +3021,144 @@ $count_stmt->close();
             }
             return null;
         }
-        // Function to process uploaded file with OCR (original function - kept for edit form)
-        async function processFile(input, formType = 'add') {
-            const file = input.files[0];
-            if (!file) return;
+        // Function to process multiple uploaded files with OCR (for edit form)
+        async function processFiles(input, formType = 'edit') {
+            const files = input.files;
+            if (!files || files.length === 0) return;
             const processingId = formType === 'add' ? 'ocrProcessing' : 'editOcrProcessing';
             const processingElement = document.getElementById(processingId);
             processingElement.style.display = 'block';
             processingElement.innerHTML = `
                 <div class="d-flex align-items-center">
                     <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                    <span>Uploading and processing file...</span>
+                    <span>Uploading and processing ${files.length} file(s)...</span>
                 </div>
             `;
             try {
-                // First upload the file
-                const formData = new FormData();
-                formData.append('file', file);
-                const uploadResponse = await fetch('process_ocr.php', {
-                    method: 'POST',
-                    body: formData
-                });
-                const uploadResult = await uploadResponse.json();
-                if (!uploadResult.success) {
-                    throw new Error(uploadResult.error || 'Failed to upload file');
-                }
-                // Now process with OCR if it's an image
-                const fileExtension = file.name.split('.').pop().toLowerCase();
-                const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'tif'];
-                if (imageExtensions.includes(fileExtension)) {
-                    processingElement.innerHTML = `
-                        <div class="d-flex align-items-center">
-                            <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                            <div>
-                                <div>Performing OCR on uploaded image...</div>
-                                <small class="text-muted" id="fileOcrProgress">Initializing...</small>
+                let combinedText = '';
+                let processedFiles = 0;
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const fileExtension = file.name.split('.').pop().toLowerCase();
+                    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'tif'];
+                    if (imageExtensions.includes(fileExtension)) {
+                        processingElement.innerHTML = `
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                <div>
+                                    <div>Performing OCR on file ${i + 1} of ${files.length}...</div>
+                                    <small class="text-muted" id="fileOcrProgress">Initializing...</small>
+                                </div>
                             </div>
-                        </div>
-                    `;
-                    // Use Tesseract.js for OCR on the uploaded file
-                    const { data: { text, confidence } } = await Tesseract.recognize(
-                        URL.createObjectURL(file),
-                        'eng',
-                        {
-                            logger: progress => {
-                                const progressElement = document.getElementById('fileOcrProgress');
-                                if (progressElement) {
-                                    if (progress.status === 'recognizing text') {
-                                        const percent = Math.round(progress.progress * 100);
-                                        progressElement.textContent = `Processing: ${percent}%`;
-                                    } else {
-                                        progressElement.textContent = `Status: ${progress.status}`;
+                        `;
+                        const { data: { text } } = await Tesseract.recognize(
+                            URL.createObjectURL(file),
+                            'eng',
+                            {
+                                logger: progress => {
+                                    const progressElement = document.getElementById('fileOcrProgress');
+                                    if (progressElement) {
+                                        if (progress.status === 'recognizing text') {
+                                            const percent = Math.round(progress.progress * 100);
+                                            progressElement.textContent = `Processing: ${percent}%`;
+                                        } else {
+                                            progressElement.textContent = `Status: ${progress.status}`;
+                                        }
                                     }
                                 }
                             }
+                        );
+                        if (text && text.trim().length > 0) {
+                            combinedText += cleanOcrText(text) + '\n\n---\n\n';
                         }
-                    );
-                    if (text && text.trim().length > 0) {
-                        const cleanedText = cleanOcrText(text);
-                        autoFillFormFields(cleanedText, formType);
-                        // Show success message with confidence
+                    } else if (fileExtension === 'pdf' || fileExtension === 'docx' || fileExtension === 'doc') {
+                        // Use server-side extraction for PDF and DOCX files
                         processingElement.innerHTML = `
-                            <div class="alert alert-success">
-                                <i class="fas fa-check-circle me-2"></i>
-                                OCR completed successfully! Confidence: ${Math.round(confidence * 100)}%
-                                <br><small>Text has been extracted and form fields auto-filled.</small>
-                        </div>
-                        `;
-                    } else {
-                        processingElement.innerHTML = `
-                            <div class="alert alert-warning">
-                                <i class="fas fa-exclamation-triangle me-2"></i>
-                                No text could be extracted from the image. Please fill the form manually.
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                <div>
+                                    <div>Extracting text from ${fileExtension.toUpperCase()} file ${i + 1} of ${files.length}...</div>
+                                    <small class="text-muted">Using server-side extraction</small>
+                                </div>
                             </div>
                         `;
-                    }
-                } else if (fileExtension === 'pdf' || fileExtension === 'docx' || fileExtension === 'doc') {
-                    // Use server-side extraction for PDF and DOCX files
-                    processingElement.innerHTML = `
-                        <div class="d-flex align-items-center">
-                            <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                            <div>
-                                <div>Extracting text from ${fileExtension.toUpperCase()} file...</div>
-                                <small class="text-muted">Using server-side extraction</small>
-                            </div>
-                        </div>
-                    `;
-                    
-                    try {
-                        // Upload file and extract text using server-side PHP
-                        const extractFormData = new FormData();
-                        extractFormData.append('file', file);
-                        extractFormData.append('extract_text', '1');
-                        extractFormData.append('use_ocr', '1');
-                        extractFormData.append('force_upload', '1');
                         
-                        const response = await fetch('../upload_handler.php?action=upload', {
-                            method: 'POST',
-                            body: extractFormData
-                        });
-                        
-                        const result = await response.json();
-                        
-                        if (result.success && result.extraction && result.extraction.success) {
-                            const extractedText = result.extraction.text;
-                            if (extractedText && extractedText.trim().length > 0) {
-                                const cleanedText = cleanOcrText(extractedText);
-                                autoFillFormFields(cleanedText, formType);
-                                // Show success message
-                                processingElement.innerHTML = `
-                                    <div class="alert alert-success">
-                                        <i class="fas fa-check-circle me-2"></i>
-                                        Successfully extracted ${result.extraction.word_count} words from ${file.name}
-                                        <br><small>Form fields have been auto-filled.</small>
-                                    </div>
-                                `;
+                        try {
+                            // Upload file and extract text using server-side PHP
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            formData.append('extract_text', '1');
+                            formData.append('use_ocr', '1');
+                            formData.append('force_upload', '1');
+                            
+                            const response = await fetch('../upload_handler.php?action=upload', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (result.success && result.extraction && result.extraction.success) {
+                                const extractedText = result.extraction.text;
+                                if (extractedText && extractedText.trim().length > 0) {
+                                    combinedText += cleanOcrText(extractedText) + '\n\n---\n\n';
+                                    processingElement.innerHTML = `
+                                        <div class="alert alert-success">
+                                            <i class="fas fa-check-circle me-2"></i>
+                                            Successfully extracted ${result.extraction.word_count} words from ${file.name}
+                                        </div>
+                                    `;
+                                } else {
+                                    processingElement.innerHTML = `
+                                        <div class="alert alert-warning">
+                                            <i class="fas fa-exclamation-triangle me-2"></i>
+                                            No text found in ${file.name}. File might be empty or encrypted.
+                                        </div>
+                                    `;
+                                }
                             } else {
+                                const errorMsg = result.extraction ? result.extraction.message : result.message;
                                 processingElement.innerHTML = `
                                     <div class="alert alert-warning">
                                         <i class="fas fa-exclamation-triangle me-2"></i>
-                                        No text found in ${file.name}. File might be empty or encrypted.
+                                        Could not extract text from ${file.name}: ${errorMsg}
+                                        <br><small>Please fill the form manually.</small>
                                     </div>
                                 `;
                             }
-                        } else {
-                            const errorMsg = result.extraction ? result.extraction.message : result.message;
+                        } catch (error) {
+                            console.error('Server extraction error:', error);
                             processingElement.innerHTML = `
-                                <div class="alert alert-warning">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>
-                                    Could not extract text from ${file.name}: ${errorMsg}
-                                    <br><small>Please fill the form manually.</small>
+                                <div class="alert alert-danger">
+                                    <i class="fas fa-exclamation-circle me-2"></i>
+                                    Error extracting text from ${file.name}: ${error.message}
                                 </div>
                             `;
                         }
-                    } catch (error) {
-                        console.error('Server extraction error:', error);
+                    } else {
                         processingElement.innerHTML = `
-                            <div class="alert alert-danger">
-                                <i class="fas fa-exclamation-circle me-2"></i>
-                                Error extracting text from ${file.name}: ${error.message}
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                File uploaded: ${file.name}. Please fill the form manually.
                             </div>
                         `;
                     }
+                    processedFiles++;
+                }
+                if (combinedText.trim().length > 0) {
+                    autoFillFormFields(combinedText, formType);
+                    processingElement.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            OCR completed successfully!
+                            <br><small>Text has been extracted and form fields auto-filled.</small>
+                        </div>
+                    `;
                 } else {
                     processingElement.innerHTML = `
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>
-                            File uploaded successfully. Please fill the form manually.
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            No text could be extracted from the files. Please fill the form manually.
                         </div>
                     `;
                 }
@@ -3001,7 +3167,7 @@ $count_stmt->close();
                 processingElement.innerHTML = `
                     <div class="alert alert-danger">
                         <i class="fas fa-exclamation-circle me-2"></i>
-                        Error processing file: ${error.message}
+                        Error processing files: ${error.message}
                     </div>
                 `;
             }
