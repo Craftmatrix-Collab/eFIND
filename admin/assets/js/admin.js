@@ -26,10 +26,12 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
     
-    // Prevent dropdown from closing when clicking inside
+    // Prevent dropdown from closing when clicking inside (except on links)
     document.querySelectorAll('.dropdown-menu').forEach(function(element) {
         element.addEventListener('click', function(e) {
-            e.stopPropagation();
+            if (e.target.tagName !== 'A' && !e.target.closest('a')) {
+                e.stopPropagation();
+            }
         });
     });
     
