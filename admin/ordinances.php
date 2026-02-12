@@ -3236,6 +3236,34 @@ $count_stmt->close();
                 }
             }
         }
+
+        // Reset form when modal is closed or cancelled
+        document.getElementById('addOrdinanceModal').addEventListener('hide.bs.modal', function () {
+            const form = document.getElementById('addOrdinanceForm');
+            if (form) {
+                form.reset();
+                // Clear file input specifically
+                const fileInput = document.getElementById('image_file');
+                if (fileInput) {
+                    fileInput.value = '';
+                }
+                // Hide OCR processing indicator if visible
+                const ocrProcessing = document.getElementById('ocrProcessing');
+                if (ocrProcessing) {
+                    ocrProcessing.style.display = 'none';
+                }
+                // Hide file count badge if visible
+                const fileCount = document.getElementById('fileCount');
+                if (fileCount) {
+                    fileCount.style.display = 'none';
+                }
+                // Hide auto-fill section if visible
+                const autoFillSection = document.getElementById('autoFillSection');
+                if (autoFillSection) {
+                    autoFillSection.style.display = 'none';
+                }
+            }
+        });
     </script>
     <footer class="bg-white p-3">
         <?php include(__DIR__ . '/includes/footer.php'); ?>
