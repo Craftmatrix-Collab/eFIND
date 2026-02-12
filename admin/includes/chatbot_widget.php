@@ -502,8 +502,16 @@ async function sendMessage() {
     sendBtn.disabled = true;
     
     try {
+        // Determine the correct API path based on current location
+        const currentPath = window.location.pathname;
+        const apiPath = currentPath.includes('/admin/') 
+            ? 'api.php/chat' 
+            : '/admin/api.php/chat';
+        
+        console.log('Sending message to:', apiPath);
+        
         // Send to API
-        const response = await fetch('/admin/api.php/chat', {
+        const response = await fetch(apiPath, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -520,7 +528,14 @@ async function sendMessage() {
             })
         });
         
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
+        console.log('Response data:', data);
         
         // Remove typing indicator
         hideTypingIndicator();
@@ -534,13 +549,15 @@ async function sendMessage() {
                 addSourcesToChat(data.sources);
             }
         } else if (data.error) {
-            addMessageToChat('Sorry, I encountered an error. Please try again.', 'bot');
+            addMessageToChat('Sorry, I encountered an error: ' + data.error, 'bot');
+        } else {
+            addMessageToChat('Sorry, I received an unexpected response format.', 'bot');
         }
         
     } catch (error) {
-        console.error('Chatbot error:', error);
+        console.error('Chatbot error details:', error);
         hideTypingIndicator();
-        addMessageToChat('Sorry, I\'m having trouble connecting. Please try again later.', 'bot');
+        addMessageToChat('Sorry, I\'m having trouble connecting. Please check the console for details. Error: ' + error.message, 'bot');
     } finally {
         isProcessing = false;
         sendBtn.disabled = false;
