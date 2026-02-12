@@ -1,14 +1,23 @@
 <?php
-// Error logging setup
+// Prevent any output before headers
+ob_start();
+
+// Error logging setup - don't display errors
 error_reporting(E_ALL);
+ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/chatbot_errors.log');
 
+// Log the incoming request immediately for debugging
+$debugLog = __DIR__ . '/logs/chatbot_debug.log';
+@file_put_contents($debugLog, date('[Y-m-d H:i:s] ') . "API Called: " . $_SERVER['REQUEST_METHOD'] . " " . ($_SERVER['REQUEST_URI'] ?? 'no-uri') . "\n", FILE_APPEND);
+
 // Start session for user tracking
 if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+    @session_start();
 }
 
+// Send headers
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
@@ -351,13 +360,40 @@ class BarangayChatbotAPI {
     }
     
     private function jsonResponse($data, $statusCode = 200) {
+        // Clear any output buffers
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
         http_response_code($statusCode);
+        header('Content-Type: application/json');
         echo json_encode($data);
         exit;
     }
 }
 
-// Initialize and handle request
-$api = new BarangayChatbotAPI($N8N_WEBHOOK_URL, $conn ?? null);
-$api->handleRequest();
+// Initialize and handle request with error catching
+try {
+    $api = new BarangayChatbotAPI($N8N_WEBHOOK_URL, $conn ?? null);
+    $api->handleRequest();
+} catch (Throwable $e) {
+    // Clear any output buffers
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    // Log the error
+    error_log("Chatbot API Fatal Error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+    
+    // Return proper JSON error response
+    http_response_code(200); // Use 200 to prevent browser from showing generic error
+    header('Content-Type: application/json');
+    echo json_encode([
+        'output' => 'I apologize, but I encountered a technical issue. Please try again in a moment.',
+        'error' => $e->getMessage(),
+        'status' => 'error',
+        'timestamp' => date('c')
+    ]);
+    exit;
+}
 ?>

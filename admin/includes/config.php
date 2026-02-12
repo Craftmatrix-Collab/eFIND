@@ -88,7 +88,7 @@ define('APP_VERSION', '1.0');
 define('CHATBOT_ENABLED', true);
 
 // Error Reporting
-error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
+error_reporting(E_ALL & ~E_DEPRECATED);
 ini_set('display_errors', 0); // Disable display errors in production
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/../../logs/php_errors.log');

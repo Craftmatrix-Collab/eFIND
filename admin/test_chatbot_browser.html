@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            background: #f5f5f5;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        button {
+            background: #4361ee;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #3a0ca3;
+        }
+        .result {
+            background: white;
+            padding: 15px;
+            margin-top: 10px;
+            border-left: 4px solid #4361ee;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .error {
+            border-left-color: #dc3545;
+            color: #dc3545;
+        }
+        .success {
+            border-left-color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chatbot API Test Page</h1>
+    <p>This page tests the chatbot API exactly as the widget would call it.</p>
+    
+    <div class="test-section">
+        <h2>Test 1: Simple Fetch</h2>
+        <p>Current page path: <code id="currentPath"></code></p>
+        <p>API path that will be used: <code id="apiPath"></code></p>
+        <button onclick="testSimpleFetch()">Test API Call</button>
+        <div id="result1" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: With User Message</h2>
+        <input type="text" id="messageInput" placeholder="Type a message..." style="width: 300px; padding: 8px;">
+        <button onclick="testWithMessage()">Send Message</button>
+        <div id="result2" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Check Logs</h2>
+        <button onclick="viewLogs()">View Debug Logs</button>
+        <div id="result3" class="result" style="display:none;"></div>
+    </div>
+    
+    <script>
+        // Show current path info
+        document.getElementById('currentPath').textContent = window.location.pathname;
+        const currentPath = window.location.pathname;
+        const apiPath = currentPath.includes('/admin/') ? 'api.php/chat' : '/admin/api.php/chat';
+        document.getElementById('apiPath').textContent = apiPath;
+        
+        async function testSimpleFetch() {
+            const resultDiv = document.getElementById('result1');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Testing...';
+            
+            try {
+                console.log('Calling API at:', apiPath);
+                
+                const response = await fetch(apiPath, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: 'test connection',
+                        sessionId: 'test_' + Date.now(),
+                        userId: 'test_user',
+                        timestamp: new Date().toISOString()
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+                
+                if (!response.ok) {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `HTTP Error ${response.status}: ${response.statusText}\n\nCheck browser console for details.`;
+                    return;
+                }
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                resultDiv.className = 'result success';
+                resultDiv.textContent = 'SUCCESS!\n\n' + JSON.stringify(data, null, 2);
+                
+            } catch (error) {
+                console.error('Fetch error:', error);
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'ERROR: ' + error.message + '\n\nCheck browser console for full details.';
+            }
+        }
+        
+        async function testWithMessage() {
+            const message = document.getElementById('messageInput').value || 'Hello chatbot';
+            const resultDiv = document.getElementById('result2');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Sending: ' + message + '\n\nWaiting for response...';
+            
+            try {
+                const response = await fetch(apiPath, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        sessionId: 'test_session_' + Date.now(),
+                        userId: 'guest',
+                        context: {
+                            page: 'test',
+                            categories: ['ordinances', 'resolutions', 'minutes']
+                        },
+                        timestamp: new Date().toISOString()
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `HTTP Error ${response.status}: ${response.statusText}`;
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                resultDiv.className = 'result success';
+                resultDiv.textContent = 'Bot says:\n' + data.output + '\n\nFull response:\n' + JSON.stringify(data, null, 2);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'ERROR: ' + error.message;
+            }
+        }
+        
+        async function viewLogs() {
+            const resultDiv = document.getElementById('result3');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Logs are stored server-side.\n\nCheck:\n- logs/chatbot_debug.log\n- logs/chatbot_activity.log\n- logs/chatbot_errors.log\n\nUse browser Developer Tools > Console to see JavaScript logs.\nUse Network tab to see HTTP request/response details.';
+        }
+    </script>
+</body>
+</html>
