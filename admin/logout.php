@@ -27,14 +27,18 @@ if (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])) {
 session_unset();
 session_destroy();
 
-// Clear session cookie
+// Clear session cookie - Compatible with PHP 7.3+
 if (isset($_COOKIE[session_name()])) {
-    setcookie(session_name(), '', [
-        'expires' => time() - 3600,
-        'path' => '/',
-        'httponly' => true,
-        'samesite' => 'Strict'
-    ]);
+    $cookieParams = session_get_cookie_params();
+    setcookie(
+        session_name(),
+        '',
+        time() - 3600,
+        $cookieParams['path'],
+        $cookieParams['domain'],
+        $cookieParams['secure'],
+        true // httponly
+    );
 }
 
 // Redirect to login page
