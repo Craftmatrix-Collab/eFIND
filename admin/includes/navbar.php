@@ -51,7 +51,8 @@
                         $_SESSION['logout_token'] = bin2hex(random_bytes(32));
                     }
                     ?>
-                    <li><a class="dropdown-item text-danger" href="logout.php?token=<?php echo htmlspecialchars($_SESSION['logout_token']); ?>" aria-label="Logout from your account"><i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout</a></li>
+                    <!-- TEMPORARY: Using minimal logout for debugging HTTP 500 -->
+                    <li><a class="dropdown-item text-danger" href="logout_minimal.php" aria-label="Logout from your account"><i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout</a></li>
                 </ul>
             </li>
         </ul>
