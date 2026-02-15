@@ -384,7 +384,13 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     $minute = $result->fetch_assoc();
     $stmt->close();
     if ($minute) {
-        logDocumentDelete('minute', $minute['title'], $id);
+        if (function_exists('logDocumentDelete')) {
+            try {
+                logDocumentDelete('minute', $minute['title'], $id);
+            } catch (Exception $e) {
+                error_log("Logger error: " . $e->getMessage());
+            }
+        }
     }
     $stmt = $conn->prepare("DELETE FROM minutes_of_meeting WHERE id = ?");
     $stmt->bind_param("i", $id);
@@ -517,7 +523,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("UPDATE minutes_of_meeting SET title = ?, session_number = ?, date_posted = ?, meeting_date = ?, content = ?, image_path = ? WHERE id = ?");
         $stmt->bind_param("ssssssi", $title, $session_number, $date_posted, $meeting_date, $content, $image_path, $id);
         if ($stmt->execute()) {
-            logDocumentUpdate('minute', $title, $id, "Minute updated: $title");
+            if (function_exists('logDocumentUpdate')) {
+                try {
+                    logDocumentUpdate('minute', $title, $id, "Minute updated: $title");
+                } catch (Exception $e) {
+                    error_log("Logger error: " . $e->getMessage());
+                }
+            }
             $_SESSION['success'] = "Minute updated successfully!";
         } else {
             $_SESSION['error'] = "Failed to update minute: " . $conn->error;

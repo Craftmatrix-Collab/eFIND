@@ -424,7 +424,13 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     $stmt->close();
 
     if ($ordinance) {
-        logDocumentDelete('ordinance', $ordinance['title'], $id);
+        if (function_exists('logDocumentDelete')) {
+            try {
+                logDocumentDelete('ordinance', $ordinance['title'], $id);
+            } catch (Exception $e) {
+                error_log("Logger error: " . $e->getMessage());
+            }
+        }
     }
 
     $stmt = $conn->prepare("DELETE FROM ordinances WHERE id = ?");
@@ -571,7 +577,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("UPDATE ordinances SET title = ?, description = ?, ordinance_number = ?, date_posted = ?, ordinance_date = ?, status = ?, content = ?, image_path = ? WHERE id = ?");
         $stmt->bind_param("ssssssssi", $title, $description, $ordinance_number, $date_posted, $ordinance_date, $status, $content, $image_path, $id);
         if ($stmt->execute()) {
-            logDocumentUpdate('ordinance', $title, $id, "Ordinance updated: $title");
+            if (function_exists('logDocumentUpdate')) {
+                try {
+                    logDocumentUpdate('ordinance', $title, $id, "Ordinance updated: $title");
+                } catch (Exception $e) {
+                    error_log("Logger error: " . $e->getMessage());
+                }
+            }
             $_SESSION['success'] = "Ordinance updated successfully!";
         } else {
             $_SESSION['error'] = "Failed to update ordinance: " . $conn->error;

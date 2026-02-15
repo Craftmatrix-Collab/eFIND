@@ -391,7 +391,13 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     $resolution = $result->fetch_assoc();
     $stmt->close();
     if ($resolution) {
-        logDocumentDelete('resolution', $resolution['title'], $id);
+        if (function_exists('logDocumentDelete')) {
+            try {
+                logDocumentDelete('resolution', $resolution['title'], $id);
+            } catch (Exception $e) {
+                error_log("Logger error: " . $e->getMessage());
+            }
+        }
     }
     $stmt = $conn->prepare("DELETE FROM resolutions WHERE id = ?");
     $stmt->bind_param("i", $id);
@@ -531,7 +537,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("UPDATE resolutions SET title = ?, description = ?, resolution_number = ?, date_posted = ?, resolution_date = ?, content = ?, image_path = ? WHERE id = ?");
         $stmt->bind_param("sssssssi", $title, $description, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $id);
         if ($stmt->execute()) {
-            logDocumentUpdate('resolution', $title, $id, "Resolution updated: $title");
+            if (function_exists('logDocumentUpdate')) {
+                try {
+                    logDocumentUpdate('resolution', $title, $id, "Resolution updated: $title");
+                } catch (Exception $e) {
+                    error_log("Logger error: " . $e->getMessage());
+                }
+            }
             $_SESSION['success'] = "Resolution updated successfully!";
         } else {
             $_SESSION['error'] = "Failed to update resolution: " . $conn->error;
