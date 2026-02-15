@@ -45,7 +45,13 @@
                     <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true): ?>
                     <?php endif; ?>
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item text-danger" href="logout.php"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                    <?php
+                    // Generate logout CSRF token if not exists
+                    if (!isset($_SESSION['logout_token'])) {
+                        $_SESSION['logout_token'] = bin2hex(random_bytes(32));
+                    }
+                    ?>
+                    <li><a class="dropdown-item text-danger" href="logout.php?token=<?php echo htmlspecialchars($_SESSION['logout_token']); ?>" aria-label="Logout from your account"><i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout</a></li>
                 </ul>
             </li>
         </ul>

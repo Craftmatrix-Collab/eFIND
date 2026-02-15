@@ -1,7 +1,13 @@
 <?php
 session_start();
 require_once 'includes/config.php';
-require_once 'includes/logger.php'; // Use your existing logger
+require_once 'includes/logger.php';
+
+// CSRF Protection: Validate logout token
+if (!isset($_GET['token']) || !isset($_SESSION['logout_token']) || 
+    $_GET['token'] !== $_SESSION['logout_token']) {
+    die('Invalid logout request. Please use the logout button.');
+}
 
 // Check if user is logged in and log logout activity
 if (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])) {
@@ -13,21 +19,23 @@ if (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])) {
     $user_name = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? 'Unknown User';
     $user_type = $is_admin ? 'admin' : ($_SESSION['role'] ?? 'user');
     
-    // Update last_login field
-    $table = $is_admin ? 'admin_users' : 'users';
-    $query = "UPDATE $table SET last_login = NOW() WHERE id = ?";
-    $stmt = $conn->prepare($query);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $stmt->close();
-    
-    // Log logout activity using your logger function
+    // Log logout activity
     logLogout($username);
 }
 
 // Destroy the session
 session_unset();
 session_destroy();
+
+// Clear session cookie
+if (isset($_COOKIE[session_name()])) {
+    setcookie(session_name(), '', [
+        'expires' => time() - 3600,
+        'path' => '/',
+        'httponly' => true,
+        'samesite' => 'Strict'
+    ]);
+}
 
 // Redirect to login page
 header("Location: login.php");
