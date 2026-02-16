@@ -59,6 +59,11 @@
     </div>
 </nav>
 
+<!-- Toast Container for Notifications -->
+<div class="position-fixed top-0 end-0 p-3" style="z-index: 11000;">
+    <div id="toastContainer"></div>
+</div>
+
 <!-- Profile View Modal -->
 <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -293,6 +298,30 @@
 }
 </style>
 <script>
+// Toast notification function
+function showToast(message, type = 'success') {
+    const bgColor = type === 'success' ? 'bg-success' : 'bg-danger';
+    const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+    const toast = $(`
+        <div class="toast align-items-center text-white ${bgColor} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas ${icon} me-2"></i>${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    `);
+    $('#toastContainer').append(toast);
+    const bsToast = new bootstrap.Toast(toast[0], { delay: 4000 });
+    bsToast.show();
+    
+    // Remove from DOM after hidden
+    toast.on('hidden.bs.toast', function() {
+        $(this).remove();
+    });
+}
+
 $(document).ready(function() {
     // Load profile content when profile modal is shown
     $('#profileModal').on('show.bs.modal', function () {
@@ -338,8 +367,15 @@ $(document).ready(function() {
 
     // Handle save button click
     $('#saveProfileChanges').on('click', function() {
+        const btn = $(this);
+        const originalText = btn.html();
+        
+        // Show loading state
+        btn.prop('disabled', true).html('<i class="spinner-border spinner-border-sm me-1"></i>Saving...');
+        
         // Get form data
         var formData = new FormData(document.getElementById('editProfileForm'));
+        
         // Submit via AJAX
         $.ajax({
             url: 'update_profile.php',
@@ -352,17 +388,43 @@ $(document).ready(function() {
                 if(response.success) {
                     // Close edit modal
                     $('#editProfileModal').modal('hide');
+                    
                     // Refresh profile view
                     $('#profileModalBody').load('admin_profile_content.php');
-                    // Show success message
-                    alert(response.message);
+                    
+                    // Update navbar if profile picture changed
+                    if (response.profile_picture) {
+                        const profileImg = $('.nav-link.dropdown-toggle img');
+                        if (profileImg.length) {
+                            profileImg.attr('src', 'uploads/profiles/' + response.profile_picture + '?t=' + Date.now());
+                        } else {
+                            // Replace icon with image
+                            $('.nav-link.dropdown-toggle i.fa-user-circle').replaceWith(
+                                '<img src="uploads/profiles/' + response.profile_picture + '?t=' + Date.now() + 
+                                '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">'
+                            );
+                        }
+                    }
+                    
+                    // Update navbar name if changed
+                    if (response.full_name) {
+                        $('.nav-link.dropdown-toggle .text-white').text(response.full_name);
+                    }
+                    
+                    // Show success toast
+                    showToast(response.message, 'success');
                 } else {
-                    // Show error message
-                    alert('Error: ' + response.message);
+                    // Show error toast
+                    showToast('Error: ' + response.message, 'error');
                 }
             },
             error: function(xhr, status, error) {
-                alert('Error saving changes: ' + error);
+                console.error('Save error:', xhr.responseText);
+                showToast('Error saving changes: ' + error, 'error');
+            },
+            complete: function() {
+                // Reset button state
+                btn.prop('disabled', false).html(originalText);
             }
         });
     });
@@ -387,7 +449,7 @@ $(document).ready(function() {
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
-                    $('#addStaffMessage').html('<div class="alert alert-success">' + response.message + '</div>');
+                    showToast(response.message, 'success');
                     $('#addStaffForm')[0].reset();
                     setTimeout(function() {
                         $('#add_staffModal').modal('hide');
@@ -403,6 +465,7 @@ $(document).ready(function() {
         });
     });
 });
+
 // Toggle password visibility
 document.querySelectorAll('.toggle-password').forEach(button => {
   button.addEventListener('click', function() {
@@ -417,52 +480,14 @@ document.querySelectorAll('.toggle-password').forEach(button => {
     }
   });
 });
-
-// Handle Add Staff Form Submission
-document.getElementById('addStaffForm').addEventListener('submit', function(e) {
-  e.preventDefault();
-  const formData = new FormData(this);
-  const messageDiv = document.getElementById('addStaffMessage');
-
-  // Simple validation
-  const fullName = formData.get('full_name');
-  const email = formData.get('email');
-  const username = formData.get('username');
-  const password = formData.get('password');
-  const role = formData.get('role');
-
-  if (!fullName || !email || !username || !password || !role) {
-    messageDiv.innerHTML = '<div class="alert alert-danger">All fields are required.</div>';
-    return;
-  }
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    messageDiv.innerHTML = '<div class="alert alert-danger">Invalid email format.</div>';
-    return;
-  }
-
-  messageDiv.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div> Adding staff...';
-
-  fetch('add_staff.php', {
-    method: 'POST',
-    body: formData
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      messageDiv.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
-      document.getElementById('addStaffForm').reset();
-      setTimeout(() => {
-        const modal = bootstrap.Modal.getInstance(document.getElementById('add_staffModal'));
-        modal.hide();
-        messageDiv.innerHTML = '';
-      }, 1500);
+    if (input.type === 'password') {
+      input.type = 'text';
+      icon.classList.replace('fa-eye', 'fa-eye-slash');
     } else {
-      messageDiv.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
-    }
-  })
-  .catch(error => {
-    messageDiv.innerHTML = `<div class="alert alert-danger">An error occurred: ${error.message}</div>`;
+  });
+});
+
+// Initialize Bootstrap tooltips and popovers
   });
 });
 

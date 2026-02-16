@@ -8,6 +8,12 @@ if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
          </div>');
 }
+
+// Generate CSRF token if not exists
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Include database connection
 include 'includes/config.php';
 
@@ -36,6 +42,7 @@ try {
 ?>
 <form id="editProfileForm" enctype="multipart/form-data">
     <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
+    <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
     <div class="row">
         <div class="col-lg-4">
             <div class="card mb-4">

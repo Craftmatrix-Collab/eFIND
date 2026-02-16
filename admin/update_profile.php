@@ -42,6 +42,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // CSRF token validation
+    if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || 
+        $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Invalid security token. Please refresh and try again.']);
+            exit;
+        }
+        $_SESSION['error'] = 'Invalid security token. Please refresh and try again.';
+        header("Location: edit_profile.php");
+        exit;
+    }
+
     // Validate and sanitize input
     $userId = intval($_SESSION['admin_id'] ?? $_SESSION['user_id']);
     $fullName = trim($_POST['full_name'] ?? '');
@@ -75,6 +88,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // Fetch current profile picture before upload
+    $oldPicturePath = null;
+    $oldPictureQuery = "SELECT profile_picture FROM $table WHERE id = ?";
+    if ($oldStmt = $conn->prepare($oldPictureQuery)) {
+        $oldStmt->bind_param("i", $userId);
+        $oldStmt->execute();
+        $oldResult = $oldStmt->get_result();
+        $oldData = $oldResult->fetch_assoc();
+        $oldPicturePath = $oldData['profile_picture'] ?? null;
+        $oldStmt->close();
+    }
+
     // Handle profile picture upload
     $profilePicture = null;
     if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
@@ -94,6 +119,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $uploadPath)) {
                 $profilePicture = $newFileName;
+                
+                // Delete old profile picture if it exists and is different
+                if (!empty($oldPicturePath) && $oldPicturePath !== $newFileName) {
+                    $oldFullPath = $uploadDir . $oldPicturePath;
+                    if (file_exists($oldFullPath)) {
+                        unlink($oldFullPath);
+                    }
+                }
             }
         }
     }
@@ -119,19 +152,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         logProfileUpdate($userId, $userName, $userRole, 'profile_update', $description, $conn);
 
         // Update session values so UI reflects changes immediately
-        if ($isAdmin) {
-            $_SESSION['admin_name'] = $fullName;
-            $_SESSION['admin_username'] = $username;
-        } else {
-            $_SESSION['full_name'] = $fullName;
-            $_SESSION['username'] = $username;
+        $_SESSION['full_name'] = $fullName;
+        $_SESSION['username'] = $username;
+        
+        // Update profile picture in session if a new one was uploaded
+        if ($profilePicture) {
+            $_SESSION['profile_picture'] = $profilePicture;
         }
 
         $stmt->close();
         
         if ($is_ajax) {
             header('Content-Type: application/json');
-            echo json_encode(['success' => true, 'message' => 'Profile updated successfully!']);
+            echo json_encode([
+                'success' => true, 
+                'message' => 'Profile updated successfully!',
+                'profile_picture' => $profilePicture,
+                'full_name' => $fullName
+            ]);
             exit;
         }
         

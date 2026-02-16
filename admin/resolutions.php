@@ -1,13 +1,23 @@
 <?php
+// Enable detailed error logging for debugging
+error_reporting(E_ALL);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
+
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 // Include configuration files
-include(__DIR__ . '/includes/auth.php');
-include(__DIR__ . '/includes/config.php');
-include(__DIR__ . '/includes/logger.php');
-include(__DIR__ . '/includes/minio_helper.php');
+try {
+    include(__DIR__ . '/includes/auth.php');
+    include(__DIR__ . '/includes/config.php');
+    include(__DIR__ . '/includes/logger.php');
+    include(__DIR__ . '/includes/minio_helper.php');
+} catch (Exception $e) {
+    error_log("Failed to include required files: " . $e->getMessage());
+    die("System initialization error. Please contact the administrator.");
+}
 
 // Check if user is logged in - redirect to login if not
 if (!isLoggedIn()) {
@@ -419,70 +429,117 @@ unset($_SESSION['error'], $_SESSION['success']);
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_resolution'])) {
-        $title = trim($_POST['title']);
-        $resolution_number = trim($_POST['resolution_number']);
-        $date_posted = $_POST['date_posted'];
-        $resolution_date = $_POST['resolution_date'];
-        $content = trim($_POST['content']);
-        $reference_number = generateReferenceNumber($conn, $resolution_date);
-        $image_path = null;
-        // Handle multiple file uploads to MinIO
-        if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
-            $minioClient = new MinioS3Client();
-            $image_paths = [];
+        try {
+            error_log("=== ADD RESOLUTION START ===");
+            $title = trim($_POST['title']);
+            $resolution_number = trim($_POST['resolution_number']);
+            $date_posted = $_POST['date_posted'];
+            $resolution_date = $_POST['resolution_date'];
+            $content = trim($_POST['content']);
+            error_log("Form data received - Title: $title, Number: $resolution_number, Date: $resolution_date");
             
-            foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
-                if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
-                    continue;
+            $reference_number = generateReferenceNumber($conn, $resolution_date);
+            error_log("Reference number generated: $reference_number");
+            $image_path = null;
+            // Handle multiple file uploads to MinIO
+            if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
+                $hasFiles = false;
+                // Check if any actual files were uploaded
+                foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
+                    if ($_FILES['image_file']['error'][$key] === UPLOAD_ERR_OK && !empty($tmpName)) {
+                        $hasFiles = true;
+                        break;
+                    }
                 }
-                if (!isValidResolutionDocument(['type' => $_FILES['image_file']['type'][$key]])) {
-                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
-                    header("Location: resolutions.php");
-                    exit();
-                }
                 
-                $fileName = basename($_FILES['image_file']['name'][$key]);
-                $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-                $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
-                $objectName = 'resolutions/' . date('Y/m/') . $uniqueFileName;
-                
-                // Upload to MinIO
-                $contentType = MinioS3Client::getMimeType($fileName);
-                $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
-                
-                if ($uploadResult['success']) {
-                    $image_paths[] = $uploadResult['url'];
-                    logDocumentUpload('resolution', $fileName, $uniqueFileName);
+                if ($hasFiles) {
+                    error_log("Processing file uploads...");
+                    $minioClient = new MinioS3Client();
+                    $image_paths = [];
+                    
+                    foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
+                        if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
+                            error_log("File upload error for file $key: " . $_FILES['image_file']['error'][$key]);
+                            continue;
+                        }
+                        if (empty($tmpName)) {
+                            continue; // Skip empty uploads
+                        }
+                        if (!isValidResolutionDocument(['type' => $_FILES['image_file']['type'][$key]])) {
+                            error_log("Invalid file type: " . $_FILES['image_file']['type'][$key]);
+                            $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
+                            header("Location: resolutions.php");
+                            exit();
+                        }
+                        
+                        $fileName = basename($_FILES['image_file']['name'][$key]);
+                        $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
+                        $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
+                        $objectName = 'resolutions/' . date('Y/m/') . $uniqueFileName;
+                        error_log("Uploading file: $fileName as $objectName");
+                        
+                        // Upload to MinIO
+                        $contentType = MinioS3Client::getMimeType($fileName);
+                        $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
+                        
+                        if ($uploadResult['success']) {
+                            $image_paths[] = $uploadResult['url'];
+                            error_log("File uploaded successfully: " . $uploadResult['url']);
+                            logDocumentUpload('resolution', $fileName, $uniqueFileName);
+                        } else {
+                            error_log("MinIO upload failed: " . $uploadResult['error']);
+                            $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
+                            header("Location: resolutions.php");
+                            exit();
+                        }
+                    }
+                    if (!empty($image_paths)) {
+                        $image_path = implode('|', $image_paths);
+                        error_log("All files uploaded. Combined path: $image_path");
+                    }
                 } else {
-                    $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
-                    header("Location: resolutions.php");
-                    exit();
+                    error_log("No files uploaded (empty upload)");
                 }
             }
-            if (!empty($image_paths)) {
-                $image_path = implode('|', $image_paths);
+            
+            // Set required fields with defaults if not provided
+            $description = !empty($content) ? substr($content, 0, 500) : $title;
+            $date_issued = $resolution_date; // Use resolution_date as date_issued
+            if (empty($image_path)) {
+                $image_path = ''; // Set empty string if no file uploaded
             }
+            
+            // Get the logged-in user's username
+            $uploaded_by = isset($_SESSION['username']) ? $_SESSION['username'] : 'admin';
+            error_log("Uploaded by: $uploaded_by");
+            
+            error_log("Preparing to insert into database...");
+            $stmt = $conn->prepare("INSERT INTO resolutions (title, description, resolution_number, date_posted, resolution_date, content, image_path, reference_number, date_issued, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            if (!$stmt) {
+                error_log("Failed to prepare statement: " . $conn->error);
+                throw new Exception("Database prepare failed: " . $conn->error);
+            }
+            $stmt->bind_param("ssssssssss", $title, $description, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $reference_number, $date_issued, $uploaded_by);
+            if ($stmt->execute()) {
+                $new_resolution_id = $conn->insert_id;
+                error_log("Resolution inserted successfully with ID: $new_resolution_id");
+                logDocumentAction('create', 'resolution', $title, $new_resolution_id, "New resolution created with reference number: $reference_number");
+                $_SESSION['success'] = "Resolution added successfully!";
+            } else {
+                error_log("Failed to execute statement: " . $stmt->error);
+                $_SESSION['error'] = "Failed to add resolution: " . $conn->error;
+            }
+            $stmt->close();
+            error_log("=== ADD RESOLUTION END ===");
+            header("Location: resolutions.php");
+            exit();
+        } catch (Exception $e) {
+            error_log("EXCEPTION in add_resolution: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
+            $_SESSION['error'] = "An error occurred: " . $e->getMessage();
+            header("Location: resolutions.php");
+            exit();
         }
-        
-        // Set required fields with defaults if not provided
-        $description = !empty($content) ? substr($content, 0, 500) : $title;
-        $date_issued = $resolution_date; // Use resolution_date as date_issued
-        if (empty($image_path)) {
-            $image_path = ''; // Set empty string if no file uploaded
-        }
-        
-        $stmt = $conn->prepare("INSERT INTO resolutions (title, description, resolution_number, date_posted, resolution_date, content, image_path, reference_number, date_issued) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssssssss", $title, $description, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $reference_number, $date_issued);
-        if ($stmt->execute()) {
-            $new_resolution_id = $conn->insert_id;
-            logDocumentAction('create', 'resolution', $title, $new_resolution_id, "New resolution created with reference number: $reference_number");
-            $_SESSION['success'] = "Resolution added successfully!";
-        } else {
-            $_SESSION['error'] = "Failed to add resolution: " . $conn->error;
-        }
-        $stmt->close();
-        header("Location: resolutions.php");
-        exit();
     }
     if (isset($_POST['update_resolution'])) {
         $id = intval($_POST['resolution_id']);

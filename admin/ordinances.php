@@ -1,13 +1,23 @@
 <?php
+// Enable detailed error logging for debugging
+error_reporting(E_ALL);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
+
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 // Include configuration files
-include(__DIR__ . '/includes/auth.php');
-include(__DIR__ . '/includes/config.php');
-include(__DIR__ . '/includes/logger.php');
-include(__DIR__ . '/includes/minio_helper.php');
+try {
+    include(__DIR__ . '/includes/auth.php');
+    include(__DIR__ . '/includes/config.php');
+    include(__DIR__ . '/includes/logger.php');
+    include(__DIR__ . '/includes/minio_helper.php');
+} catch (Exception $e) {
+    error_log("Failed to include required files: " . $e->getMessage());
+    die("System initialization error. Please contact the administrator.");
+}
 
 // Check if user is logged in - redirect to login if not
 if (!isLoggedIn()) {
@@ -453,19 +463,25 @@ unset($_SESSION['error'], $_SESSION['success']);
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_ordinance'])) {
-        // Add new ordinance
-        $title = trim($_POST['title']);
-        $ordinance_number = trim($_POST['ordinance_number']);
-        $date_posted = $_POST['date_posted'];
-        $ordinance_date = $_POST['ordinance_date'];
-        $status = $_POST['status'];
-        $content = trim($_POST['content']);
-        $reference_number = generateReferenceNumber($conn, $ordinance_date);
-        // Handle multiple file uploads to MinIO
-        $image_path = null;
-        if (isset($_FILES['image_file']) && !empty($_FILES['image_file']['name'][0])) {
-            $minioClient = new MinioS3Client();
-            $image_paths = [];
+        try {
+            error_log("=== ADD ORDINANCE START ===");
+            // Add new ordinance
+            $title = trim($_POST['title']);
+            $ordinance_number = trim($_POST['ordinance_number']);
+            $date_posted = $_POST['date_posted'];
+            $ordinance_date = $_POST['ordinance_date'];
+            $status = $_POST['status'];
+            $content = trim($_POST['content']);
+            error_log("Form data received - Title: $title, Number: $ordinance_number, Date: $ordinance_date");
+            
+            $reference_number = generateReferenceNumber($conn, $ordinance_date);
+            error_log("Reference number generated: $reference_number");
+            // Handle multiple file uploads to MinIO
+            $image_path = null;
+            if (isset($_FILES['image_file']) && !empty($_FILES['image_file']['name'][0])) {
+                error_log("Processing file uploads...");
+                $minioClient = new MinioS3Client();
+                $image_paths = [];
             
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                 // Skip if no file or error
@@ -489,8 +505,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if ($uploadResult['success']) {
                     $image_paths[] = $uploadResult['url'];
+                    error_log("File uploaded successfully: " . $uploadResult['url']);
                     logDocumentUpload('ordinance', $fileName, $uniqueFileName);
                 } else {
+                    error_log("MinIO upload failed: " . $uploadResult['error']);
                     $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
                     header("Location: ordinances.php");
                     exit();
@@ -498,6 +516,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if (!empty($image_paths)) {
                 $image_path = implode('|', $image_paths);
+                error_log("All files uploaded. Combined path: $image_path");
             }
         }
         // Set description as title or content preview if not provided
@@ -507,19 +526,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $date_issued = $ordinance_date; // Use ordinance_date as date_issued
         $file_path = $image_path ? $image_path : ''; // Use image_path or empty string
         $uploaded_by = isset($_SESSION['username']) ? $_SESSION['username'] : 'admin';
+        error_log("Uploaded by: $uploaded_by");
         
+        error_log("Preparing to insert into database...");
         $stmt = $conn->prepare("INSERT INTO ordinances (title, description, ordinance_number, date_posted, ordinance_date, status, content, image_path, reference_number, date_issued, file_path, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        if (!$stmt) {
+            error_log("Failed to prepare statement: " . $conn->error);
+            throw new Exception("Database prepare failed: " . $conn->error);
+        }
         $stmt->bind_param("ssssssssssss", $title, $description, $ordinance_number, $date_posted, $ordinance_date, $status, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by);
         if ($stmt->execute()) {
             $new_ordinance_id = $conn->insert_id;
+            error_log("Ordinance inserted successfully with ID: $new_ordinance_id");
             logDocumentAction('create', 'ordinance', $title, $new_ordinance_id, "New ordinance created with reference number: $reference_number");
             $_SESSION['success'] = "Ordinance added successfully!";
         } else {
+            error_log("Failed to execute statement: " . $stmt->error);
             $_SESSION['error'] = "Failed to add ordinance: " . $conn->error;
         }
         $stmt->close();
+        error_log("=== ADD ORDINANCE END ===");
         header("Location: ordinances.php");
         exit();
+        } catch (Exception $e) {
+            error_log("EXCEPTION in add_ordinance: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
+            $_SESSION['error'] = "An error occurred: " . $e->getMessage();
+            header("Location: ordinances.php");
+            exit();
+        }
     }
     if (isset($_POST['update_ordinance'])) {
         // Update existing ordinance

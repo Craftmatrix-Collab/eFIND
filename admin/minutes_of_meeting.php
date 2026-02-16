@@ -1,13 +1,23 @@
 <?php
+// Enable detailed error logging for debugging
+error_reporting(E_ALL);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
+
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 // Include configuration files
-include(__DIR__ . '/includes/auth.php');
-include(__DIR__ . '/includes/config.php');
-include(__DIR__ . '/includes/logger.php');
-include(__DIR__ . '/includes/minio_helper.php');
+try {
+    include(__DIR__ . '/includes/auth.php');
+    include(__DIR__ . '/includes/config.php');
+    include(__DIR__ . '/includes/logger.php');
+    include(__DIR__ . '/includes/minio_helper.php');
+} catch (Exception $e) {
+    error_log("Failed to include required files: " . $e->getMessage());
+    die("System initialization error. Please contact the administrator.");
+}
 
 // Check if user is logged in - redirect to login if not
 if (!isLoggedIn()) {
@@ -412,64 +422,111 @@ unset($_SESSION['error'], $_SESSION['success']);
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_minute'])) {
-        $title = trim($_POST['title']);
-        $session_number = trim($_POST['session_number']);
-        $date_posted = $_POST['date_posted'];
-        $meeting_date = $_POST['meeting_date'];
-        $content = trim($_POST['content']);
-        $reference_number = generateReferenceNumber($conn, $meeting_date);
-        $image_path = null;
-
-        // Handle multiple file uploads to MinIO
-        if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
-            $minioClient = new MinioS3Client();
-            $image_paths = [];
+        try {
+            error_log("=== ADD MINUTE START ===");
+            $title = trim($_POST['title']);
+            $session_number = trim($_POST['session_number']);
+            $date_posted = $_POST['date_posted'];
+            $meeting_date = $_POST['meeting_date'];
+            $content = trim($_POST['content']);
+            error_log("Form data received - Title: $title, Session: $session_number, Date: $meeting_date");
             
-            foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
-                if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
-                    continue;
-                }
-                if (!isValidMinutesDocument(['type' => $_FILES['image_file']['type'][$key]])) {
-                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
-                    header("Location: minutes_of_meeting.php");
-                    exit();
-                }
-                
-                $fileName = basename($_FILES['image_file']['name'][$key]);
-                $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-                $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
-                $objectName = 'minutes/' . date('Y/m/') . $uniqueFileName;
-                
-                // Upload to MinIO
-                $contentType = MinioS3Client::getMimeType($fileName);
-                $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
-                
-                if ($uploadResult['success']) {
-                    $image_paths[] = $uploadResult['url'];
-                    logDocumentUpload('minute', $fileName, $uniqueFileName);
-                } else {
-                    $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
-                    header("Location: minutes_of_meeting.php");
-                    exit();
-                }
-            }
-            if (!empty($image_paths)) {
-                $image_path = implode('|', $image_paths);
-            }
-        }
+            $reference_number = generateReferenceNumber($conn, $meeting_date);
+            error_log("Reference number generated: $reference_number");
+            $image_path = null;
 
-        $stmt = $conn->prepare("INSERT INTO minutes_of_meeting (title, session_number, date_posted, meeting_date, content, image_path, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssssss", $title, $session_number, $date_posted, $meeting_date, $content, $image_path, $reference_number);
-        if ($stmt->execute()) {
-            $new_minute_id = $conn->insert_id;
-            logDocumentAction('create', 'minute', $title, $new_minute_id, "New minute created with reference number: $reference_number");
-            $_SESSION['success'] = "Minute added successfully!";
-        } else {
-            $_SESSION['error'] = "Failed to add minute: " . $conn->error;
+            // Handle multiple file uploads to MinIO
+            if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
+                $hasFiles = false;
+                // Check if any actual files were uploaded
+                foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
+                    if ($_FILES['image_file']['error'][$key] === UPLOAD_ERR_OK && !empty($tmpName)) {
+                        $hasFiles = true;
+                        break;
+                    }
+                }
+                
+                if ($hasFiles) {
+                    error_log("Processing file uploads...");
+                    $minioClient = new MinioS3Client();
+                    $image_paths = [];
+                    
+                    foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
+                        if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
+                            error_log("File upload error for file $key: " . $_FILES['image_file']['error'][$key]);
+                            continue;
+                        }
+                        if (empty($tmpName)) {
+                            continue; // Skip empty uploads
+                        }
+                        if (!isValidMinutesDocument(['type' => $_FILES['image_file']['type'][$key]])) {
+                            error_log("Invalid file type: " . $_FILES['image_file']['type'][$key]);
+                            $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
+                            header("Location: minutes_of_meeting.php");
+                            exit();
+                        }
+                        
+                        $fileName = basename($_FILES['image_file']['name'][$key]);
+                        $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
+                        $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
+                        $objectName = 'minutes/' . date('Y/m/') . $uniqueFileName;
+                        error_log("Uploading file: $fileName as $objectName");
+                        
+                        // Upload to MinIO
+                        $contentType = MinioS3Client::getMimeType($fileName);
+                        $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
+                        
+                        if ($uploadResult['success']) {
+                            $image_paths[] = $uploadResult['url'];
+                            error_log("File uploaded successfully: " . $uploadResult['url']);
+                            logDocumentUpload('minute', $fileName, $uniqueFileName);
+                        } else {
+                            error_log("MinIO upload failed: " . $uploadResult['error']);
+                            $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
+                            header("Location: minutes_of_meeting.php");
+                            exit();
+                        }
+                    }
+                    if (!empty($image_paths)) {
+                        $image_path = implode('|', $image_paths);
+                        error_log("All files uploaded. Combined path: $image_path");
+                    }
+                } else {
+                    error_log("No files uploaded (empty upload)");
+                }
+            }
+
+            // Get the logged-in user's username
+            $uploaded_by = isset($_SESSION['username']) ? $_SESSION['username'] : 'admin';
+            error_log("Uploaded by: $uploaded_by");
+
+            error_log("Preparing to insert into database...");
+            $stmt = $conn->prepare("INSERT INTO minutes_of_meeting (title, session_number, date_posted, meeting_date, content, image_path, reference_number, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            if (!$stmt) {
+                error_log("Failed to prepare statement: " . $conn->error);
+                throw new Exception("Database prepare failed: " . $conn->error);
+            }
+            $stmt->bind_param("ssssssss", $title, $session_number, $date_posted, $meeting_date, $content, $image_path, $reference_number, $uploaded_by);
+            if ($stmt->execute()) {
+                $new_minute_id = $conn->insert_id;
+                error_log("Minute inserted successfully with ID: $new_minute_id");
+                logDocumentAction('create', 'minute', $title, $new_minute_id, "New minute created with reference number: $reference_number");
+                $_SESSION['success'] = "Minute added successfully!";
+            } else {
+                error_log("Failed to execute statement: " . $stmt->error);
+                $_SESSION['error'] = "Failed to add minute: " . $conn->error;
+            }
+            $stmt->close();
+            error_log("=== ADD MINUTE END ===");
+            header("Location: minutes_of_meeting.php");
+            exit();
+        } catch (Exception $e) {
+            error_log("EXCEPTION in add_minute: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
+            $_SESSION['error'] = "An error occurred: " . $e->getMessage();
+            header("Location: minutes_of_meeting.php");
+            exit();
         }
-        $stmt->close();
-        header("Location: minutes_of_meeting.php");
-        exit();
     }
 
     if (isset($_POST['update_minute'])) {
