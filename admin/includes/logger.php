@@ -79,8 +79,24 @@ if (!function_exists('logActivity')) {
             $user_id = $_SESSION['user_id'];
         }
         
+        // Validate user_id exists in users table (foreign key constraint)
+        if ($user_id !== null) {
+            $check_stmt = $conn->prepare("SELECT id FROM users WHERE id = ?");
+            if ($check_stmt) {
+                $check_stmt->bind_param("i", $user_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                if ($check_result->num_rows === 0) {
+                    // User doesn't exist, set to null to avoid foreign key error
+                    error_log("User ID $user_id not found in users table, setting to NULL for activity log");
+                    $user_id = null;
+                }
+                $check_stmt->close();
+            }
+        }
+        
         // Get user name from session or database
-        $user_name = $_SESSION['full_name'] ?? 'Unknown User';
+        $user_name = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Unknown User';
         
         // Get IP address
         $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
