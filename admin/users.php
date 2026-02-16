@@ -41,7 +41,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
         die("CSRF token validation failed.");
     }
     $id = (int)$_GET['id'];
-    $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
+    $user_type = isset($_GET['user_type']) ? $_GET['user_type'] : 'users';
+    
+    // Determine which table to delete from
+    $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
+    $stmt = $conn->prepare("DELETE FROM $table WHERE id = ?");
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
         $_SESSION['success'] = "User deleted successfully!";
@@ -116,6 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif (isset($_POST['update_user'])) {
         $id = (int)$_POST['user_id'];
+        $user_type = isset($_POST['user_type']) ? $_POST['user_type'] : 'users';
         $full_name = trim($_POST['full_name']);
         $contact_number = trim($_POST['contact_number']);
         $email = trim($_POST['email']);
@@ -160,13 +165,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
         } else {
-            // Update existing user
-            if ($password) {
-                $stmt = $conn->prepare("UPDATE users SET full_name = ?, contact_number = ?, email = ?, username = ?, password = ?, role = ?, profile_picture = ? WHERE id = ?");
-                $stmt->bind_param("sisssssi", $full_name, $contact_number, $email, $username, $password, $role, $profile_picture, $id);
+            // Determine which table to update
+            $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
+            $password_field = ($user_type === 'admin_users') ? 'password_hash' : 'password';
+            
+            // Update existing user - admin_users doesn't have role column
+            if ($user_type === 'admin_users') {
+                if ($password) {
+                    $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, $password_field = ?, profile_picture = ? WHERE id = ?");
+                    $stmt->bind_param("ssssssi", $full_name, $contact_number, $email, $username, $password, $profile_picture, $id);
+                } else {
+                    $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, profile_picture = ? WHERE id = ?");
+                    $stmt->bind_param("sssssi", $full_name, $contact_number, $email, $username, $profile_picture, $id);
+                }
             } else {
-                $stmt = $conn->prepare("UPDATE users SET full_name = ?, contact_number = ?, email = ?, username = ?, role = ?, profile_picture = ? WHERE id = ?");
-                $stmt->bind_param("sissssi", $full_name, $contact_number, $email, $username, $role, $profile_picture, $id);
+                if ($password) {
+                    $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, $password_field = ?, role = ?, profile_picture = ? WHERE id = ?");
+                    $stmt->bind_param("sisssssi", $full_name, $contact_number, $email, $username, $password, $role, $profile_picture, $id);
+                } else {
+                    $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, role = ?, profile_picture = ? WHERE id = ?");
+                    $stmt->bind_param("sissssi", $full_name, $contact_number, $email, $username, $role, $profile_picture, $id);
+                }
             }
             if ($stmt->execute()) {
                 $_SESSION['success'] = "User updated successfully!";
@@ -226,14 +245,25 @@ $where_clauses = [];
 if (!empty($search_query)) {
     $search_like = "%" . $search_query . "%";
     $where_clauses[] = "(full_name LIKE ? OR email LIKE ? OR username LIKE ? OR contact_number LIKE ?)";
+    // Parameters for first query (users table)
     $params = array_merge($params, [$search_like, $search_like, $search_like, $search_like]);
     $types .= 'ssss';
 }
 
-// Build the query
-$query = "SELECT * FROM users";
+// Build the query - UNION both admin_users and users tables
+$query = "SELECT id, full_name, contact_number, email, username, role, profile_picture, last_login, created_at, updated_at, 'users' as user_type FROM users";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
+}
+$query .= " UNION ALL ";
+$query .= "SELECT id, full_name, contact_number, email, username, 'admin' as role, profile_picture, last_login, created_at, updated_at, 'admin_users' as user_type FROM admin_users";
+if (!empty($where_clauses)) {
+    $query .= " WHERE " . implode(" AND ", $where_clauses);
+    // Add parameters for second query (admin_users table)
+    if (!empty($search_query)) {
+        $params = array_merge($params, [$search_like, $search_like, $search_like, $search_like]);
+        $types .= 'ssss';
+    }
 }
 
 // Validate and set sort parameter
@@ -270,11 +300,18 @@ $result = $stmt->get_result();
 $users = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 $stmt->close();
 
-// Fetch total count for pagination
-$count_query = "SELECT COUNT(*) as total FROM users";
+// Fetch total count for pagination - count from both tables
+$count_query = "SELECT COUNT(*) as total FROM (
+    SELECT id FROM users";
 if (!empty($where_clauses)) {
     $count_query .= " WHERE " . implode(" AND ", $where_clauses);
 }
+$count_query .= " UNION ALL 
+    SELECT id FROM admin_users";
+if (!empty($where_clauses)) {
+    $count_query .= " WHERE " . implode(" AND ", $where_clauses);
+}
+$count_query .= ") as combined_users";
 $count_stmt = $conn->prepare($count_query);
 if (!empty($params) && !empty($types)) {
     // For count query, we need to remove the LIMIT parameters but keep search parameters
@@ -980,6 +1017,7 @@ $count_stmt->close();
                                 <th>Email</th>
                                 <th>Username</th>
                                 <th>Role</th>
+                                <th>User Type</th>
                                 <th>Profile Picture</th>
                                 <th>Actions</th>
                             </tr>
@@ -987,7 +1025,7 @@ $count_stmt->close();
                         <tbody id="usersTableBody">
                             <?php if (empty($users)): ?>
                                 <tr>
-                                    <td colspan="8" class="text-center py-4">No users found</td>
+                                    <td colspan="9" class="text-center py-4">No users found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($users as $user): ?>
@@ -1008,6 +1046,11 @@ $count_stmt->close();
                                                 <?php echo htmlspecialchars(ucfirst($user['role'])); ?>
                                             </span>
                                         </td>
+                                        <td class="user-type">
+                                            <span class="badge bg-<?php echo $user['user_type'] === 'admin_users' ? 'warning' : 'info'; ?>">
+                                                <?php echo htmlspecialchars($user['user_type'] === 'admin_users' ? 'Admin User' : 'Regular User'); ?>
+                                            </span>
+                                        </td>
                                         <td>
                                             <?php if (!empty($user['profile_picture'])): ?>
                                                 <img src="<?php echo htmlspecialchars($user['profile_picture']); ?>?t=<?php echo time(); ?>"
@@ -1024,12 +1067,13 @@ $count_stmt->close();
                                             <div class="d-flex gap-1 justify-content-center">
                                                 <button class="btn btn-sm btn-outline-primary p-1 edit-btn"
                                                         data-id="<?php echo $user['id']; ?>"
+                                                        data-user-type="<?php echo $user['user_type']; ?>"
                                                         data-bs-toggle="tooltip"
                                                         data-bs-placement="top"
                                                         title="Edit">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
-                                                <a href="?action=delete&id=<?php echo $user['id']; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>"
+                                                <a href="?action=delete&id=<?php echo $user['id']; ?>&user_type=<?php echo $user['user_type']; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>"
                                                    class="btn btn-sm btn-outline-danger p-1"
                                                    onclick="return confirm('Are you sure you want to delete this user?');"
                                                    data-bs-toggle="tooltip"
@@ -1318,7 +1362,8 @@ $count_stmt->close();
             document.querySelectorAll('.edit-btn').forEach(button => {
                 button.addEventListener('click', function() {
                     const id = this.getAttribute('data-id');
-                    fetch(`?action=get_user&id=${id}&csrf_token=<?php echo $_SESSION['csrf_token']; ?>`)
+                    const userType = this.getAttribute('data-user-type');
+                    fetch(`?action=fetch_user&id=${id}&user_type=${userType}&csrf_token=<?php echo $_SESSION['csrf_token']; ?>`)
                         .then(response => response.json())
                         .then(user => {
                             document.getElementById('editUserId').value = user.id;
@@ -1328,6 +1373,16 @@ $count_stmt->close();
                             document.getElementById('editUsername').value = user.username;
                             document.getElementById('editRole').value = user.role;
                             document.getElementById('editExistingProfilePicture').value = user.profile_picture || '';
+                            // Store user_type in a hidden field
+                            let userTypeField = document.getElementById('editUserType');
+                            if (!userTypeField) {
+                                userTypeField = document.createElement('input');
+                                userTypeField.type = 'hidden';
+                                userTypeField.id = 'editUserType';
+                                userTypeField.name = 'user_type';
+                                document.getElementById('editUserForm').appendChild(userTypeField);
+                            }
+                            userTypeField.value = user.user_type;
                             const currentProfilePictureInfo = document.getElementById('currentProfilePictureInfo');
                             if (user.profile_picture) {
                                 currentProfilePictureInfo.innerHTML = `
