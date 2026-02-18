@@ -352,7 +352,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 </tr></thead><tbody>';
             }
             echo '<tr>
-                <td>' . htmlspecialchars($resolution['id']) . '</td>
+                <td>' . $count . '</td>
                 <td><span class="reference-number">' . htmlspecialchars($resolution['reference_number'] ?? 'N/A') . '</span></td>
                 <td>' . htmlspecialchars($resolution['title']) . '</td>
                 <td>' . htmlspecialchars($resolution['resolution_number']) . '</td>
@@ -1646,9 +1646,10 @@ $count_stmt->close();
                                     <td colspan="8" class="text-center py-4">No resolutions found</td>
                                 </tr>
                             <?php else: ?>
+                                <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($resolutions as $resolution): ?>
                                     <tr data-id="<?php echo $resolution['id']; ?>">
-                                        <td><?php echo htmlspecialchars($resolution['id']); ?></td>
+                                        <td><?php echo $row_num++; ?></td>
                                         <!-- <td>
                                             <span class="reference-number">
                                                 <?php echo !empty($resolution['reference_number']) ? htmlspecialchars($resolution['reference_number']) : 'N/A'; ?>

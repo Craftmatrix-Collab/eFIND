@@ -368,7 +368,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             }
             
             echo '<tr>
-                <td>' . htmlspecialchars($ordinance['id']) . '</td>
+                <td>' . $count . '</td>
                 <!-- <td><span class="reference-number">' . htmlspecialchars($ordinance['reference_number'] ?? 'N/A') . '</span></td> -->
                 <td>' . htmlspecialchars($ordinance['title']) . '</td>
                 <td>' . date('M d, Y', strtotime($ordinance['date_posted'])) . '</td>
@@ -1584,9 +1584,10 @@ $count_stmt->close();
                                     <td colspan="9" class="text-center py-4">No ordinances found</td>
                                 </tr>
                             <?php else: ?>
+                                <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($ordinances as $ordinance): ?>
                                     <tr data-id="<?php echo $ordinance['id']; ?>">
-                                        <td><?php echo htmlspecialchars($ordinance['id']); ?></td>
+                                        <td><?php echo $row_num++; ?></td>
                                         <!-- <td>
                                             <span class="reference-number">
                                                 <?php echo !empty($ordinance['reference_number']) ? htmlspecialchars($ordinance['reference_number']) : 'N/A'; ?>

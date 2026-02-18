@@ -345,7 +345,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 </tr></thead><tbody>';
             }
             echo '<tr>
-                <td>' . htmlspecialchars($minute['id']) . '</td>
+                <td>' . $count . '</td>
                 <!-- <td><span class="reference-number">' . htmlspecialchars($minute['reference_number'] ?? 'N/A') . '</span></td> -->
                 <td>' . htmlspecialchars($minute['title']) . '</td>
                 <td>' . date('M d, Y', strtotime($minute['date_posted'])) . '</td>
@@ -1636,9 +1636,10 @@ $count_stmt->close();
                                     <td colspan="8" class="text-center py-4">No minutes found</td>
                                 </tr>
                             <?php else: ?>
+                                <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($minutes as $minute): ?>
                                     <tr data-id="<?php echo $minute['id']; ?>">
-                                        <td><?php echo htmlspecialchars($minute['id']); ?></td>
+                                        <td><?php echo $row_num++; ?></td>
                                         <!-- <td>
                                             <span class="reference-number">
                                                 <?php echo !empty($minute['reference_number']) ? htmlspecialchars($minute['reference_number']) : 'N/A'; ?>

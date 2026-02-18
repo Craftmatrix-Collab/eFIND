@@ -1028,9 +1028,10 @@ $count_stmt->close();
                                     <td colspan="9" class="text-center py-4">No users found</td>
                                 </tr>
                             <?php else: ?>
+                                <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($users as $user): ?>
                                     <tr data-id="<?php echo $user['id']; ?>">
-                                        <td><?php echo htmlspecialchars($user['id']); ?></td>
+                                        <td><?php echo $row_num++; ?></td>
                                         <td class="full-name text-start"><?php echo htmlspecialchars($user['full_name']); ?></td>
                                         <td class="contact-number"><?php echo htmlspecialchars($user['contact_number']); ?></td>
                                         <td class="email"><?php echo htmlspecialchars($user['email']); ?></td>

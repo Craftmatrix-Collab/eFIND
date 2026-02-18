@@ -183,9 +183,11 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     if (empty($printLogs)) {
         echo '<tr><td colspan="9" style="text-align: center;">No activity logs found for the selected criteria.</td></tr>';
     } else {
+        $count = 0;
         foreach ($printLogs as $log) {
+            $count++;
             echo '<tr>
-                <td>' . htmlspecialchars($log['id']) . '</td>
+                <td>' . $count . '</td>
                 <td>' . htmlspecialchars($log['user_name'] ?? ($log['user_username'] ?? 'System')) . '</td>
                 <td><span class="user-role-' . htmlspecialchars($log['user_role'] ?? 'system') . '">' . htmlspecialchars(ucfirst($log['user_role'] ?? 'System')) . '</span></td>
                 <td>
@@ -1225,9 +1227,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                         <td colspan="7" class="text-center py-4">No activity logs found</td>
                     </tr>
                 <?php else: ?>
+                    <?php $row_num = $offset + 1; ?>
                     <?php foreach ($logs as $log): ?>
                         <tr>
-                            <td><?php echo htmlspecialchars($log['id']); ?></td>
+                            <td><?php echo $row_num++; ?></td>
                             <td>
                                 <span class="badge bg-primary">
                                     <?php echo htmlspecialchars($log['user_name'] ?? ($log['user_username'] ?? 'System')); ?>
