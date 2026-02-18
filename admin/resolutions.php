@@ -1794,15 +1794,19 @@ $count_stmt->close();
                     </div>
                     <h6 class="fw-bold mb-2">Are you sure you want to delete this resolution?</h6>
                     <p class="text-muted mb-3" id="deleteItemTitle">Item Title</p>
-                    <div class="alert alert-warning mb-0">
+                    <div class="alert alert-warning mb-3">
                         <small><i class="fas fa-info-circle me-1"></i>This action cannot be undone.</small>
+                    </div>
+                    <div class="text-start">
+                        <label for="deleteConfirmInput" class="form-label text-muted small">Type <strong class="text-danger">RESOLUTION</strong> to confirm:</label>
+                        <input type="text" class="form-control" id="deleteConfirmInput" placeholder="Type RESOLUTION" autocomplete="off">
                     </div>
                 </div>
                 <div class="modal-footer justify-content-center">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                         <i class="fas fa-times me-1"></i>Cancel
                     </button>
-                    <a href="#" class="btn btn-danger" id="confirmDeleteBtn">
+                    <a href="#" class="btn btn-danger disabled" id="confirmDeleteBtn" aria-disabled="true">
                         <i class="fas fa-trash me-1"></i>Delete Resolution
                     </a>
                 </div>
@@ -2103,9 +2107,38 @@ $count_stmt->close();
                     const title = this.getAttribute('data-title');
                     document.getElementById('deleteItemTitle').textContent = title;
                     document.getElementById('confirmDeleteBtn').href = `?action=delete&id=${id}`;
+
+                    // Reset confirm input and disable button
+                    const confirmInput = document.getElementById('deleteConfirmInput');
+                    const confirmBtn = document.getElementById('confirmDeleteBtn');
+                    confirmInput.value = '';
+                    confirmBtn.classList.add('disabled');
+                    confirmBtn.setAttribute('aria-disabled', 'true');
+
                     const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
                     deleteModal.show();
                 });
+            });
+
+            // Enable delete button only when "RESOLUTION" is typed
+            document.getElementById('deleteConfirmInput').addEventListener('input', function() {
+                const confirmBtn = document.getElementById('confirmDeleteBtn');
+                if (this.value === 'RESOLUTION') {
+                    confirmBtn.classList.remove('disabled');
+                    confirmBtn.removeAttribute('aria-disabled');
+                } else {
+                    confirmBtn.classList.add('disabled');
+                    confirmBtn.setAttribute('aria-disabled', 'true');
+                }
+            });
+
+            // Reset input when modal is hidden
+            document.getElementById('deleteConfirmModal').addEventListener('hide.bs.modal', function () {
+                const confirmInput = document.getElementById('deleteConfirmInput');
+                const confirmBtn = document.getElementById('confirmDeleteBtn');
+                confirmInput.value = '';
+                confirmBtn.classList.add('disabled');
+                confirmBtn.setAttribute('aria-disabled', 'true');
             });
             // Auto-hide alerts after 5 seconds
             const alerts = document.querySelectorAll('.alert');
