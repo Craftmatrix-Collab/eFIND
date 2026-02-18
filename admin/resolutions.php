@@ -3304,11 +3304,11 @@ $count_stmt->close();
                 }
             });
             if (foundDates.length >= 2) {
-                if (datePostedField) datePostedField.value = foundDates[0];
-                if (resolutionDateField) resolutionDateField.value = foundDates[1];
+                if (datePostedField && !datePostedField.value) datePostedField.value = foundDates[0];
+                if (resolutionDateField && !resolutionDateField.value) resolutionDateField.value = foundDates[1];
             } else if (foundDates.length === 1) {
-                if (datePostedField) datePostedField.value = foundDates[0];
-                if (resolutionDateField) resolutionDateField.value = foundDates[0];
+                if (datePostedField && !datePostedField.value) datePostedField.value = foundDates[0];
+                if (resolutionDateField && !resolutionDateField.value) resolutionDateField.value = foundDates[0];
             }
             const resolutionPatterns = [
                 /Resolution\s+No\.?\s*([A-Z0-9\-]+)/i,
@@ -3323,6 +3323,19 @@ $count_stmt->close();
                 }
             }
         }
+
+        // Reset edit modal file input when closed
+        document.getElementById('editResolutionModal').addEventListener('hide.bs.modal', function () {
+            const fileInput = document.getElementById('editImageFile');
+            if (fileInput) {
+                fileInput.value = '';
+            }
+            const editOcrProcessing = document.getElementById('editOcrProcessing');
+            if (editOcrProcessing) {
+                editOcrProcessing.style.display = 'none';
+                editOcrProcessing.innerHTML = '';
+            }
+        });
 
         // Reset form when modal is closed or cancelled
         document.getElementById('addResolutionModal').addEventListener('hide.bs.modal', function () {
