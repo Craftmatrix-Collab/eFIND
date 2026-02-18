@@ -31,16 +31,13 @@ function isFileDuplicate($uploadDir, $fileName) {
     return file_exists($targetPath);
 }
 
-// Function to validate if the file is a resolution document (image, PDF, or DOCX)
+// Function to validate if the file is a resolution document (image only)
 function isValidResolutionDocument($file) {
     $allowedTypes = [
         'image/jpeg', 
         'image/png', 
         'image/gif', 
         'image/bmp', 
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
-        'application/msword' // DOC
     ];
     return in_array($file['type'], $allowedTypes);
 }
@@ -467,7 +464,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         if (!isValidResolutionDocument(['type' => $_FILES['image_file']['type'][$key]])) {
                             error_log("Invalid file type: " . $_FILES['image_file']['type'][$key]);
-                            $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
+                            $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.";
                             header("Location: resolutions.php");
                             exit();
                         }
@@ -560,7 +557,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     continue;
                 }
                 if (!isValidResolutionDocument(['type' => $_FILES['image_file']['type'][$key]])) {
-                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.";
+                    $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.";
                     header("Location: resolutions.php");
                     exit();
                 }
@@ -1909,9 +1906,9 @@ $count_stmt->close();
                             <textarea class="form-control" id="content" name="content" rows="4"></textarea>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Image Files (JPG, PNG, PDF)</label>
+                            <label class="form-label">Image Files (JPG, PNG)</label>
                             <div class="file-upload">
-                                <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png,.pdf" multiple onchange="processFilesWithAutoFill(this)">
+                                <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFilesWithAutoFill(this)">
                                 <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
                             </div>
                             <div id="ocrProcessing" class="mt-2" style="display: none;">
@@ -1967,9 +1964,9 @@ $count_stmt->close();
                             <textarea class="form-control" id="editContent" name="content" rows="4"></textarea>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Image Files (JPG, PNG, PDF)</label>
+                            <label class="form-label">Image Files (JPG, PNG)</label>
                             <div class="file-upload">
-                                <input type="file" class="form-control" id="editImageFile" name="image_file[]" accept=".jpg,.jpeg,.png,.pdf" multiple onchange="processFiles(this, 'edit')">
+                                <input type="file" class="form-control" id="editImageFile" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFiles(this, 'edit')">
                                 <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2).</small>
                             </div>
                             <div id="currentImageInfo" class="current-file"></div>
@@ -2706,10 +2703,10 @@ $count_stmt->close();
                 if (fileInput.files.length > 0) {
                     for (let i = 0; i < fileInput.files.length; i++) {
                         const file = fileInput.files[i];
-                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
+                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
                         if (!allowedTypes.includes(file.type)) {
                             e.preventDefault();
-                            alert('Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.');
+                            alert('Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.');
                             return;
                         }
                     }
@@ -2721,10 +2718,10 @@ $count_stmt->close();
                 if (fileInput.files.length > 0) {
                     for (let i = 0; i < fileInput.files.length; i++) {
                         const file = fileInput.files[i];
-                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
+                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
                         if (!allowedTypes.includes(file.type)) {
                             e.preventDefault();
-                            alert('Invalid file type. Only JPG, PNG, GIF, BMP, PDF, or DOCX files are allowed.');
+                            alert('Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.');
                             return;
                         }
                     }
