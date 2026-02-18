@@ -1645,7 +1645,7 @@ $count_stmt->close();
                                                 <button class="btn btn-sm btn-outline-primary p-1 edit-btn" data-id="<?php echo $ordinance['id']; ?>" data-bs-toggle="tooltip" data-bs-placement="top" title="Edit">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
-                                                <a href="?action=delete&id=<?php echo $ordinance['id']; ?>" class="btn btn-sm btn-outline-danger p-1" onclick="return confirm('Are you sure you want to delete this ordinance?');" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete">
+                                                <a href="?action=delete&id=<?php echo $ordinance['id']; ?>" class="btn btn-sm btn-outline-danger p-1 delete-btn" data-id="<?php echo $ordinance['id']; ?>" data-title="<?php echo htmlspecialchars($ordinance['title']); ?>" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete">
                                                     <i class="fas fa-trash"></i>
                                                 </a>
                                             </div>
@@ -1723,6 +1723,41 @@ $count_stmt->close();
                         <?php endif; ?>
                     </ul>
                 </nav>
+            </div>
+        </div>
+    </div>
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-labelledby="deleteConfirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title" id="deleteConfirmModalLabel">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Confirm Deletion
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <div class="mb-3">
+                        <i class="fas fa-trash-alt text-danger" style="font-size: 3rem;"></i>
+                    </div>
+                    <h6 class="fw-bold mb-2">Are you sure you want to delete this ordinance?</h6>
+                    <p class="text-muted mb-3" id="deleteItemTitle">Item Title</p>
+                    <div class="alert alert-warning mb-3">
+                        <small><i class="fas fa-info-circle me-1"></i>This action cannot be undone.</small>
+                    </div>
+                    <div class="text-start">
+                        <label for="deleteConfirmInput" class="form-label text-muted small">Type <strong class="text-danger">ORDINANCE</strong> to confirm:</label>
+                        <input type="text" class="form-control" id="deleteConfirmInput" placeholder="Type ORDINANCE" autocomplete="off">
+                    </div>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i>Cancel
+                    </button>
+                    <a href="#" class="btn btn-danger disabled" id="confirmDeleteBtn" aria-disabled="true">
+                        <i class="fas fa-trash me-1"></i>Delete Ordinance
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -2065,6 +2100,50 @@ $count_stmt->close();
                 return new bootstrap.Tooltip(tooltipTriggerEl, {
                     delay: { "show": 100, "hide": 100 }
                 });
+            });
+
+            // Delete button handlers
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const tooltip = bootstrap.Tooltip.getInstance(this);
+                    if (tooltip) tooltip.hide();
+
+                    const id = this.getAttribute('data-id');
+                    const title = this.getAttribute('data-title');
+                    document.getElementById('deleteItemTitle').textContent = title;
+                    document.getElementById('confirmDeleteBtn').href = `?action=delete&id=${id}`;
+
+                    const confirmInput = document.getElementById('deleteConfirmInput');
+                    const confirmBtn = document.getElementById('confirmDeleteBtn');
+                    confirmInput.value = '';
+                    confirmBtn.classList.add('disabled');
+                    confirmBtn.setAttribute('aria-disabled', 'true');
+
+                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+                    deleteModal.show();
+                });
+            });
+
+            // Enable delete button only when "ORDINANCE" is typed
+            document.getElementById('deleteConfirmInput').addEventListener('input', function() {
+                const confirmBtn = document.getElementById('confirmDeleteBtn');
+                if (this.value === 'ORDINANCE') {
+                    confirmBtn.classList.remove('disabled');
+                    confirmBtn.removeAttribute('aria-disabled');
+                } else {
+                    confirmBtn.classList.add('disabled');
+                    confirmBtn.setAttribute('aria-disabled', 'true');
+                }
+            });
+
+            // Reset input when modal is hidden
+            document.getElementById('deleteConfirmModal').addEventListener('hide.bs.modal', function () {
+                const confirmInput = document.getElementById('deleteConfirmInput');
+                const confirmBtn = document.getElementById('confirmDeleteBtn');
+                confirmInput.value = '';
+                confirmBtn.classList.add('disabled');
+                confirmBtn.setAttribute('aria-disabled', 'true');
             });
             // Initialize pagination position
             updatePaginationPosition();
