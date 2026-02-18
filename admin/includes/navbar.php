@@ -325,19 +325,88 @@ function showToast(message, type = 'success') {
 $(document).ready(function() {
     // Load profile content when profile modal is shown
     $('#profileModal').on('show.bs.modal', function () {
+        console.log('Profile modal opening - loading admin_profile_content.php');
+        
+        // Reset modal body to show loading state
+        $('#profileModalBody').html(
+            '<div class="text-center py-5">' +
+            '<div class="spinner-border text-primary" role="status">' +
+            '<span class="visually-hidden">Loading...</span>' +
+            '</div>' +
+            '<p class="mt-2">Loading profile...</p>' +
+            '</div>'
+        );
+        
         $.ajax({
             url: 'admin_profile_content.php',
             type: 'GET',
+            timeout: 15000, // 15 second timeout
             success: function(response) {
-                $('#profileModalBody').html(response);
+                console.log('Profile loaded successfully, length:', response.length);
+                
+                // Check if response contains error messages
+                if (response.indexOf('Unauthorized access') !== -1) {
+                    console.error('Auth error detected in response');
+                    $('#profileModalBody').html(
+                        '<div class="alert alert-danger">' +
+                        '<i class="fas fa-exclamation-circle me-2"></i>' +
+                        '<strong>Authentication Error</strong><br>' +
+                        'Your session may have expired. Please <a href="login.php">login again</a>.' +
+                        '</div>'
+                    );
+                } else if (response.indexOf('Profile not found') !== -1) {
+                    console.error('Profile not found in database');
+                    $('#profileModalBody').html(
+                        '<div class="alert alert-danger">' +
+                        '<i class="fas fa-exclamation-circle me-2"></i>' +
+                        '<strong>Profile Not Found</strong><br>' +
+                        'Your user profile could not be found. Please contact administrator.' +
+                        '</div>'
+                    );
+                } else if (response.trim().length < 50) {
+                    console.error('Response too short:', response);
+                    $('#profileModalBody').html(
+                        '<div class="alert alert-warning">' +
+                        '<i class="fas fa-exclamation-triangle me-2"></i>' +
+                        '<strong>Empty Response</strong><br>' +
+                        'Server returned an empty or invalid response. Please try again.' +
+                        '</div>'
+                    );
+                } else {
+                    $('#profileModalBody').html(response);
+                }
             },
             error: function(xhr, status, error) {
-                console.error('Profile load error:', xhr.responseText);
+                console.error('Profile load error - Status:', status, 'Error:', error);
+                console.error('XHR Status:', xhr.status, 'Response:', xhr.responseText);
+                
+                let errorMsg = 'Error loading profile. Please try again.';
+                let details = '';
+                
+                if (status === 'timeout') {
+                    errorMsg = 'Request timed out. The server is taking too long to respond.';
+                    details = 'This may indicate a database connection issue or slow query.';
+                } else if (xhr.status === 404) {
+                    errorMsg = 'Profile page not found (404).';
+                    details = 'The file admin_profile_content.php may be missing.';
+                } else if (xhr.status === 500) {
+                    errorMsg = 'Server error (500).';
+                    details = xhr.responseText ? xhr.responseText.substring(0, 300) : 'Check server logs for PHP errors.';
+                } else if (xhr.status === 0) {
+                    errorMsg = 'Network error - Cannot reach server.';
+                    details = 'Check your internet connection or server status.';
+                } else {
+                    details = xhr.responseText ? xhr.responseText.substring(0, 300) : error;
+                }
+                
                 $('#profileModalBody').html(
                     '<div class="alert alert-danger">' +
                     '<i class="fas fa-exclamation-circle me-2"></i>' +
-                    'Error loading profile. Please try again.' +
-                    '<br><small>Details: ' + (xhr.responseText ? xhr.responseText.substring(0, 200) : error) + '</small>' +
+                    '<strong>' + errorMsg + '</strong><br>' +
+                    (details ? '<small class="mt-2 d-block">' + details + '</small>' : '') +
+                    '<div class="mt-3">' +
+                    '<a href="debug_profile.php" target="_blank" class="btn btn-sm btn-outline-primary">Run Diagnostics</a>' +
+                    '</div>' +
                     '</div>'
                 );
             }

@@ -3,12 +3,22 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+
+// Debug: Log session state (remove in production)
+error_log("Profile Access - Session ID: " . session_id());
+error_log("Profile Access - admin_id: " . (isset($_SESSION['admin_id']) ? $_SESSION['admin_id'] : 'NOT SET'));
+error_log("Profile Access - user_id: " . (isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 'NOT SET'));
+
 if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
+    error_log("Profile Access DENIED - No valid session found");
     die('<div class="alert alert-danger alert-dismissible fade show">
-            <i class="fas fa-exclamation-circle me-2"></i>Unauthorized access. Please login first.
+            <i class="fas fa-exclamation-circle me-2"></i>
+            <strong>Unauthorized Access</strong><br>
+            Your session may have expired. Please <a href="login.php" class="alert-link">login again</a>.
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
          </div>');
 }
+
 // Include database connection
 include 'includes/config.php';
 
@@ -17,20 +27,42 @@ try {
     $user_id = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
     $is_admin = isset($_SESSION['admin_id']);
     $table = $is_admin ? 'admin_users' : 'users';
+    
+    // Debug logging
+    error_log("Fetching profile - User ID: $user_id, Table: $table, Is Admin: " . ($is_admin ? 'YES' : 'NO'));
+    
+    // Check database connection
+    if (!$conn || !$conn->ping()) {
+        throw new Exception("Database connection lost. Please try again.");
+    }
+    
     $query = "SELECT id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at
               FROM $table
               WHERE id = ?";
     $stmt = $conn->prepare($query);
+    
+    if (!$stmt) {
+        error_log("Profile Query Prepare Failed: " . $conn->error);
+        throw new Exception("Database query error. Please contact administrator.");
+    }
+    
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
     $result = $stmt->get_result();
     $user = $result->fetch_assoc();
+    
     if (!$user) {
-        throw new Exception("Profile not found.");
+        error_log("Profile NOT FOUND for user_id: $user_id in table: $table");
+        throw new Exception("Profile not found. Your account may have been deleted.");
     }
+    
+    error_log("Profile loaded successfully for user: " . $user['username']);
+    
 } catch (Exception $e) {
+    error_log("Profile Load Exception: " . $e->getMessage());
     die('<div class="alert alert-danger alert-dismissible fade show">
-            <i class="fas fa-exclamation-circle me-2"></i>' . htmlspecialchars($e->getMessage()) . '
+            <i class="fas fa-exclamation-circle me-2"></i>
+            <strong>Error:</strong> ' . htmlspecialchars($e->getMessage()) . '
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
          </div>');
 }
