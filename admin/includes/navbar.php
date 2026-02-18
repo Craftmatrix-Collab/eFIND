@@ -549,16 +549,6 @@ document.querySelectorAll('.toggle-password').forEach(button => {
     }
   });
 });
-    if (input.type === 'password') {
-      input.type = 'text';
-      icon.classList.replace('fa-eye', 'fa-eye-slash');
-    } else {
-  });
-});
-
-// Initialize Bootstrap tooltips and popovers
-  });
-});
 
 // Initialize Bootstrap tooltips and popovers
 document.addEventListener('DOMContentLoaded', function() {

@@ -36,7 +36,7 @@ try {
         throw new Exception("Database connection lost. Please try again.");
     }
     
-    $query = "SELECT id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at
+    $query = "SELECT id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at, password_changed_at
               FROM $table
               WHERE id = ?";
     $stmt = $conn->prepare($query);
