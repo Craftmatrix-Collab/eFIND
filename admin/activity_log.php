@@ -215,7 +215,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     echo '">' . htmlspecialchars(ucfirst(str_replace('_', ' ', $log['action']))) . '</span>
                 </td>
                 <td>' . htmlspecialchars($log['description'] ?? 'N/A') . '</td>
-                <td>' . htmlspecialchars(ucfirst($log['document_type'] ?? 'N/A')) . '</td>
+                <td>' . htmlspecialchars(ucfirst(!empty($log['document_type']) ? $log['document_type'] : ($log['action'] === 'chatbot' ? 'System' : 'N/A'))) . '</td>
                 <td>' . htmlspecialchars($log['document_id'] ?? 'N/A') . '</td>
                 <td>' . htmlspecialchars($log['details'] ?? 'N/A') . '</td>
                 <!-- <td>' . htmlspecialchars($log['ip_address'] ?? 'N/A') . '</td> -->
@@ -1272,6 +1272,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                             <td>
                                 <?php if (!empty($log['document_type'])): ?>
                                     <span class="badge bg-info"><?php echo htmlspecialchars(ucfirst($log['document_type'])); ?></span>
+                                <?php elseif ($log['action'] === 'chatbot'): ?>
+                                    <span class="badge bg-secondary">System</span>
                                 <?php else: ?>
                                     <span class="badge bg-light text-dark">N/A</span>
                                 <?php endif; ?>
