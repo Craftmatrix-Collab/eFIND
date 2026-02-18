@@ -1,3 +1,18 @@
+<?php
+// Fetch profile data directly for the modal (no AJAX needed)
+$_navbar_profile = null;
+if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id']))) {
+    $_navbar_uid   = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
+    $_navbar_table = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
+    $_navbar_stmt  = $conn->prepare("SELECT id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at FROM {$_navbar_table} WHERE id = ?");
+    if ($_navbar_stmt) {
+        $_navbar_stmt->bind_param("i", $_navbar_uid);
+        $_navbar_stmt->execute();
+        $_navbar_profile = $_navbar_stmt->get_result()->fetch_assoc();
+        $_navbar_stmt->close();
+    }
+}
+?>
 <nav class="navbar navbar-expand-lg navbar-dark fixed-top" style="background-color: #1a3a8f; margin-left: 250px; margin-top: 0; z-index: 1050;">
     <div class="container-fluid">
         <!-- Logo and Address -->
@@ -73,13 +88,106 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="profileModalBody">
-                <!-- Content will be loaded via AJAX -->
-                <div class="text-center">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
+                <?php if ($_navbar_profile): ?>
+                <?php $_np = $_navbar_profile; $_is_admin = isset($_SESSION['admin_id']); ?>
+                <div class="row">
+                    <div class="col-lg-4">
+                        <div class="card mb-4">
+                            <div class="card-body text-center">
+                                <div class="mb-3">
+                                    <?php if (!empty($_np['profile_picture']) && file_exists(__DIR__ . '/../uploads/profiles/' . $_np['profile_picture'])): ?>
+                                        <img src="uploads/profiles/<?php echo htmlspecialchars($_np['profile_picture']); ?>"
+                                             class="img-thumbnail rounded-circle"
+                                             style="width:150px;height:150px;object-fit:cover;border:3px solid #4361ee;"
+                                             alt="Profile Picture">
+                                    <?php else: ?>
+                                        <div class="rounded-circle d-inline-flex align-items-center justify-content-center bg-light" style="width:150px;height:150px;border:3px solid #dee2e6;">
+                                            <i class="fas fa-user fa-4x text-secondary"></i>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <h4 class="mb-1"><?php echo htmlspecialchars($_np['full_name']); ?></h4>
+                                <p class="text-muted mb-3"><?php echo $_is_admin ? 'Administrator' : 'Staff'; ?></p>
+                                <div class="card bg-light p-3">
+                                    <div class="d-flex justify-content-between small mb-1">
+                                        <span>Member since:</span>
+                                        <span class="text-primary"><?php echo date('F j, Y', strtotime($_np['created_at'])); ?></span>
+                                    </div>
+                                    <div class="d-flex justify-content-between small">
+                                        <span>Last active:</span>
+                                        <span class="text-primary"><?php echo !empty($_np['last_login']) ? date('M d, Y h:i A', strtotime($_np['last_login'])) : 'Never'; ?></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <p>Loading profile...</p>
+                    <div class="col-lg-8">
+                        <div class="card mb-4">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0"><i class="fas fa-user-circle me-2"></i>Personal Information</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <h6 class="small text-muted mb-1">Full Name</h6>
+                                        <p><?php echo htmlspecialchars($_np['full_name']); ?></p>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <h6 class="small text-muted mb-1">Username</h6>
+                                        <p><?php echo htmlspecialchars($_np['username']); ?></p>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <h6 class="small text-muted mb-1">Email Address</h6>
+                                        <p><?php echo htmlspecialchars($_np['email']); ?></p>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <h6 class="small text-muted mb-1">Contact Number</h6>
+                                        <p><?php echo !empty($_np['contact_number']) ? htmlspecialchars($_np['contact_number']) : 'Not set'; ?></p>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <h6 class="small text-muted mb-1">Account Created</h6>
+                                        <p><?php echo date('F j, Y, g:i a', strtotime($_np['created_at'])); ?></p>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <h6 class="small text-muted mb-1">Last Updated</h6>
+                                        <p><?php echo date('F j, Y, g:i a', strtotime($_np['updated_at'])); ?></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0"><i class="fas fa-shield-alt me-2"></i>Account Security</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row align-items-center mb-3">
+                                    <div class="col-md-8">
+                                        <h6 class="mb-1">Password</h6>
+                                        <p class="small text-muted mb-0">Last changed: N/A</p>
+                                    </div>
+                                    <div class="col-md-4 text-end">
+                                        <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#changePasswordModal" data-bs-dismiss="modal">
+                                            <i class="fas fa-key me-1"></i> Change Password
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="alert alert-info mb-0">
+                                    <i class="fas fa-info-circle me-2"></i> For security reasons, we recommend changing your password every 90 days.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+                <?php else: ?>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Could not load profile. Please <a href="login.php">login again</a>.
+                </div>
+                <?php endif; ?>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -323,100 +431,10 @@ function showToast(message, type = 'success') {
 }
 
 $(document).ready(function() {
-    // Load profile content when profile modal is shown
-    $('#profileModal').on('show.bs.modal', function () {
-        console.log('Profile modal opening - loading admin_profile_content.php');
-        
-        // Reset modal body to show loading state
-        $('#profileModalBody').html(
-            '<div class="text-center py-5">' +
-            '<div class="spinner-border text-primary" role="status">' +
-            '<span class="visually-hidden">Loading...</span>' +
-            '</div>' +
-            '<p class="mt-2">Loading profile...</p>' +
-            '</div>'
-        );
-        
-        $.ajax({
-            url: 'admin_profile_content.php',
-            type: 'GET',
-            timeout: 15000, // 15 second timeout
-            success: function(response) {
-                console.log('Profile loaded successfully, length:', response.length);
-                
-                // Check if response contains error messages
-                if (response.indexOf('Unauthorized access') !== -1) {
-                    console.error('Auth error detected in response');
-                    $('#profileModalBody').html(
-                        '<div class="alert alert-danger">' +
-                        '<i class="fas fa-exclamation-circle me-2"></i>' +
-                        '<strong>Authentication Error</strong><br>' +
-                        'Your session may have expired. Please <a href="login.php">login again</a>.' +
-                        '</div>'
-                    );
-                } else if (response.indexOf('Profile not found') !== -1) {
-                    console.error('Profile not found in database');
-                    $('#profileModalBody').html(
-                        '<div class="alert alert-danger">' +
-                        '<i class="fas fa-exclamation-circle me-2"></i>' +
-                        '<strong>Profile Not Found</strong><br>' +
-                        'Your user profile could not be found. Please contact administrator.' +
-                        '</div>'
-                    );
-                } else if (response.trim().length < 50) {
-                    console.error('Response too short:', response);
-                    $('#profileModalBody').html(
-                        '<div class="alert alert-warning">' +
-                        '<i class="fas fa-exclamation-triangle me-2"></i>' +
-                        '<strong>Empty Response</strong><br>' +
-                        'Server returned an empty or invalid response. Please try again.' +
-                        '</div>'
-                    );
-                } else {
-                    $('#profileModalBody').html(response);
-                }
-            },
-            error: function(xhr, status, error) {
-                console.error('Profile load error - Status:', status, 'Error:', error);
-                console.error('XHR Status:', xhr.status, 'Response:', xhr.responseText);
-                
-                let errorMsg = 'Error loading profile. Please try again.';
-                let details = '';
-                
-                if (status === 'timeout') {
-                    errorMsg = 'Request timed out. The server is taking too long to respond.';
-                    details = 'This may indicate a database connection issue or slow query.';
-                } else if (xhr.status === 404) {
-                    errorMsg = 'Profile page not found (404).';
-                    details = 'The file admin_profile_content.php may be missing.';
-                } else if (xhr.status === 500) {
-                    errorMsg = 'Server error (500).';
-                    details = xhr.responseText ? xhr.responseText.substring(0, 300) : 'Check server logs for PHP errors.';
-                } else if (xhr.status === 0) {
-                    errorMsg = 'Network error - Cannot reach server.';
-                    details = 'Check your internet connection or server status.';
-                } else {
-                    details = xhr.responseText ? xhr.responseText.substring(0, 300) : error;
-                }
-                
-                $('#profileModalBody').html(
-                    '<div class="alert alert-danger">' +
-                    '<i class="fas fa-exclamation-circle me-2"></i>' +
-                    '<strong>' + errorMsg + '</strong><br>' +
-                    (details ? '<small class="mt-2 d-block">' + details + '</small>' : '') +
-                    '<div class="mt-3">' +
-                    '<a href="debug_profile.php" target="_blank" class="btn btn-sm btn-outline-primary">Run Diagnostics</a>' +
-                    '</div>' +
-                    '</div>'
-                );
-            }
-        });
-    });
-
     // Load edit form when edit profile modal is shown
     $('#editProfileModal').on('show.bs.modal', function () {
         $.ajax({
-            url: 'edit_profile_content.php',
+            url: 'edit_profile_content',
             type: 'GET',
             success: function(response) {
                 $('#editProfileModalBody').html(response);
@@ -427,7 +445,6 @@ $(document).ready(function() {
                     '<div class="alert alert-danger">' +
                     '<i class="fas fa-exclamation-circle me-2"></i>' +
                     'Error loading edit form. Please try again.' +
-                    '<br><small>Details: ' + (xhr.responseText ? xhr.responseText.substring(0, 200) : error) + '</small>' +
                     '</div>'
                 );
             }
@@ -458,8 +475,8 @@ $(document).ready(function() {
                     // Close edit modal
                     $('#editProfileModal').modal('hide');
                     
-                    // Refresh profile view
-                    $('#profileModalBody').load('admin_profile_content.php');
+                    // Reload page to reflect updated profile in navbar modal
+                    location.reload();
                     
                     // Update navbar if profile picture changed
                     if (response.profile_picture) {
