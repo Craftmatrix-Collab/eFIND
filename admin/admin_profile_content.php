@@ -36,7 +36,7 @@ try {
         throw new Exception("Database connection lost. Please try again.");
     }
     
-    $query = "SELECT id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at, password_changed_at
+    $query = "SELECT id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at
               FROM $table
               WHERE id = ?";
     $stmt = $conn->prepare($query);
@@ -150,8 +150,7 @@ try {
                     <div class="col-md-8">
                         <h6 class="mb-1">Password</h6>
                         <p class="small text-muted mb-0">Last changed:
-                            <?php echo !empty($user['password_changed_at']) ?
-                                 date('M j, Y', strtotime($user['password_changed_at'])) : 'Unknown'; ?>
+                            N/A
                         </p>
                     </div>
                     <div class="col-md-4 text-end">
