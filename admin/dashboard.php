@@ -58,8 +58,8 @@ $base_query = "
             o.date_posted as date_posted,
             o.image_path
         FROM ordinances o
-        LEFT JOIN users u ON o.uploaded_by = u.id
-        LEFT JOIN admin_users au ON o.uploaded_by = au.id
+        LEFT JOIN users u ON o.uploaded_by = u.username
+        LEFT JOIN admin_users au ON o.uploaded_by = au.username
         UNION ALL
         SELECT
             'resolution' as doc_type,
@@ -72,8 +72,8 @@ $base_query = "
             r.date_posted as date_posted,
             r.image_path
         FROM resolutions r
-        LEFT JOIN users u ON r.uploaded_by = u.id
-        LEFT JOIN admin_users au ON r.uploaded_by = au.id
+        LEFT JOIN users u ON r.uploaded_by = u.username
+        LEFT JOIN admin_users au ON r.uploaded_by = au.username
         UNION ALL
         SELECT
             'meeting' as doc_type,
@@ -86,8 +86,8 @@ $base_query = "
             m.date_posted as date_posted,
             m.image_path
         FROM minutes_of_meeting m
-        LEFT JOIN users u ON m.uploaded_by = u.id
-        LEFT JOIN admin_users au ON m.uploaded_by = au.id
+        LEFT JOIN users u ON m.uploaded_by = u.username
+        LEFT JOIN admin_users au ON m.uploaded_by = au.username
     ) as combined
 ";
 // Build WHERE conditions

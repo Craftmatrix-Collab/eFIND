@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Validate required fields
     if (empty($title) || empty($date_issued) || empty($_FILES["document_file"]["name"])) {
         $_SESSION['error'] = "Please fill all required fields";
-        header("Location: add_document.php");
+        header("Location: add_documents.php");
         exit();
     }
 
@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Check file size (limit to 5MB)
     if ($_FILES["document_file"]["size"] > 5000000) {
         $_SESSION['error'] = "Sorry, your file is too large (max 5MB)";
-        header("Location: add_document.php");
+        header("Location: add_documents.php");
         exit();
     }
 
@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $allowed_types = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
     if (!in_array($file_type, $allowed_types)) {
         $_SESSION['error'] = "Sorry, only PDF, Word, Excel & PowerPoint files are allowed";
-        header("Location: add_document.php");
+        header("Location: add_documents.php");
         exit();
     }
 
@@ -50,30 +50,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             switch ($document_type) {
                 case 'ordinance':
-                    $sql = "INSERT INTO ordinances (title, reference_number, date_issued, description, file_path, downloads, views, updated_by) 
-                            VALUES (?, ?, ?, ?, ?, 0, 0, ?)";
+                    // ordinance_number is NOT NULL; use reference_number as fallback
+                    $sql = "INSERT INTO ordinances (title, ordinance_number, reference_number, date_issued, description, file_path, uploaded_by) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?)";
                     break;
                 case 'resolution':
-                    $sql = "INSERT INTO resolutions (title, reference_number, date_issued, description, file_path, downloads, views, updated_by) 
-                            VALUES (?, ?, ?, ?, ?, 0, 0, ?)";
+                    // resolution_number, content, image_path are NOT NULL
+                    $sql = "INSERT INTO resolutions (title, resolution_number, reference_number, date_issued, description, content, image_path, uploaded_by) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
                     break;
                 case 'meeting_minutes':
-                    $sql = "INSERT INTO meeting_minutes (title, date_posted, description, file_path, updated_by) 
-                            VALUES (?, ?, ?, ?, ?)";
+                    // Correct table: minutes_of_meeting; session_number, content, meeting_date are NOT NULL
+                    $sql = "INSERT INTO minutes_of_meeting (title, session_number, date_posted, meeting_date, content, image_path, reference_number, uploaded_by) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
                     break;
+                default:
+                    $_SESSION['error'] = "Invalid document type selected";
+                    header("Location: add_documents.php");
+                    exit();
             }
 
             $stmt = $conn->prepare($sql);
-            
-            if ($document_type == 'meeting_minutes') {
-                $stmt->bind_param("sssss", $title, $date_issued, $description, $target_file, $updated_by);
+
+            if ($document_type === 'ordinance') {
+                $stmt->bind_param("sssssss", $title, $reference_number, $reference_number, $date_issued, $description, $target_file, $updated_by);
+            } elseif ($document_type === 'resolution') {
+                $stmt->bind_param("ssssssss", $title, $reference_number, $reference_number, $date_issued, $description, $description, $target_file, $updated_by);
             } else {
-                $stmt->bind_param("ssssss", $title, $reference_number, $date_issued, $description, $target_file, $updated_by);
+                $session_number = ''; // not collected by this form
+                $stmt->bind_param("ssssssss", $title, $session_number, $date_issued, $date_issued, $description, $target_file, $reference_number, $updated_by);
             }
 
             if ($stmt->execute()) {
                 $_SESSION['success'] = "Document added successfully!";
-                header("Location: documents.php");
+                header("Location: dashboard.php");
                 exit();
             } else {
                 // Delete the uploaded file if database insert failed
@@ -90,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $_SESSION['error'] = "Sorry, there was an error uploading your file.";
     }
-    header("Location: add_document.php");
+    header("Location: add_documents.php");
     exit();
 }
 ?>
@@ -216,7 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="alert alert-success"><?= $_SESSION['success']; unset($_SESSION['success']); ?></div>
                         <?php endif; ?>
                         
-                        <form action="add_document.php" method="POST" enctype="multipart/form-data">
+                        <form action="add_documents.php" method="POST" enctype="multipart/form-data">
                             <div class="mb-3">
                                 <label for="document_type" class="form-label required-field">Document Type</label>
                                 <select class="form-select" id="document_type" name="document_type" required>
@@ -263,7 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             
                             <div class="d-flex justify-content-between">
-                                <a href="documents.php" class="btn btn-outline-secondary">Cancel</a>
+                                <a href="dashboard.php" class="btn btn-outline-secondary">Cancel</a>
                                 <button type="submit" class="btn btn-submit">
                                     <i class="fas fa-save me-1"></i> Save Document
                                 </button>
