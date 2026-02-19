@@ -1710,6 +1710,7 @@ $count_stmt->close();
                 </div>
             </div>
             <!-- Sticky Pagination -->
+            <?php if ($total_resolutions > 5): ?>
             <div class="pagination-container">
                 <nav>
                     <ul class="pagination pagination-sm mb-0">
@@ -1776,6 +1777,7 @@ $count_stmt->close();
                     </ul>
                 </nav>
             </div>
+            <?php endif; ?>
         </div>
     </div>
     <!-- Delete Confirmation Modal -->

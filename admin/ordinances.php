@@ -648,10 +648,10 @@ $search_query = isset($_GET['search_query']) ? trim($_GET['search_query']) : '';
 $year = isset($_GET['year']) ? $_GET['year'] : '';
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'ordinance_date_desc';
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 10;
+$table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 5;
 $valid_limits = [5, 10, 25, 50, 100];
 if (!in_array($table_limit, $valid_limits)) {
-    $table_limit = 10;
+    $table_limit = 5;
 }
 $offset = ($page - 1) * $table_limit;
 
@@ -1658,6 +1658,7 @@ $count_stmt->close();
                 </div>
             </div>
             <!-- Sticky Pagination -->
+            <?php if ($total_ordinances > 5): ?>
             <div class="pagination-container">
                 <nav>
                     <ul class="pagination pagination-sm mb-0">
@@ -1724,6 +1725,7 @@ $count_stmt->close();
                     </ul>
                 </nav>
             </div>
+            <?php endif; ?>
         </div>
     </div>
     <!-- Delete Confirmation Modal -->

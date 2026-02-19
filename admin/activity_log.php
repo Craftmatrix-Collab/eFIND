@@ -267,10 +267,10 @@ $filter_user_role = isset($_GET['filter_user_role']) ? trim($_GET['filter_user_r
 $filter_date = isset($_GET['filter_date']) ? trim($_GET['filter_date']) : '';
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'log_time_desc';
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 10;
+$table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 5;
 $valid_limits = [5, 10, 25, 50, 100];
 if (!in_array($table_limit, $valid_limits)) {
-    $table_limit = 10;
+    $table_limit = 5;
 }
 $offset = ($page - 1) * $table_limit;
 
@@ -1299,6 +1299,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
     </div>
 </div>
 <!-- Sticky Pagination -->
+            <?php if ($total_logs > 5): ?>
             <div class="pagination-container">
                 <nav>
                     <ul class="pagination pagination-sm mb-0">
@@ -1365,6 +1366,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                     </ul>
                 </nav>
             </div>
+            <?php endif; ?>
         </div>
     </div>
     <!-- Print Date Range Modal -->
