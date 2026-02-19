@@ -887,7 +887,13 @@ $count_stmt->close();
         .table td {
             vertical-align: middle;
             border-top: 1px solid rgba(0, 0, 0, 0.05);
-            padding: 5px 5px
+            padding: 5px 5px;
+            height: 48px;
+        }
+        .filler-row td {
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            pointer-events: none;
+            background-color: transparent !important;
         }
         .table tr:hover td {
             background-color: rgba(67, 97, 238, 0.05);
@@ -1704,6 +1710,11 @@ $count_stmt->close();
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
+                                <?php
+                                $filled = count($resolutions);
+                                for ($i = $filled; $i < $table_limit; $i++): ?>
+                                    <tr class="filler-row"><td colspan="8">&nbsp;</td></tr>
+                                <?php endfor; ?>
                             <?php endif; ?>
                         </tbody>
                     </table>
