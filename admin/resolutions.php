@@ -649,9 +649,9 @@ $where_clauses = [];
 // Add search condition if search query is provided
 if (!empty($search_query)) {
     $search_like = "%" . $search_query . "%";
-    $where_clauses[] = "(title LIKE ? OR reference_number LIKE ? OR resolution_number LIKE ? OR content LIKE ?)";
-    $params = array_merge($params, [$search_like, $search_like, $search_like, $search_like]);
-    $types .= 'ssss';
+    $where_clauses[] = "(title LIKE ? OR reference_number LIKE ? OR resolution_number LIKE ? OR resolution_date LIKE ? OR content LIKE ?)";
+    $params = array_merge($params, [$search_like, $search_like, $search_like, $search_like, $search_like]);
+    $types .= 'sssss';
 }
 
 // Add year condition if year is provided
@@ -1576,7 +1576,7 @@ $count_stmt->close();
                     <div class="col-md-8">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
-                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search resolutions..." value="<?php echo htmlspecialchars($search_query); ?>">
+                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search by title, resolution no., date, or content..." value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-md-1">
