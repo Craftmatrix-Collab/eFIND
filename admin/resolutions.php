@@ -1675,13 +1675,13 @@ $count_stmt->close();
                                                 <div class="d-flex gap-1 justify-content-center">
                                                     <a href="#" class="btn btn-sm btn-outline-success p-1 image-link"
                                                        data-image-src="<?php echo htmlspecialchars($resolution['image_path']); ?>"
-                                                       data-bs-toggle="tooltip" data-bs-placement="top" title="View Images">
+                                                      >
                                                         <i class="fas fa-eye"></i>
                                                     </a>
                                                     <button type="button" class="btn btn-sm btn-outline-warning p-1 ocr-btn"
                                                             data-image-src="<?php echo htmlspecialchars($resolution['image_path']); ?>"
                                                             data-resolution-id="<?php echo $resolution['id']; ?>"
-                                                            data-bs-toggle="tooltip" data-bs-placement="top" title="OCR">
+                                                           >
                                                         <i class="fas fa-magnifying-glass"></i>
                                                     </button>
                                                 </div>
@@ -1691,13 +1691,13 @@ $count_stmt->close();
                                         </td>
                                         <td>
                                             <div class="d-flex gap-1 justify-content-center">
-                                                <button class="btn btn-sm btn-outline-primary p-1 edit-btn" data-id="<?php echo $resolution['id']; ?>" data-bs-toggle="tooltip" data-bs-placement="top" title="Edit">
+                                                <button class="btn btn-sm btn-outline-primary p-1 edit-btn" data-id="<?php echo $resolution['id']; ?>">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
                                                 <button class="btn btn-sm btn-outline-danger p-1 delete-btn"
                                                         data-id="<?php echo $resolution['id']; ?>"
                                                         data-title="<?php echo htmlspecialchars($resolution['title']); ?>"
-                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Delete">
+                                                       >
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             </div>
@@ -2048,18 +2048,18 @@ $count_stmt->close();
                     </div>
                     <div id="ocrActions" class="d-flex justify-content-between mb-2" style="display:none;">
                         <div class="btn-group btn-group-sm" role="group">
-                            <button type="button" class="btn btn-outline-primary active" data-view="formatted" data-bs-toggle="tooltip" data-bs-placement="top" title="Formatted View">
+                            <button type="button" class="btn btn-outline-primary active" data-view="formatted">
                                 <i class="fas fa-paragraph"></i>
                             </button>
-                            <button type="button" class="btn btn-outline-primary" data-view="raw" data-bs-toggle="tooltip" data-bs-placement="top" title="Raw Text">
+                            <button type="button" class="btn btn-outline-primary" data-view="raw">
                                 <i class="fas fa-code"></i>
                             </button>
                         </div>
                         <div>
-                            <button id="editOcrText" class="btn btn-sm btn-outline-success me-1" data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Text">
+                            <button id="editOcrText" class="btn btn-sm btn-outline-success me-1">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button id="copyOcrText" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" data-bs-placement="top" title="Copy Text">
+                            <button id="copyOcrText" class="btn btn-sm btn-outline-secondary">
                                 <i class="fas fa-copy"></i>
                             </button>
                         </div>
@@ -2099,11 +2099,6 @@ $count_stmt->close();
             // Delete button handlers
             document.querySelectorAll('.delete-btn').forEach(button => {
                 button.addEventListener('click', function() {
-                    // Hide tooltip when clicked
-                    const tooltip = bootstrap.Tooltip.getInstance(this);
-                    if (tooltip) {
-                        tooltip.hide();
-                    }
                     
                     const id = this.getAttribute('data-id');
                     const title = this.getAttribute('data-title');
@@ -2212,41 +2207,6 @@ $count_stmt->close();
             window.location.href = url.toString();
         }
         document.addEventListener('DOMContentLoaded', function() {
-            // Initialize tooltips with proper configuration
-            function initializeTooltips() {
-                // Dispose existing tooltips first to prevent duplicates
-                const existingTooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-                existingTooltips.forEach(element => {
-                    const existingTooltip = bootstrap.Tooltip.getInstance(element);
-                    if (existingTooltip) {
-                        existingTooltip.dispose();
-                    }
-                });
-                
-                // Initialize new tooltips
-                const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-                const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                    return new bootstrap.Tooltip(tooltipTriggerEl, {
-                        delay: { "show": 300, "hide": 100 },
-                        trigger: 'hover',
-                        boundary: 'window'
-                    });
-                });
-            }
-            
-            // Initialize tooltips on page load
-            initializeTooltips();
-            
-            // Hide tooltips when clicking anywhere
-            document.addEventListener('click', function() {
-                const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-                tooltips.forEach(element => {
-                    const tooltip = bootstrap.Tooltip.getInstance(element);
-                    if (tooltip) {
-                        tooltip.hide();
-                    }
-                });
-            });
             
             // Initialize pagination position
             updatePaginationPosition();
@@ -2269,12 +2229,6 @@ $count_stmt->close();
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
-                    
-                    // Hide tooltip when clicked
-                    const tooltip = bootstrap.Tooltip.getInstance(this);
-                    if (tooltip) {
-                        tooltip.hide();
-                    }
                     
                     const imageSrcs = this.getAttribute('data-image-src').split('|');
                     const carouselInner = document.getElementById('carouselInner');
@@ -2373,11 +2327,6 @@ $count_stmt->close();
             // Edit button functionality
             document.querySelectorAll('.edit-btn').forEach(button => {
                 button.addEventListener('click', function() {
-                    // Hide tooltip when clicked
-                    const tooltip = bootstrap.Tooltip.getInstance(this);
-                    if (tooltip) {
-                        tooltip.hide();
-                    }
                     
                     const id = this.getAttribute('data-id');
                     fetch(`?action=get_resolution&id=${id}`)
@@ -2431,11 +2380,6 @@ $count_stmt->close();
             // OCR button functionality
             document.querySelectorAll('.ocr-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
-                    // Hide tooltip when clicked
-                    const tooltip = bootstrap.Tooltip.getInstance(btn);
-                    if (tooltip) {
-                        tooltip.hide();
-                    }
                     
                     // Open the OCR modal
                     const ocrModal = new bootstrap.Modal(document.getElementById('ocrModal'));
