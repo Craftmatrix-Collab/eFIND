@@ -482,6 +482,7 @@ $count_stmt->close();
             margin-bottom: 0;
             width: 100%;
             min-width: 1200px;
+            table-layout: fixed;
         }
         .table th {
             background-color: var(--primary-blue);
@@ -495,7 +496,9 @@ $count_stmt->close();
         .table td {
             vertical-align: middle;
             border-top: 1px solid rgba(0, 0, 0, 0.05);
-            padding: 5px 5px
+            padding: 5px 5px;
+            overflow: hidden;
+            word-break: break-word;
         }
         .table tr:hover td {
             background-color: rgba(67, 97, 238, 0.05);
@@ -1011,15 +1014,15 @@ $count_stmt->close();
                     <table class="table table-bordered table-hover align-middle text-center">
                         <thead class="table-dark">
                             <tr>
-                                <th>ID</th>
-                                <th>Full Name</th>
-                                <th>Contact Number</th>
-                                <th>Email</th>
-                                <th>Username</th>
-                                <th>Role</th>
-                                <th>User Type</th>
-                                <th>Profile Picture</th>
-                                <th>Actions</th>
+                                <th style="width:5%">ID</th>
+                                <th style="width:18%">Full Name</th>
+                                <th style="width:12%">Contact Number</th>
+                                <th style="width:18%">Email</th>
+                                <th style="width:12%">Username</th>
+                                <th style="width:8%">Role</th>
+                                <th style="width:9%">User Type</th>
+                                <th style="width:8%">Profile Picture</th>
+                                <th style="width:10%">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="usersTableBody">

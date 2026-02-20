@@ -874,6 +874,7 @@ $count_stmt->close();
             margin-bottom: 0;
             width: 100%;
             min-width: 1200px;
+            table-layout: fixed;
         }
         .table th {
             background-color: var(--primary-blue);
@@ -889,6 +890,8 @@ $count_stmt->close();
             border-top: 1px solid rgba(0, 0, 0, 0.05);
             padding: 5px 5px;
             height: 48px;
+            overflow: hidden;
+            word-break: break-word;
         }
         .filler-row td {
             border-top: 1px solid rgba(0, 0, 0, 0.05);
@@ -1632,15 +1635,15 @@ $count_stmt->close();
                     <table class="table table-bordered table-hover align-middle text-center">
                         <thead class="table-dark">
                             <tr>
-                                <th>ID</th>
+                                <th style="width:5%">ID</th>
                                 <!-- <th>Reference No.</th> -->
-                                <th>Title</th>
-                                <th>Resolution Number</th>
-                                <th>Date Posted</th>
-                                <th>Resolution Date</th>
-                                <th>Content Preview</th>
-                                <th>Image</th>
-                                <th>Actions</th>
+                                <th style="width:20%">Title</th>
+                                <th style="width:13%">Resolution Number</th>
+                                <th style="width:9%">Date Posted</th>
+                                <th style="width:9%">Resolution Date</th>
+                                <th style="width:20%">Content Preview</th>
+                                <th style="width:8%">Image</th>
+                                <th style="width:16%">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="resolutionsTableBody">

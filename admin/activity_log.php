@@ -693,6 +693,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
             margin-bottom: 0;
             width: 100%;
             min-width: 1200px;
+            table-layout: fixed;
         }
         .table th {
             background-color: var(--primary-blue);
@@ -706,7 +707,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
         .table td {
             vertical-align: middle;
             border-top: 1px solid rgba(0, 0, 0, 0.05);
-            padding: 5px 5px
+            padding: 5px 5px;
+            overflow: hidden;
+            word-break: break-word;
         }
         .table tr:hover td {
             background-color: rgba(67, 97, 238, 0.05);
@@ -1211,14 +1214,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
         <table class="table table-bordered table-hover align-middle text-center">
             <thead class="table-dark">
                 <tr>
-                    <th>ID</th>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Description</th>
-                    <th>Document Type</th>
-                    <th>Details</th>
+                    <th style="width:5%">ID</th>
+                    <th style="width:12%">User</th>
+                    <th style="width:10%">Action</th>
+                    <th style="width:25%">Description</th>
+                    <th style="width:13%">Document Type</th>
+                    <th style="width:20%">Details</th>
                     <!-- <th>IP Address</th> -->
-                    <th>Date/Time</th>
+                    <th style="width:15%">Date/Time</th>
                 </tr>
             </thead>
             <tbody id="logsTableBody">
