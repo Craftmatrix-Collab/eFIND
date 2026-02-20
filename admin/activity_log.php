@@ -708,8 +708,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
             vertical-align: middle;
             border-top: 1px solid rgba(0, 0, 0, 0.05);
             padding: 5px 5px;
+            height: 48px;
             overflow: hidden;
             word-break: break-word;
+        }
+        .filler-row td {
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            pointer-events: none;
+            background-color: transparent !important;
         }
         .table tr:hover td {
             background-color: rgba(67, 97, 238, 0.05);
@@ -1296,6 +1302,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                             <td><?php echo formatPhilippineTime($log['log_time'] ?? $log['created_at']); ?></td>
                         </tr>
                     <?php endforeach; ?>
+                    <?php
+                    $filled = count($logs);
+                    for ($i = $filled; $i < $table_limit; $i++): ?>
+                        <tr class="filler-row"><td colspan="7">&nbsp;</td></tr>
+                    <?php endfor; ?>
                 <?php endif; ?>
             </tbody>
         </table>
