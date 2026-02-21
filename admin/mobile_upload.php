@@ -107,15 +107,15 @@ $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ord
 
 <div class="container py-3 px-3">
 
-  <!-- Step indicator -->
-  <div id="step-indicator">
+  <!-- Step indicator (hidden in direct mode) -->
+  <div id="step-indicator" <?= $preselectedType ? 'class="d-none"' : '' ?>>
     <div class="step-dot active"  id="dot-1"></div>
     <div class="step-dot"         id="dot-2"></div>
     <div class="step-dot"         id="dot-3"></div>
   </div>
 
   <!-- ─── STEP 1: Document type ─── -->
-  <div id="step-1">
+  <div id="step-1" <?= $preselectedType ? 'class="d-none"' : '' ?>>
     <div class="card">
       <div class="card-header py-2 px-3"><i class="fas fa-file-alt me-2"></i>Step 1 — Select Document Type</div>
       <div class="card-body">
@@ -145,7 +145,75 @@ $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ord
     </button>
   </div>
 
-  <!-- ─── STEP 2: File selection ─── -->
+  <!-- ─── DIRECT MODE: Combined form shown when type is pre-selected via QR ─── -->
+  <?php if ($preselectedType): ?>
+  <div id="direct-mode">
+    <div class="card mb-2">
+      <div class="card-header py-2 px-3">
+        <?php
+          $icons = ['resolutions'=>'📋','minutes'=>'📝','ordinances'=>'⚖️'];
+          $labels= ['resolutions'=>'Resolution','minutes'=>'Minutes of Meeting','ordinances'=>'Ordinance'];
+          echo $icons[$preselectedType] . ' ' . $labels[$preselectedType] . ' — Upload';
+        ?>
+      </div>
+      <div class="card-body pb-1">
+        <!-- Metadata injected by JS -->
+        <div id="meta-fields"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header py-2 px-3"><i class="fas fa-camera me-2"></i>Capture / Select Images</div>
+      <div class="card-body">
+        <div class="d-flex gap-2 mb-3">
+          <button class="btn btn-primary flex-fill py-3 d-flex flex-column align-items-center gap-1"
+                  onclick="openCamera()">
+            <i class="fas fa-camera fa-lg"></i>
+            <span class="small">Take Photo</span>
+          </button>
+          <button class="btn btn-outline-primary flex-fill py-3 d-flex flex-column align-items-center gap-1"
+                  onclick="openCameraVideo()">
+            <i class="fas fa-video fa-lg"></i>
+            <span class="small">Record Video</span>
+          </button>
+          <button class="btn btn-outline-secondary flex-fill py-3 d-flex flex-column align-items-center gap-1"
+                  onclick="document.getElementById('file-input').click()">
+            <i class="fas fa-folder-open fa-lg"></i>
+            <span class="small">Browse Files</span>
+          </button>
+        </div>
+
+        <!-- Hidden inputs -->
+        <input type="file" id="camera-input" class="d-none" accept="image/*" capture="environment" multiple>
+        <input type="file" id="video-input"  class="d-none" accept="video/*" capture="environment">
+        <input type="file" id="file-input"   class="d-none" accept="image/*,.pdf" multiple>
+
+        <!-- Live camera viewfinder -->
+        <div id="camera-viewfinder" class="d-none mb-3" style="position:relative;">
+          <video id="camera-video" autoplay playsinline muted
+                 style="width:100%;border-radius:10px;background:#000;max-height:60vh;object-fit:cover;"></video>
+          <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-primary flex-fill py-2" onclick="capturePhoto()">
+              <i class="fas fa-camera me-2"></i>Capture
+            </button>
+            <button class="btn btn-outline-secondary flex-fill py-2" onclick="stopCamera()">
+              <i class="fas fa-times me-1"></i>Cancel
+            </button>
+          </div>
+          <canvas id="capture-canvas" class="d-none"></canvas>
+        </div>
+
+        <div id="file-list" class="mt-2"></div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary w-100 py-2 mt-2" id="btn-direct-upload" disabled onclick="startUpload()">
+      <i class="fas fa-cloud-upload-alt me-2"></i>Upload
+    </button>
+  </div>
+  <?php else: ?>
+
+  <!-- ─── STEP 2: File selection (multi-step mode only) ─── -->
   <div id="step-2" class="d-none">
     <div class="card">
       <div class="card-header py-2 px-3"><i class="fas fa-images me-2"></i>Step 2 — Select Files</div>
@@ -171,11 +239,8 @@ $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ord
         </div>
 
         <!-- Hidden inputs -->
-        <!-- camera photo capture -->
         <input type="file" id="camera-input" class="d-none" accept="image/*" capture="environment" multiple>
-        <!-- camera video capture -->
         <input type="file" id="video-input"  class="d-none" accept="video/*" capture="environment">
-        <!-- file browser (images + PDF) -->
         <input type="file" id="file-input"   class="d-none" accept="image/*,.pdf" multiple>
 
         <!-- Live camera viewfinder (shown when getUserMedia is used as fallback) -->
@@ -206,6 +271,8 @@ $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ord
       </button>
     </div>
   </div>
+
+  <?php endif; ?>
 
   <!-- ─── STEP 3: Uploading ─── -->
   <div id="step-3" class="d-none">
@@ -324,6 +391,23 @@ function validateStep1() {
 if (selectedType) {
   const btn = document.querySelector(`.type-btn[onclick*="${selectedType}"]`);
   if (btn) selectType(selectedType, btn);
+
+  // Direct mode: meta form is in #direct-mode, re-wire validation to btn-direct-upload
+  const directMeta = document.getElementById('meta-fields');
+  if (directMeta && document.getElementById('btn-direct-upload')) {
+    // Re-render meta template into the direct-mode #meta-fields
+    directMeta.innerHTML = metaTemplates[selectedType] || '';
+    directMeta.addEventListener('input', validateDirectMode);
+    validateDirectMode();
+  }
+}
+
+function validateDirectMode() {
+  const btn = document.getElementById('btn-direct-upload');
+  if (!btn) return;
+  const req = document.querySelectorAll('#meta-fields [required]');
+  const metaOk = [...req].every(el => el.value.trim() !== '');
+  btn.disabled = !(metaOk && selectedFiles.length > 0);
 }
 
 function goToStep2() {
@@ -414,7 +498,9 @@ function addFiles(files) {
     selectedFiles.push(f);
   });
   renderFileList();
-  document.getElementById('btn-next-2').disabled = selectedFiles.length === 0;
+  const n2 = document.getElementById('btn-next-2');
+  if (n2) n2.disabled = selectedFiles.length === 0;
+  validateDirectMode();
   // reset input so same file can be re-added if removed
   fileInput.value = '';
 }
@@ -422,7 +508,9 @@ function addFiles(files) {
 function removeFile(idx) {
   selectedFiles.splice(idx, 1);
   renderFileList();
-  document.getElementById('btn-next-2').disabled = selectedFiles.length === 0;
+  const n2 = document.getElementById('btn-next-2');
+  if (n2) n2.disabled = selectedFiles.length === 0;
+  validateDirectMode();
 }
 
 function renderFileList() {
@@ -454,7 +542,10 @@ function escHtml(s) {
 // Step 3 — Upload
 // ──────────────────────────────────────────────────────────────
 async function startUpload() {
-  goToStep(3);
+  // In direct mode, hide the combined form and show step-3
+  const dm = document.getElementById('direct-mode');
+  if (dm) dm.classList.add('d-none');
+  document.getElementById('step-3').classList.remove('d-none');
   const progressList = document.getElementById('upload-progress-list');
   progressList.innerHTML = '';
 
