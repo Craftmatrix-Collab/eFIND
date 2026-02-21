@@ -1219,9 +1219,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             <!-- Page Header -->
             <div class="page-header">
                 <h1 class="page-title">Dashboard</h1>
-                <button class="btn btn-primary d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#uploadDocumentModal">
-                    <i class="fas fa-cloud-upload-alt"></i> Upload Documents
-                </button>
+
             </div>
            <!-- Compact Stats Cards -->
 <div class="stats-container">
