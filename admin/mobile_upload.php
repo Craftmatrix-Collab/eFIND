@@ -149,14 +149,50 @@ $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ord
     <div class="card">
       <div class="card-header py-2 px-3"><i class="fas fa-images me-2"></i>Step 2 — Select Files</div>
       <div class="card-body">
-        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-          <div class="dz-icon"><i class="fas fa-cloud-upload-alt"></i></div>
-          <p class="mt-2 mb-1 fw-semibold">Tap to choose files</p>
-          <p class="text-muted small">Images (JPG, PNG) or PDF · 10 MB max per file</p>
-        </div>
-        <input type="file" id="file-input" class="d-none" accept="image/*,.pdf" multiple>
 
-        <div id="file-list" class="mt-3"></div>
+        <!-- Camera capture buttons -->
+        <div class="d-flex gap-2 mb-3">
+          <button class="btn btn-primary flex-fill py-3 d-flex flex-column align-items-center gap-1"
+                  onclick="openCamera()">
+            <i class="fas fa-camera fa-lg"></i>
+            <span class="small">Take Photo</span>
+          </button>
+          <button class="btn btn-outline-primary flex-fill py-3 d-flex flex-column align-items-center gap-1"
+                  onclick="openCameraVideo()">
+            <i class="fas fa-video fa-lg"></i>
+            <span class="small">Record Video</span>
+          </button>
+          <button class="btn btn-outline-secondary flex-fill py-3 d-flex flex-column align-items-center gap-1"
+                  onclick="document.getElementById('file-input').click()">
+            <i class="fas fa-folder-open fa-lg"></i>
+            <span class="small">Browse Files</span>
+          </button>
+        </div>
+
+        <!-- Hidden inputs -->
+        <!-- camera photo capture -->
+        <input type="file" id="camera-input" class="d-none" accept="image/*" capture="environment" multiple>
+        <!-- camera video capture -->
+        <input type="file" id="video-input"  class="d-none" accept="video/*" capture="environment">
+        <!-- file browser (images + PDF) -->
+        <input type="file" id="file-input"   class="d-none" accept="image/*,.pdf" multiple>
+
+        <!-- Live camera viewfinder (shown when getUserMedia is used as fallback) -->
+        <div id="camera-viewfinder" class="d-none mb-3" style="position:relative;">
+          <video id="camera-video" autoplay playsinline muted
+                 style="width:100%;border-radius:10px;background:#000;max-height:60vh;object-fit:cover;"></video>
+          <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-primary flex-fill py-2" onclick="capturePhoto()">
+              <i class="fas fa-camera me-2"></i>Capture
+            </button>
+            <button class="btn btn-outline-secondary flex-fill py-2" onclick="stopCamera()">
+              <i class="fas fa-times me-1"></i>Cancel
+            </button>
+          </div>
+          <canvas id="capture-canvas" class="d-none"></canvas>
+        </div>
+
+        <div id="file-list" class="mt-2"></div>
       </div>
     </div>
 
@@ -201,6 +237,7 @@ function goToStep(n) {
     if (i === n) dot.classList.add('active');
   });
   currentStep = n;
+  if (n !== 2) stopCamera();
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -290,22 +327,83 @@ if (selectedType) {
 
 function goToStep2() {
   goToStep(2);
+  requestCameraPermission();
 }
 
 // ──────────────────────────────────────────────────────────────
-// Step 2 — file selection
+// Step 2 — file selection + camera
 // ──────────────────────────────────────────────────────────────
-const fileInput = document.getElementById('file-input');
-const dropZone  = document.getElementById('drop-zone');
+const fileInput   = document.getElementById('file-input');
+const cameraInput = document.getElementById('camera-input');
+const videoInput  = document.getElementById('video-input');
 
-fileInput.addEventListener('change', e => addFiles([...e.target.files]));
+fileInput.addEventListener('change',   e => addFiles([...e.target.files]));
+cameraInput.addEventListener('change', e => addFiles([...e.target.files]));
+videoInput.addEventListener('change',  e => addFiles([...e.target.files]));
 
-dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop',      e  => {
-  e.preventDefault(); dropZone.classList.remove('dragover');
-  addFiles([...e.dataTransfer.files]);
-});
+// ── Camera helpers ──
+let cameraStream = null;
+
+function openCamera() {
+  // Prefer native capture sheet on mobile (works on iOS & Android)
+  cameraInput.click();
+}
+
+function openCameraVideo() {
+  videoInput.click();
+}
+
+// Fallback live viewfinder (for browsers / desktop that don't support capture attribute)
+async function openLiveCamera() {
+  const vf = document.getElementById('camera-viewfinder');
+  const vid = document.getElementById('camera-video');
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    vid.srcObject = cameraStream;
+    vf.classList.remove('d-none');
+  } catch (err) {
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      alert('Camera permission denied. Please allow camera access in your browser settings and try again.');
+    } else {
+      alert('Unable to open camera: ' + err.message);
+    }
+  }
+}
+
+function capturePhoto() {
+  const vid    = document.getElementById('camera-video');
+  const canvas = document.getElementById('capture-canvas');
+  canvas.width  = vid.videoWidth;
+  canvas.height = vid.videoHeight;
+  canvas.getContext('2d').drawImage(vid, 0, 0);
+  canvas.toBlob(blob => {
+    const name = `photo_${Date.now()}.jpg`;
+    const file = new File([blob], name, { type: 'image/jpeg' });
+    addFiles([file]);
+    stopCamera();
+  }, 'image/jpeg', 0.92);
+}
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  document.getElementById('camera-video').srcObject = null;
+  document.getElementById('camera-viewfinder').classList.add('d-none');
+}
+
+// Request camera permission proactively when step 2 loads
+function requestCameraPermission() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  // Just ask for permission; don't show the stream yet
+  navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+    .then(stream => stream.getTracks().forEach(t => t.stop()))
+    .catch(() => {}); // silently ignore if denied — user can still use Browse Files
+}
 
 function addFiles(files) {
   const MAX = 10 * 1024 * 1024; // 10 MB
