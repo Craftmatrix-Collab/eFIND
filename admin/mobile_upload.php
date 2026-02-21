@@ -1,0 +1,521 @@
+<?php
+/**
+ * Mobile-first direct-upload page.
+ * Users on mobile devices upload images/documents for resolutions,
+ * minutes of meeting, and ordinances directly to MinIO via presigned URLs.
+ * The PHP server only orchestrates — it never handles the file bytes.
+ *
+ * Access: /admin/mobile_upload.php
+ */
+session_start();
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/config.php';
+
+if (!isLoggedIn()) {
+    header('Location: login.php');
+    exit;
+}
+
+$preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ordinances'])
+    ? $_GET['type']
+    : '';
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#002147">
+<title>Mobile Upload — eFIND</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+  :root { --brand: #002147; --brand-light: #0a3d6b; }
+  body  { background: #f0f2f5; font-size: 15px; }
+  .top-bar {
+    background: var(--brand); color: #fff;
+    padding: 14px 16px; position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .top-bar h1 { font-size: 18px; margin: 0; }
+  .card       { border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); margin-bottom: 16px; }
+  .card-header{ background: var(--brand); color: #fff; border-radius: 12px 12px 0 0 !important; font-weight: 600; }
+  .type-btn   {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border-radius: 10px;
+    border: 2px solid #dee2e6; background: #fff;
+    cursor: pointer; width: 100%; margin-bottom: 10px;
+    transition: border-color .2s, background .2s;
+  }
+  .type-btn.selected { border-color: var(--brand); background: #e8f0fe; }
+  .type-btn .icon    { font-size: 28px; width: 36px; text-align: center; }
+  .type-btn .info h6 { margin: 0; font-size: 15px; font-weight: 600; }
+  .type-btn .info p  { margin: 0; font-size: 12px; color: #666; }
+
+  .drop-zone {
+    border: 2px dashed #adb5bd; border-radius: 12px;
+    padding: 32px 16px; text-align: center; cursor: pointer;
+    background: #fafafa; transition: border-color .2s, background .2s;
+  }
+  .drop-zone.dragover { border-color: var(--brand); background: #e8f0fe; }
+  .drop-zone .dz-icon { font-size: 40px; color: #adb5bd; }
+  .file-preview {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; background: #fff; border-radius: 8px;
+    border: 1px solid #e0e0e0; margin-bottom: 8px;
+  }
+  .file-preview img  { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; }
+  .file-preview .pdf-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    background: #fee2e2; border-radius: 6px; font-size: 22px; color: #dc2626; }
+  .file-preview .file-info { flex: 1; overflow: hidden; }
+  .file-preview .file-info .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-preview .file-info .size { font-size: 11px; color: #888; }
+  .file-preview .remove-btn { color: #dc2626; cursor: pointer; font-size: 18px; flex-shrink: 0; }
+
+  .progress-wrap { margin-top: 4px; }
+  .progress      { height: 6px; border-radius: 3px; }
+
+  #step-indicator { display: flex; gap: 8px; margin-bottom: 20px; }
+  .step-dot {
+    flex: 1; height: 4px; border-radius: 2px; background: #dee2e6; transition: background .3s;
+  }
+  .step-dot.active   { background: var(--brand); }
+  .step-dot.complete { background: #198754; }
+
+  .btn-primary   { background: var(--brand); border-color: var(--brand); }
+  .btn-primary:hover { background: var(--brand-light); border-color: var(--brand-light); }
+
+  .success-card {
+    text-align: center; padding: 40px 24px;
+  }
+  .success-card .check { font-size: 72px; color: #198754; }
+  .success-card h4     { margin-top: 12px; }
+
+  @media (min-width: 600px) {
+    body > .container { max-width: 520px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="dashboard.php" class="text-white me-1"><i class="fas fa-arrow-left"></i></a>
+  <i class="fas fa-cloud-upload-alt fa-lg"></i>
+  <h1>Mobile Upload</h1>
+</div>
+
+<div class="container py-3 px-3">
+
+  <!-- Step indicator -->
+  <div id="step-indicator">
+    <div class="step-dot active"  id="dot-1"></div>
+    <div class="step-dot"         id="dot-2"></div>
+    <div class="step-dot"         id="dot-3"></div>
+  </div>
+
+  <!-- ─── STEP 1: Document type ─── -->
+  <div id="step-1">
+    <div class="card">
+      <div class="card-header py-2 px-3"><i class="fas fa-file-alt me-2"></i>Step 1 — Select Document Type</div>
+      <div class="card-body">
+        <button class="type-btn <?= $preselectedType === 'resolutions' ? 'selected' : '' ?>"
+                onclick="selectType('resolutions', this)">
+          <span class="icon">📋</span>
+          <span class="info"><h6>Resolution</h6><p>Barangay council resolutions</p></span>
+        </button>
+        <button class="type-btn <?= $preselectedType === 'minutes' ? 'selected' : '' ?>"
+                onclick="selectType('minutes', this)">
+          <span class="icon">📝</span>
+          <span class="info"><h6>Minutes of Meeting</h6><p>Council session minutes</p></span>
+        </button>
+        <button class="type-btn <?= $preselectedType === 'ordinances' ? 'selected' : '' ?>"
+                onclick="selectType('ordinances', this)">
+          <span class="icon">⚖️</span>
+          <span class="info"><h6>Ordinance</h6><p>Barangay ordinances</p></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Metadata fields rendered by JS -->
+    <div id="meta-fields"></div>
+
+    <button class="btn btn-primary w-100 py-2" id="btn-next-1" disabled onclick="goToStep2()">
+      Next — Add Files <i class="fas fa-arrow-right ms-1"></i>
+    </button>
+  </div>
+
+  <!-- ─── STEP 2: File selection ─── -->
+  <div id="step-2" class="d-none">
+    <div class="card">
+      <div class="card-header py-2 px-3"><i class="fas fa-images me-2"></i>Step 2 — Select Files</div>
+      <div class="card-body">
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+          <div class="dz-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+          <p class="mt-2 mb-1 fw-semibold">Tap to choose files</p>
+          <p class="text-muted small">Images (JPG, PNG) or PDF · 10 MB max per file</p>
+        </div>
+        <input type="file" id="file-input" class="d-none" accept="image/*,.pdf" multiple>
+
+        <div id="file-list" class="mt-3"></div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button class="btn btn-outline-secondary flex-fill py-2" onclick="goToStep(1)">
+        <i class="fas fa-arrow-left me-1"></i> Back
+      </button>
+      <button class="btn btn-primary flex-fill py-2" id="btn-next-2" disabled onclick="startUpload()">
+        Upload <i class="fas fa-arrow-right ms-1"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── STEP 3: Uploading ─── -->
+  <div id="step-3" class="d-none">
+    <div class="card">
+      <div class="card-header py-2 px-3"><i class="fas fa-spinner fa-spin me-2"></i>Uploading…</div>
+      <div class="card-body" id="upload-progress-list"></div>
+    </div>
+    <div id="upload-result"></div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ──────────────────────────────────────────────────────────────
+// State
+// ──────────────────────────────────────────────────────────────
+let selectedType = '<?= $preselectedType ?>';
+let selectedFiles = [];
+let currentStep = 1;
+
+// ──────────────────────────────────────────────────────────────
+// Step navigation helpers
+// ──────────────────────────────────────────────────────────────
+function goToStep(n) {
+  [1, 2, 3].forEach(i => {
+    document.getElementById(`step-${i}`).classList.toggle('d-none', i !== n);
+    const dot = document.getElementById(`dot-${i}`);
+    dot.classList.remove('active', 'complete');
+    if (i < n)  dot.classList.add('complete');
+    if (i === n) dot.classList.add('active');
+  });
+  currentStep = n;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Step 1 — type selection + metadata
+// ──────────────────────────────────────────────────────────────
+const metaTemplates = {
+  resolutions: `
+    <div class="card"><div class="card-header py-2 px-3"><i class="fas fa-pencil me-2"></i>Resolution Details</div>
+    <div class="card-body">
+      <div class="mb-3"><label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+        <input class="form-control" name="title" placeholder="e.g. Resolution Approving Budget 2025" required></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Resolution Number <span class="text-danger">*</span></label>
+        <input class="form-control" name="resolution_number" placeholder="e.g. 2025-001" required></div>
+      <div class="row g-2 mb-3">
+        <div class="col"><label class="form-label fw-semibold">Resolution Date</label>
+          <input class="form-control" type="date" name="resolution_date"></div>
+        <div class="col"><label class="form-label fw-semibold">Date Issued</label>
+          <input class="form-control" type="date" name="date_issued"></div>
+      </div>
+      <div class="mb-3"><label class="form-label fw-semibold">Reference Number</label>
+        <input class="form-control" name="reference_number" placeholder="Optional"></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Description</label>
+        <textarea class="form-control" name="description" rows="2" placeholder="Brief description"></textarea></div>
+    </div></div>`,
+
+  minutes: `
+    <div class="card"><div class="card-header py-2 px-3"><i class="fas fa-pencil me-2"></i>Minutes Details</div>
+    <div class="card-body">
+      <div class="mb-3"><label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+        <input class="form-control" name="title" placeholder="e.g. Regular Session Minutes" required></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Session Number <span class="text-danger">*</span></label>
+        <input class="form-control" name="session_number" placeholder="e.g. 1st Regular Session 2025" required></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Meeting Date</label>
+        <input class="form-control" type="date" name="meeting_date"></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Reference Number</label>
+        <input class="form-control" name="reference_number" placeholder="Optional"></div>
+    </div></div>`,
+
+  ordinances: `
+    <div class="card"><div class="card-header py-2 px-3"><i class="fas fa-pencil me-2"></i>Ordinance Details</div>
+    <div class="card-body">
+      <div class="mb-3"><label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+        <input class="form-control" name="title" placeholder="e.g. Ordinance on Noise Regulation" required></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Ordinance Number <span class="text-danger">*</span></label>
+        <input class="form-control" name="ordinance_number" placeholder="e.g. ORD-2025-001" required></div>
+      <div class="row g-2 mb-3">
+        <div class="col"><label class="form-label fw-semibold">Ordinance Date</label>
+          <input class="form-control" type="date" name="ordinance_date"></div>
+        <div class="col"><label class="form-label fw-semibold">Date Issued</label>
+          <input class="form-control" type="date" name="date_issued"></div>
+      </div>
+      <div class="mb-3"><label class="form-label fw-semibold">Status</label>
+        <select class="form-select" name="status">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+          <option value="Repealed">Repealed</option>
+        </select></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Reference Number</label>
+        <input class="form-control" name="reference_number" placeholder="Optional"></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Description</label>
+        <textarea class="form-control" name="description" rows="2" placeholder="Brief description"></textarea></div>
+    </div></div>`
+};
+
+function selectType(type, btn) {
+  selectedType = type;
+  document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('meta-fields').innerHTML = metaTemplates[type];
+  // Enable next button if required fields are eventually valid
+  document.getElementById('meta-fields').addEventListener('input', validateStep1);
+  validateStep1();
+}
+
+function validateStep1() {
+  if (!selectedType) { document.getElementById('btn-next-1').disabled = true; return; }
+  const required = document.querySelectorAll('#meta-fields [required]');
+  const allFilled = [...required].every(el => el.value.trim() !== '');
+  document.getElementById('btn-next-1').disabled = !allFilled;
+}
+
+// If type pre-selected via URL param, render its form immediately
+if (selectedType) {
+  const btn = document.querySelector(`.type-btn[onclick*="${selectedType}"]`);
+  if (btn) selectType(selectedType, btn);
+}
+
+function goToStep2() {
+  goToStep(2);
+}
+
+// ──────────────────────────────────────────────────────────────
+// Step 2 — file selection
+// ──────────────────────────────────────────────────────────────
+const fileInput = document.getElementById('file-input');
+const dropZone  = document.getElementById('drop-zone');
+
+fileInput.addEventListener('change', e => addFiles([...e.target.files]));
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop',      e  => {
+  e.preventDefault(); dropZone.classList.remove('dragover');
+  addFiles([...e.dataTransfer.files]);
+});
+
+function addFiles(files) {
+  const MAX = 10 * 1024 * 1024; // 10 MB
+  files.forEach(f => {
+    if (f.size > MAX) { alert(`${f.name} exceeds 10 MB limit.`); return; }
+    if (selectedFiles.find(x => x.name === f.name && x.size === f.size)) return; // skip duplicate
+    selectedFiles.push(f);
+  });
+  renderFileList();
+  document.getElementById('btn-next-2').disabled = selectedFiles.length === 0;
+  // reset input so same file can be re-added if removed
+  fileInput.value = '';
+}
+
+function removeFile(idx) {
+  selectedFiles.splice(idx, 1);
+  renderFileList();
+  document.getElementById('btn-next-2').disabled = selectedFiles.length === 0;
+}
+
+function renderFileList() {
+  const list = document.getElementById('file-list');
+  list.innerHTML = selectedFiles.map((f, i) => {
+    const isImg = f.type.startsWith('image/');
+    const url   = isImg ? URL.createObjectURL(f) : null;
+    const size  = f.size < 1024*1024 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1024/1024).toFixed(1)+' MB';
+    const thumb = isImg
+      ? `<img src="${url}" alt="">`
+      : `<div class="pdf-icon"><i class="fas fa-file-pdf"></i></div>`;
+    return `
+      <div class="file-preview">
+        ${thumb}
+        <div class="file-info">
+          <div class="name">${escHtml(f.name)}</div>
+          <div class="size">${size}</div>
+        </div>
+        <span class="remove-btn" onclick="removeFile(${i})"><i class="fas fa-times-circle"></i></span>
+      </div>`;
+  }).join('');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ──────────────────────────────────────────────────────────────
+// Step 3 — Upload
+// ──────────────────────────────────────────────────────────────
+async function startUpload() {
+  goToStep(3);
+  const progressList = document.getElementById('upload-progress-list');
+  progressList.innerHTML = '';
+
+  const objectKeys = [];
+  let allOk = true;
+
+  for (let i = 0; i < selectedFiles.length; i++) {
+    const file = selectedFiles[i];
+    const rowId = `file-progress-${i}`;
+
+    progressList.insertAdjacentHTML('beforeend', `
+      <div id="${rowId}" class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="small fw-semibold text-truncate" style="max-width:75%">${escHtml(file.name)}</span>
+          <span class="small text-muted" id="${rowId}-pct">0%</span>
+        </div>
+        <div class="progress"><div class="progress-bar" id="${rowId}-bar" style="width:0%"></div></div>
+        <div class="small text-muted mt-1" id="${rowId}-status">Getting upload URL…</div>
+      </div>`);
+
+    // 1. Request presigned URL from PHP
+    let presignedUrl, objectKey;
+    try {
+      const res = await fetch('generate_presigned_url.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doc_type:     selectedType,
+          file_name:    file.name,
+          content_type: file.type || 'application/octet-stream',
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed to get presigned URL');
+      presignedUrl = data.presigned_url;
+      objectKey    = data.object_key;
+    } catch (err) {
+      setFileStatus(rowId, 'danger', `Error: ${err.message}`);
+      allOk = false;
+      continue;
+    }
+
+    // 2. Upload directly to MinIO with XHR (for progress)
+    try {
+      await uploadToMinio(file, presignedUrl, rowId);
+      objectKeys.push(objectKey);
+      setFileStatus(rowId, 'success', 'Uploaded ✓');
+    } catch (err) {
+      setFileStatus(rowId, 'danger', `Upload failed: ${err.message}`);
+      allOk = false;
+    }
+  }
+
+  if (!allOk || objectKeys.length === 0) {
+    showResult(false, 'Some files failed to upload. Please try again.');
+    return;
+  }
+
+  // 3. Confirm upload to PHP (saves DB record)
+  const meta = collectMeta();
+  try {
+    const res = await fetch('confirm_upload.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doc_type: selectedType, object_keys: objectKeys, ...meta }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'DB save failed');
+    showResult(true, data);
+  } catch (err) {
+    showResult(false, err.message);
+  }
+}
+
+function uploadToMinio(file, presignedUrl, rowId) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', presignedUrl);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        document.getElementById(`${rowId}-bar`).style.width = pct + '%';
+        document.getElementById(`${rowId}-pct`).textContent  = pct + '%';
+        document.getElementById(`${rowId}-status`).textContent = 'Uploading…';
+      }
+    };
+    xhr.onload  = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`HTTP ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.send(file);
+  });
+}
+
+function setFileStatus(rowId, type, msg) {
+  const bar = document.getElementById(`${rowId}-bar`);
+  if (bar) {
+    bar.classList.add(type === 'success' ? 'bg-success' : 'bg-danger');
+    bar.style.width = '100%';
+  }
+  const status = document.getElementById(`${rowId}-status`);
+  if (status) {
+    status.textContent = msg;
+    status.className = `small mt-1 text-${type === 'success' ? 'success' : 'danger'}`;
+  }
+}
+
+function collectMeta() {
+  const fields = {};
+  document.querySelectorAll('#meta-fields input, #meta-fields textarea, #meta-fields select').forEach(el => {
+    if (el.name) fields[el.name] = el.value;
+  });
+  return fields;
+}
+
+function showResult(success, data) {
+  const resultEl = document.getElementById('upload-result');
+
+  // Update step 3 card header
+  const header = document.querySelector('#step-3 .card-header');
+  if (header) {
+    header.innerHTML = success
+      ? '<i class="fas fa-check-circle text-success me-2"></i>Upload Complete'
+      : '<i class="fas fa-exclamation-circle text-danger me-2"></i>Upload Failed';
+  }
+
+  const docPages = {
+    resolutions: 'resolutions.php',
+    minutes:     'minutes_of_meeting.php',
+    ordinances:  'ordinances.php',
+  };
+
+  if (success) {
+    resultEl.innerHTML = `
+      <div class="card">
+        <div class="card-body success-card">
+          <div class="check"><i class="fas fa-check-circle"></i></div>
+          <h4 class="fw-bold">Upload Successful!</h4>
+          <p class="text-muted">Your document has been saved and is now available in the system.</p>
+          <a href="${docPages[selectedType]}" class="btn btn-primary w-100 py-2 mb-2">
+            <i class="fas fa-eye me-2"></i>View in Admin
+          </a>
+          <button class="btn btn-outline-secondary w-100 py-2" onclick="location.reload()">
+            <i class="fas fa-plus me-2"></i>Upload Another
+          </button>
+        </div>
+      </div>`;
+  } else {
+    resultEl.innerHTML = `
+      <div class="alert alert-danger mt-3">
+        <strong>Error:</strong> ${escHtml(typeof data === 'string' ? data : JSON.stringify(data))}
+      </div>
+      <button class="btn btn-outline-secondary w-100" onclick="goToStep(2)">
+        <i class="fas fa-arrow-left me-1"></i> Go Back
+      </button>`;
+  }
+}
+</script>
+</body>
+</html>

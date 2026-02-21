@@ -34,6 +34,11 @@
                     <i class="fas fa-chart-bar me-2"></i> Meeting Minutes
                 </a>
             </li>
+            <li class="<?= basename($_SERVER['PHP_SELF']) == 'mobile_upload.php' ? 'active' : '' ?>">
+                <a href="mobile_upload.php" class="d-flex align-items-center py-2 px-3 text-white text-decoration-none <?= basename($_SERVER['PHP_SELF']) == 'mobile_upload.php' ? 'bg-dark text-dark rounded' : '' ?>">
+                    <i class="fas fa-mobile-alt me-2"></i> Mobile Upload
+                </a>
+            </li>
             <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true): ?>
                 <li class="<?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'active' : '' ?>">
                     <a href="users.php" class="d-flex align-items-center py-2 px-3 text-white text-decoration-none <?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'bg-dark text-dark rounded' : '' ?>">

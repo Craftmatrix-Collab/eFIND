@@ -260,6 +260,71 @@ class MinioS3Client {
     }
     
     /**
+     * Generate a presigned PUT URL for direct browser-to-MinIO upload (AWS SigV4)
+     * @param string $objectName  Object key in bucket (e.g. 'resolutions/2025/01/file.jpg')
+     * @param int    $expiresIn   URL validity in seconds (default 15 min)
+     * @return string  Presigned URL the browser can PUT to directly
+     */
+    public function generatePresignedPutUrl($objectName, $expiresIn = 900) {
+        $now = new DateTime('UTC');
+        $datetime = $now->format('Ymd\THis\Z');
+        $date     = $now->format('Ymd');
+
+        $host   = $this->endpoint;
+        $region = $this->region;
+
+        // Encode each path segment individually
+        $encodedKey   = implode('/', array_map('rawurlencode', explode('/', $objectName)));
+        $canonicalUri = '/' . $this->bucket . '/' . $encodedKey;
+
+        $credentialScope = "$date/$region/s3/aws4_request";
+        $credential      = $this->accessKey . '/' . $credentialScope;
+
+        // Build canonical query string (keys must be sorted)
+        $queryParams = [
+            'X-Amz-Algorithm'     => 'AWS4-HMAC-SHA256',
+            'X-Amz-Credential'    => $credential,
+            'X-Amz-Date'          => $datetime,
+            'X-Amz-Expires'       => (string)$expiresIn,
+            'X-Amz-SignedHeaders' => 'host',
+        ];
+        ksort($queryParams);
+        $canonicalQueryString = http_build_query($queryParams, '', '&', PHP_QUERY_RFC3986);
+
+        $canonicalRequest = implode("\n", [
+            'PUT',
+            $canonicalUri,
+            $canonicalQueryString,
+            "host:$host\n",   // canonical headers (blank line included by trailing \n)
+            'host',           // signed headers
+            'UNSIGNED-PAYLOAD',
+        ]);
+
+        $stringToSign = implode("\n", [
+            'AWS4-HMAC-SHA256',
+            $datetime,
+            $credentialScope,
+            hash('sha256', $canonicalRequest),
+        ]);
+
+        $signingKey = $this->_deriveSigV4Key($date, $region);
+        $signature  = hash_hmac('sha256', $stringToSign, $signingKey);
+
+        $protocol = $this->useSSL ? 'https' : 'http';
+        return $protocol . '://' . $host . $canonicalUri
+             . '?' . $canonicalQueryString
+             . '&X-Amz-Signature=' . $signature;
+    }
+
+    /** Derive the AWS SigV4 signing key */
+    private function _deriveSigV4Key($date, $region) {
+        $kDate    = hash_hmac('sha256', $date,         'AWS4' . $this->secretKey, true);
+        $kRegion  = hash_hmac('sha256', $region,       $kDate,    true);
+        $kService = hash_hmac('sha256', 's3',          $kRegion,  true);
+        return    hash_hmac('sha256', 'aws4_request', $kService, true);
+    }
+
+    /**
      * Get file extension from filename
      */
     public static function getFileExtension($filename) {
