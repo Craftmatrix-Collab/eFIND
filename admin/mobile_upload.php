@@ -12,7 +12,8 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 
 if (!isLoggedIn()) {
-    header('Location: login.php');
+    $returnUrl = urlencode($_SERVER['REQUEST_URI']);
+    header("Location: login.php?redirect={$returnUrl}");
     exit;
 }
 

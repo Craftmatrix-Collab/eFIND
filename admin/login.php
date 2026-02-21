@@ -19,6 +19,20 @@ if (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])) {
 
 $error = '';
 
+// Safe redirect: only allow relative paths on the same host
+function getSafeRedirect() {
+    $redirect = $_POST['redirect'] ?? $_GET['redirect'] ?? '';
+    if ($redirect) {
+        $decoded = urldecode($redirect);
+        // Only allow relative paths (no protocol, no external hosts)
+        if (preg_match('#^[^/]#', $decoded) || strpos($decoded, '://') !== false) {
+            return 'dashboard.php';
+        }
+        return $decoded;
+    }
+    return 'dashboard.php';
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
     // Sanitize inputs
     $username = trim($_POST['username']);
@@ -70,8 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                     $loginSuccessful = true;
                     
-                    // Redirect to dashboard
-                    header("Location: dashboard.php");
+                    // Redirect to dashboard or original requested URL
+                    header("Location: " . getSafeRedirect());
                     exit();
                 } else {
                     // Admin account exists but password is wrong - stop here, don't try staff login
@@ -122,8 +136,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                         logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
                         logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}");
 
-                        // Redirect to dashboard
-                        header("Location: dashboard.php");
+                        // Redirect to dashboard or original requested URL
+                        header("Location: " . getSafeRedirect());
                         exit();
                     } else {
                         $error = "Invalid username or password.";
@@ -1010,6 +1024,7 @@ checkActivityLogsTable();
                 </div>
 
                 <form method="post" action="login.php">
+                    <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_GET['redirect'] ?? $_POST['redirect'] ?? ''); ?>">
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
                         <input type="text" class="form-control" id="username" name="username" required
