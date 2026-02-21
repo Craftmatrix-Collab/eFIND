@@ -51,7 +51,7 @@
 })();
 </script>
 
-<footer class="bg-darkblue text-white py-3" style="background-color: #002147; margin-left: 250px;">
+<footer class="bg-darkblue text-white py-3 site-footer" style="background-color: #002147;">
     <div class="container-fluid">
         <div class="row">
             <div class="col-md-6 mb-2"> 

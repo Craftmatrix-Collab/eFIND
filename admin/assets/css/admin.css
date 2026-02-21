@@ -131,11 +131,20 @@
     font-weight: 600;
 }
 
+/* Desktop: offset footer to match sidebar width */
+.site-footer {
+    margin-left: 250px;
+}
+
 @media (max-width: 768px) {
     .sidebar {
         margin-left: -250px;
     }
     .sidebar.active {
+        margin-left: 0;
+    }
+    /* Mobile: footer spans full width */
+    .site-footer {
         margin-left: 0;
     }
 }
