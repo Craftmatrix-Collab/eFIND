@@ -1881,17 +1881,54 @@ $count_stmt->close();
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Image File (JPG, PNG)</label>
-                            <div class="file-upload">
-                                <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFilesWithAutoFill(this)">
-                                <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
-                                <div id="fileCount" class="mt-1" style="display: none;">
-                                    <span class="badge bg-info"><span id="fileCountNumber">0</span> file(s) selected</span>
+                            <!-- Upload method toggle -->
+                            <div class="d-flex gap-2 mb-2">
+                                <button type="button" class="btn btn-sm btn-primary active" id="ord-method-desktop" onclick="ordSwitchMethod('desktop')">
+                                    <i class="fas fa-desktop me-1"></i> This Device
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="ord-method-mobile" onclick="ordSwitchMethod('mobile')">
+                                    <i class="fas fa-qrcode me-1"></i> Mobile Camera
+                                </button>
+                            </div>
+
+                            <!-- Desktop file input -->
+                            <div id="ord-desktop-upload">
+                                <div class="file-upload">
+                                    <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFilesWithAutoFill(this)">
+                                    <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
+                                    <div id="fileCount" class="mt-1" style="display: none;">
+                                        <span class="badge bg-info"><span id="fileCountNumber">0</span> file(s) selected</span>
+                                    </div>
+                                </div>
+                                <div id="ocrProcessing" class="mt-2" style="display: none;">
+                                    <div class="d-flex align-items-center">
+                                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                        <span>Processing file and detecting content...</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div id="ocrProcessing" class="mt-2" style="display: none;">
-                                <div class="d-flex align-items-center">
-                                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                                    <span>Processing file and detecting content...</span>
+
+                            <!-- Mobile QR upload panel -->
+                            <div id="ord-mobile-upload" class="d-none">
+                                <div class="text-center p-4 border rounded-3 bg-light">
+                                    <p class="fw-semibold mb-1"><i class="fas fa-mobile-alt me-2 text-primary"></i>Scan to Upload from Mobile</p>
+                                    <p class="text-muted small mb-3">Point your phone's camera at this QR code to open the mobile upload page for ordinances.</p>
+                                    <div id="ord-qrcode" class="d-inline-block p-2 bg-white rounded border"></div>
+                                    <div class="mt-3">
+                                        <a id="ord-qr-link" href="#" target="_blank" class="btn btn-outline-primary btn-sm">
+                                            <i class="fas fa-external-link-alt me-1"></i>Open on Mobile
+                                        </a>
+                                    </div>
+                                    <div id="ord-mobile-status" class="mt-3 d-none">
+                                        <div class="d-flex align-items-center justify-content-center gap-2 text-success">
+                                            <i class="fas fa-check-circle"></i>
+                                            <span id="ord-mobile-status-text">Upload detected! Refreshing…</span>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <span class="badge bg-secondary"><i class="fas fa-circle-notch fa-spin me-1"></i>Waiting for mobile upload…</span>
+                                        <div class="text-muted small mt-1">After uploading on mobile, this page will automatically refresh.</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2050,7 +2087,98 @@ $count_stmt->close();
             </div>
         </div>
     </div>
-    <!-- Bootstrap JS Bundle with Popper -->
+    <!-- QRCode.js for mobile upload QR generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script>
+    /* ── Ordinance Mobile Upload QR ── */
+    (function () {
+        let ordQrCreated = false;
+        let ordSseSource = null;
+
+        window.ordSwitchMethod = function (method) {
+            const desktopBtn  = document.getElementById('ord-method-desktop');
+            const mobileBtn   = document.getElementById('ord-method-mobile');
+            const desktopPane = document.getElementById('ord-desktop-upload');
+            const mobilePane  = document.getElementById('ord-mobile-upload');
+
+            if (method === 'mobile') {
+                desktopBtn.classList.replace('btn-primary','btn-outline-primary');
+                desktopBtn.classList.remove('active');
+                mobileBtn.classList.replace('btn-outline-primary','btn-primary');
+                mobileBtn.classList.add('active');
+                desktopPane.classList.add('d-none');
+                mobilePane.classList.remove('d-none');
+                ordGenerateQR();
+                ordStartPolling();
+            } else {
+                mobileBtn.classList.replace('btn-primary','btn-outline-primary');
+                mobileBtn.classList.remove('active');
+                desktopBtn.classList.replace('btn-outline-primary','btn-primary');
+                desktopBtn.classList.add('active');
+                mobilePane.classList.add('d-none');
+                desktopPane.classList.remove('d-none');
+                ordStopPolling();
+            }
+        };
+
+        function ordGenerateQR() {
+            if (ordQrCreated) return;
+            const url = `${location.protocol}//${location.host}${location.pathname.replace('ordinances.php','mobile_upload.php')}?type=ordinances`;
+            document.getElementById('ord-qr-link').href = url;
+            document.getElementById('ord-qrcode').innerHTML = '';
+            new QRCode(document.getElementById('ord-qrcode'), {
+                text:       url,
+                width:      200,
+                height:     200,
+                colorDark:  '#002147',
+                colorLight: '#ffffff',
+            });
+            ordQrCreated = true;
+        }
+
+        function ordStartPolling() {
+            ordStopPolling();
+            if (!window.EventSource) return;
+            ordSseSource = new EventSource('upload_events.php');
+            ordSseSource.addEventListener('new_upload', function (e) {
+                const d = JSON.parse(e.data);
+                if (d.doc_type === 'ordinances') {
+                    ordStopPolling();
+                    const statusEl = document.getElementById('ord-mobile-status');
+                    const textEl   = document.getElementById('ord-mobile-status-text');
+                    textEl.textContent = `"${d.title}" uploaded by ${d.uploaded_by}. Refreshing…`;
+                    statusEl.classList.remove('d-none');
+                    setTimeout(() => location.reload(), 2000);
+                }
+            });
+            ordSseSource.onerror = function () {
+                ordStopPolling();
+                // retry after 10 s
+                setTimeout(function () {
+                    if (!document.getElementById('ord-mobile-upload').classList.contains('d-none')) {
+                        ordStartPolling();
+                    }
+                }, 10000);
+            };
+        }
+
+        function ordStopPolling() {
+            if (ordSseSource) { ordSseSource.close(); ordSseSource = null; }
+        }
+
+        // Stop polling when modal is closed
+        document.addEventListener('DOMContentLoaded', function () {
+            const modal = document.getElementById('addOrdinanceModal');
+            if (modal) {
+                modal.addEventListener('hidden.bs.modal', function () {
+                    ordStopPolling();
+                    ordQrCreated = false;
+                    ordSwitchMethod('desktop');
+                });
+            }
+        });
+    })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- jsPDF & html2canvas for PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
