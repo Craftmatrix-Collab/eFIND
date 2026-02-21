@@ -1219,6 +1219,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             <!-- Page Header -->
             <div class="page-header">
                 <h1 class="page-title">Dashboard</h1>
+                <button class="btn btn-primary d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#uploadDocumentModal">
+                    <i class="fas fa-cloud-upload-alt"></i> Upload Documents
+                </button>
             </div>
            <!-- Compact Stats Cards -->
 <div class="stats-container">
@@ -1873,5 +1876,482 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
     
     <!-- AI Chatbot Widget -->
     <?php include(__DIR__ . '/includes/chatbot_widget.php'); ?>
+
+<!-- ============================================================
+     Upload Documents Modal
+     ============================================================ -->
+<div class="modal fade" id="uploadDocumentModal" tabindex="-1" aria-labelledby="uploadDocumentModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header" style="background:linear-gradient(135deg,#1a3a8f,#1e40af);color:#fff;">
+        <h5 class="modal-title" id="uploadDocumentModalLabel">
+          <i class="fas fa-cloud-upload-alt me-2"></i>Upload Documents
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+
+        <!-- Step indicator -->
+        <div id="ud-step-indicator" class="d-flex gap-2 mb-4">
+          <div class="flex-fill rounded" id="ud-dot-1" style="height:4px;background:#1a3a8f;transition:background .3s;"></div>
+          <div class="flex-fill rounded" id="ud-dot-2" style="height:4px;background:#dee2e6;transition:background .3s;"></div>
+          <div class="flex-fill rounded" id="ud-dot-3" style="height:4px;background:#dee2e6;transition:background .3s;"></div>
+        </div>
+
+        <!-- ─── STEP 1: Choose document type ─── -->
+        <div id="ud-step-1">
+          <p class="fw-semibold text-muted mb-3"><i class="fas fa-file-alt me-2"></i>Step 1 — Select Document Type</p>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <button class="ud-type-btn w-100 p-3 border rounded-3 text-start bg-white" onclick="udSelectType('resolutions', this)">
+                <div class="fs-2">📋</div>
+                <div class="fw-semibold mt-1">Resolution</div>
+                <div class="text-muted small">Barangay council resolutions</div>
+              </button>
+            </div>
+            <div class="col-md-4">
+              <button class="ud-type-btn w-100 p-3 border rounded-3 text-start bg-white" onclick="udSelectType('minutes', this)">
+                <div class="fs-2">📝</div>
+                <div class="fw-semibold mt-1">Minutes of Meeting</div>
+                <div class="text-muted small">Council session minutes</div>
+              </button>
+            </div>
+            <div class="col-md-4">
+              <button class="ud-type-btn w-100 p-3 border rounded-3 text-start bg-white" onclick="udSelectType('ordinances', this)">
+                <div class="fs-2">⚖️</div>
+                <div class="fw-semibold mt-1">Ordinance</div>
+                <div class="text-muted small">Barangay ordinances</div>
+              </button>
+            </div>
+          </div>
+          <div class="mt-4 d-flex justify-content-end">
+            <button class="btn btn-primary px-4" id="ud-btn-next-1" disabled onclick="udGoToStep(2)">
+              Next <i class="fas fa-arrow-right ms-1"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- ─── STEP 2: Choose upload method ─── -->
+        <div id="ud-step-2" class="d-none">
+          <p class="fw-semibold text-muted mb-3"><i class="fas fa-upload me-2"></i>Step 2 — Choose Upload Method</p>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <button class="w-100 p-4 border rounded-3 text-center bg-white h-100 d-flex flex-column align-items-center justify-content-center gap-2"
+                      style="border:2px solid #dee2e6;cursor:pointer;" onclick="udGoToStep(3)">
+                <i class="fas fa-desktop" style="font-size:2.5rem;color:#1a3a8f;"></i>
+                <div class="fw-semibold mt-1">Upload from this Device</div>
+                <div class="text-muted small">Fill in details and upload files from your computer</div>
+              </button>
+            </div>
+            <div class="col-md-6">
+              <button class="w-100 p-4 border rounded-3 text-center bg-white h-100 d-flex flex-column align-items-center justify-content-center gap-2"
+                      style="border:2px solid #dee2e6;cursor:pointer;" onclick="udShowQR()">
+                <i class="fas fa-qrcode" style="font-size:2.5rem;color:#1a3a8f;"></i>
+                <div class="fw-semibold mt-1">Upload from Mobile Device</div>
+                <div class="text-muted small">Scan QR code with your phone to upload on the go</div>
+              </button>
+            </div>
+          </div>
+          <!-- QR Code Panel (hidden until selected) -->
+          <div id="ud-qr-panel" class="d-none mt-4 text-center p-4 border rounded-3 bg-light">
+            <p class="fw-semibold mb-1">Scan with your mobile device</p>
+            <p class="text-muted small mb-3">Point your phone's camera at this QR code to open the mobile upload page.</p>
+            <div id="ud-qrcode" class="d-inline-block p-2 bg-white rounded border"></div>
+            <div class="mt-3">
+              <a id="ud-qr-link" href="#" target="_blank" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-external-link-alt me-1"></i>Open Mobile Upload Page
+              </a>
+            </div>
+          </div>
+          <div class="mt-4 d-flex justify-content-between">
+            <button class="btn btn-outline-secondary" onclick="udGoToStep(1)">
+              <i class="fas fa-arrow-left me-1"></i> Back
+            </button>
+          </div>
+        </div>
+
+        <!-- ─── STEP 3: Desktop upload form ─── -->
+        <div id="ud-step-3" class="d-none">
+          <p class="fw-semibold text-muted mb-3"><i class="fas fa-pencil-alt me-2"></i>Step 3 — Document Details &amp; Files</p>
+          <div id="ud-meta-fields" class="mb-3"></div>
+
+          <!-- Drop zone -->
+          <div class="border border-2 border-dashed rounded-3 p-4 text-center mb-3"
+               id="ud-drop-zone" style="cursor:pointer;background:#fafafa;"
+               onclick="document.getElementById('ud-file-input').click()">
+            <i class="fas fa-cloud-upload-alt" style="font-size:2.5rem;color:#adb5bd;"></i>
+            <p class="mt-2 mb-1 fw-semibold">Click or drag files here</p>
+            <p class="text-muted small mb-0">Images (JPG, PNG) or PDF · 10 MB max per file</p>
+          </div>
+          <input type="file" id="ud-file-input" class="d-none" accept="image/*,.pdf" multiple>
+          <div id="ud-file-list" class="mb-3"></div>
+
+          <div class="d-flex justify-content-between">
+            <button class="btn btn-outline-secondary" onclick="udGoToStep(2)">
+              <i class="fas fa-arrow-left me-1"></i> Back
+            </button>
+            <button class="btn btn-primary px-4" id="ud-btn-upload" disabled onclick="udStartUpload()">
+              <i class="fas fa-upload me-2"></i>Upload
+            </button>
+          </div>
+        </div>
+
+        <!-- ─── STEP 4: Upload progress & result ─── -->
+        <div id="ud-step-4" class="d-none">
+          <div class="border rounded-3 p-3 mb-3">
+            <div class="fw-semibold mb-3" id="ud-progress-header">
+              <i class="fas fa-spinner fa-spin me-2"></i>Uploading…
+            </div>
+            <div id="ud-progress-list"></div>
+          </div>
+          <div id="ud-upload-result"></div>
+        </div>
+
+      </div><!-- /modal-body -->
+    </div>
+  </div>
+</div>
+
+<!-- QR Code library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ── state ── */
+  let udType      = '';
+  let udFiles     = [];
+  let udQrCreated = false;
+
+  /* ── step dots ── */
+  function udSetDots(active) {
+    [1,2,3].forEach(i => {
+      const d = document.getElementById(`ud-dot-${i}`);
+      if (i < active)      d.style.background = '#198754';
+      else if (i === active) d.style.background = '#1a3a8f';
+      else                   d.style.background = '#dee2e6';
+    });
+  }
+
+  /* ── navigate steps ── */
+  window.udGoToStep = function (n) {
+    [1,2,3,4].forEach(i =>
+      document.getElementById(`ud-step-${i}`).classList.toggle('d-none', i !== n)
+    );
+    // dots only cover steps 1-3 visually
+    udSetDots(Math.min(n, 3));
+    if (n !== 2) document.getElementById('ud-qr-panel').classList.add('d-none');
+  };
+
+  /* ── type selection ── */
+  window.udSelectType = function (type, btn) {
+    udType = type;
+    document.querySelectorAll('.ud-type-btn').forEach(b => {
+      b.style.borderColor = '#dee2e6';
+      b.style.background  = '#fff';
+    });
+    btn.style.borderColor = '#1a3a8f';
+    btn.style.background  = '#e8f0fe';
+    document.getElementById('ud-btn-next-1').disabled = false;
+  };
+
+  /* ── meta form templates ── */
+  const udMetaTemplates = {
+    resolutions: `
+      <div class="row g-3">
+        <div class="col-12"><label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+          <input class="form-control" name="title" placeholder="e.g. Resolution Approving Budget 2025" required></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Resolution Number <span class="text-danger">*</span></label>
+          <input class="form-control" name="resolution_number" placeholder="e.g. 2025-001" required></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Resolution Date</label>
+          <input class="form-control" type="date" name="resolution_date"></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Date Issued</label>
+          <input class="form-control" type="date" name="date_issued"></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Reference Number</label>
+          <input class="form-control" name="reference_number" placeholder="Optional"></div>
+        <div class="col-12"><label class="form-label fw-semibold">Description</label>
+          <textarea class="form-control" name="description" rows="2" placeholder="Brief description"></textarea></div>
+      </div>`,
+    minutes: `
+      <div class="row g-3">
+        <div class="col-12"><label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+          <input class="form-control" name="title" placeholder="e.g. Regular Session Minutes" required></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Session Number <span class="text-danger">*</span></label>
+          <input class="form-control" name="session_number" placeholder="e.g. 1st Regular Session 2025" required></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Meeting Date</label>
+          <input class="form-control" type="date" name="meeting_date"></div>
+        <div class="col-12"><label class="form-label fw-semibold">Reference Number</label>
+          <input class="form-control" name="reference_number" placeholder="Optional"></div>
+      </div>`,
+    ordinances: `
+      <div class="row g-3">
+        <div class="col-12"><label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+          <input class="form-control" name="title" placeholder="e.g. Ordinance on Noise Regulation" required></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Ordinance Number <span class="text-danger">*</span></label>
+          <input class="form-control" name="ordinance_number" placeholder="e.g. ORD-2025-001" required></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Ordinance Date</label>
+          <input class="form-control" type="date" name="ordinance_date"></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Date Issued</label>
+          <input class="form-control" type="date" name="date_issued"></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Status</label>
+          <select class="form-select" name="status">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Repealed">Repealed</option>
+          </select></div>
+        <div class="col-12"><label class="form-label fw-semibold">Reference Number</label>
+          <input class="form-control" name="reference_number" placeholder="Optional"></div>
+        <div class="col-12"><label class="form-label fw-semibold">Description</label>
+          <textarea class="form-control" name="description" rows="2" placeholder="Brief description"></textarea></div>
+      </div>`
+  };
+
+  /* ── show QR panel ── */
+  window.udShowQR = function () {
+    const panel = document.getElementById('ud-qr-panel');
+    panel.classList.remove('d-none');
+
+    const url = `${location.protocol}//${location.host}${location.pathname.replace('dashboard.php','mobile_upload.php')}?type=${udType}`;
+    document.getElementById('ud-qr-link').href = url;
+
+    if (!udQrCreated) {
+      document.getElementById('ud-qrcode').innerHTML = '';
+      new QRCode(document.getElementById('ud-qrcode'), {
+        text:   url,
+        width:  200,
+        height: 200,
+        colorDark:  '#1a3a8f',
+        colorLight: '#ffffff',
+      });
+      udQrCreated = true;
+    }
+  };
+
+  /* ── reset QR when type changes ── */
+  const origSelectType = window.udSelectType;
+  window.udSelectType = function (type, btn) {
+    udQrCreated = (type === udType); // reset QR only if type actually changed
+    origSelectType(type, btn);
+    // rebuild QR if panel already visible
+    if (!document.getElementById('ud-qr-panel').classList.contains('d-none')) {
+      udQrCreated = false;
+      udShowQR();
+    }
+  };
+
+  /* ── step 3 meta form ── */
+  window.udGoToStep = function (n) {
+    [1,2,3,4].forEach(i =>
+      document.getElementById(`ud-step-${i}`).classList.toggle('d-none', i !== n)
+    );
+    udSetDots(Math.min(n, 3));
+    if (n !== 2) document.getElementById('ud-qr-panel').classList.add('d-none');
+    if (n === 3) {
+      document.getElementById('ud-meta-fields').innerHTML = udMetaTemplates[udType] || '';
+      document.getElementById('ud-meta-fields').addEventListener('input', udValidateStep3);
+      udValidateStep3();
+    }
+  };
+
+  function udValidateStep3() {
+    const req = document.querySelectorAll('#ud-meta-fields [required]');
+    const ok  = [...req].every(el => el.value.trim() !== '') && udFiles.length > 0;
+    document.getElementById('ud-btn-upload').disabled = !ok;
+  }
+
+  /* ── file handling ── */
+  const udFileInput = document.getElementById('ud-file-input');
+  const udDropZone  = document.getElementById('ud-drop-zone');
+
+  udFileInput.addEventListener('change', e => udAddFiles([...e.target.files]));
+  udDropZone.addEventListener('dragover',  e => { e.preventDefault(); udDropZone.style.borderColor='#1a3a8f'; });
+  udDropZone.addEventListener('dragleave', () => { udDropZone.style.borderColor=''; });
+  udDropZone.addEventListener('drop',      e => {
+    e.preventDefault(); udDropZone.style.borderColor='';
+    udAddFiles([...e.dataTransfer.files]);
+  });
+
+  function udAddFiles(files) {
+    const MAX = 10 * 1024 * 1024;
+    files.forEach(f => {
+      if (f.size > MAX) { alert(`${f.name} exceeds 10 MB limit.`); return; }
+      if (udFiles.find(x => x.name === f.name && x.size === f.size)) return;
+      udFiles.push(f);
+    });
+    udRenderFileList();
+    udFileInput.value = '';
+    udValidateStep3();
+  }
+
+  window.udRemoveFile = function (idx) {
+    udFiles.splice(idx, 1);
+    udRenderFileList();
+    udValidateStep3();
+  };
+
+  function udRenderFileList() {
+    const list = document.getElementById('ud-file-list');
+    list.innerHTML = udFiles.map((f, i) => {
+      const isImg = f.type.startsWith('image/');
+      const url   = isImg ? URL.createObjectURL(f) : null;
+      const size  = f.size < 1024*1024 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1024/1024).toFixed(1)+' MB';
+      const thumb = isImg
+        ? `<img src="${url}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">`
+        : `<div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:#fee2e2;border-radius:6px;font-size:22px;color:#dc2626;"><i class="fas fa-file-pdf"></i></div>`;
+      return `<div class="d-flex align-items-center gap-2 p-2 border rounded mb-2 bg-white">
+        ${thumb}
+        <div class="flex-grow-1 overflow-hidden">
+          <div class="small fw-semibold text-truncate">${udEsc(f.name)}</div>
+          <div class="small text-muted">${size}</div>
+        </div>
+        <span style="color:#dc2626;cursor:pointer;font-size:18px;" onclick="udRemoveFile(${i})"><i class="fas fa-times-circle"></i></span>
+      </div>`;
+    }).join('');
+  }
+
+  function udEsc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* ── upload ── */
+  window.udStartUpload = async function () {
+    udGoToStep(4);
+    const progList = document.getElementById('ud-progress-list');
+    progList.innerHTML = '';
+    const objectKeys = [];
+    let allOk = true;
+
+    for (let i = 0; i < udFiles.length; i++) {
+      const file  = udFiles[i];
+      const rowId = `ud-prog-${i}`;
+      progList.insertAdjacentHTML('beforeend', `
+        <div id="${rowId}" class="mb-3">
+          <div class="d-flex justify-content-between mb-1">
+            <span class="small fw-semibold text-truncate" style="max-width:75%">${udEsc(file.name)}</span>
+            <span class="small text-muted" id="${rowId}-pct">0%</span>
+          </div>
+          <div class="progress" style="height:6px;border-radius:3px;">
+            <div class="progress-bar" id="${rowId}-bar" style="width:0%;"></div>
+          </div>
+          <div class="small text-muted mt-1" id="${rowId}-status">Getting upload URL…</div>
+        </div>`);
+
+      let presignedUrl, objectKey;
+      try {
+        const res = await fetch('generate_presigned_url.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ doc_type: udType, file_name: file.name, content_type: file.type || 'application/octet-stream' }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to get presigned URL');
+        presignedUrl = data.presigned_url;
+        objectKey    = data.object_key;
+      } catch (err) {
+        udSetFileStatus(rowId, 'danger', `Error: ${err.message}`);
+        allOk = false; continue;
+      }
+
+      try {
+        await udUploadToMinio(file, presignedUrl, rowId);
+        objectKeys.push(objectKey);
+        udSetFileStatus(rowId, 'success', 'Uploaded ✓');
+      } catch (err) {
+        udSetFileStatus(rowId, 'danger', `Upload failed: ${err.message}`);
+        allOk = false;
+      }
+    }
+
+    if (!allOk || objectKeys.length === 0) {
+      udShowResult(false, 'Some files failed to upload. Please try again.');
+      return;
+    }
+
+    const meta = {};
+    document.querySelectorAll('#ud-meta-fields input,#ud-meta-fields textarea,#ud-meta-fields select')
+      .forEach(el => { if (el.name) meta[el.name] = el.value; });
+
+    try {
+      const res = await fetch('confirm_upload.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc_type: udType, object_keys: objectKeys, ...meta }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'DB save failed');
+      udShowResult(true, data);
+    } catch (err) {
+      udShowResult(false, err.message);
+    }
+  };
+
+  function udUploadToMinio(file, presignedUrl, rowId) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', presignedUrl);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          document.getElementById(`${rowId}-bar`).style.width = pct + '%';
+          document.getElementById(`${rowId}-pct`).textContent  = pct + '%';
+        }
+      };
+      xhr.onload  = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`));
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(file);
+    });
+  }
+
+  function udSetFileStatus(rowId, type, msg) {
+    const bar = document.getElementById(`${rowId}-bar`);
+    if (bar) { bar.classList.add(type === 'success' ? 'bg-success' : 'bg-danger'); bar.style.width = '100%'; }
+    const st = document.getElementById(`${rowId}-status`);
+    if (st) { st.textContent = msg; st.className = `small mt-1 text-${type === 'success' ? 'success' : 'danger'}`; }
+  }
+
+  function udShowResult(success, data) {
+    const header = document.getElementById('ud-progress-header');
+    header.innerHTML = success
+      ? '<i class="fas fa-check-circle text-success me-2"></i>Upload Complete'
+      : '<i class="fas fa-exclamation-circle text-danger me-2"></i>Upload Failed';
+
+    const docPages = { resolutions: 'resolutions.php', minutes: 'minutes_of_meeting.php', ordinances: 'ordinances.php' };
+    const resultEl = document.getElementById('ud-upload-result');
+    if (success) {
+      resultEl.innerHTML = `
+        <div class="text-center p-4">
+          <div style="font-size:4rem;color:#198754;"><i class="fas fa-check-circle"></i></div>
+          <h5 class="fw-bold mt-2">Upload Successful!</h5>
+          <p class="text-muted">Your document has been saved and is now available in the system.</p>
+          <a href="${docPages[udType]}" class="btn btn-primary me-2"><i class="fas fa-eye me-2"></i>View Document</a>
+          <button class="btn btn-outline-secondary" onclick="udResetModal()"><i class="fas fa-plus me-2"></i>Upload Another</button>
+        </div>`;
+    } else {
+      resultEl.innerHTML = `
+        <div class="alert alert-danger"><strong>Error:</strong> ${udEsc(typeof data === 'string' ? data : JSON.stringify(data))}</div>
+        <button class="btn btn-outline-secondary w-100" onclick="udGoToStep(3)"><i class="fas fa-arrow-left me-1"></i>Go Back</button>`;
+    }
+  }
+
+  /* ── reset modal when closed ── */
+  window.udResetModal = function () {
+    udType      = '';
+    udFiles     = [];
+    udQrCreated = false;
+    document.querySelectorAll('.ud-type-btn').forEach(b => { b.style.borderColor=''; b.style.background='#fff'; });
+    document.getElementById('ud-btn-next-1').disabled = true;
+    document.getElementById('ud-file-list').innerHTML = '';
+    document.getElementById('ud-meta-fields').innerHTML = '';
+    document.getElementById('ud-progress-list').innerHTML = '';
+    document.getElementById('ud-upload-result').innerHTML = '';
+    document.getElementById('ud-qr-panel').classList.add('d-none');
+    document.getElementById('ud-qrcode').innerHTML = '';
+    udGoToStep(1);
+  };
+
+  document.getElementById('uploadDocumentModal').addEventListener('hidden.bs.modal', window.udResetModal);
+})();
+</script>
 </body>
 </html>
