@@ -50,7 +50,7 @@ define('OPENAI_API_KEY', 'your-openai-api-key-here');
 
 // Resend API Configuration
 define('RESEND_API_KEY', 're_MaK7wSyE_GC8rNpZYwMTtHxdMXeMXoqyL');
-define('FROM_EMAIL', 'no-reply@efind.craftmatrix.org');
+define('FROM_EMAIL', 'eFIND System <onboarding@resend.dev>');
 
 // MariaDB Configuration for PDO
 define('DB_HOST', $servername);

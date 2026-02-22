@@ -25,9 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
         // Hash the password
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
         $user_id = $_SESSION['reset_user_id'];
+        $user_table = $_SESSION['user_table'] ?? 'admin_users';
+        // admin_users stores password in 'password_hash'; staff users table uses 'password'
+        $pass_column = ($user_table === 'admin_users') ? 'password_hash' : 'password';
         
         // Update password and clear reset token
-        $update_query = "UPDATE admin_users SET password = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?";
+        $update_query = "UPDATE $user_table SET $pass_column = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?";
         $stmt = $conn->prepare($update_query);
         
         if ($stmt) {
@@ -38,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
                 unset($_SESSION['reset_user_id']);
                 unset($_SESSION['reset_email']);
                 unset($_SESSION['otp_verified']);
+                unset($_SESSION['user_table']);
                 
                 // Set success message and redirect
                 $_SESSION['password_reset_success'] = true;

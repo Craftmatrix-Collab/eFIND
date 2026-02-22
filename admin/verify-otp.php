@@ -24,7 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
         $error = "Please enter a valid 6-digit OTP.";
     } else {
         // Check OTP in database
-        $query = "SELECT id, username, reset_token, reset_expires FROM admin_users WHERE email = ?";
+        $user_table = $_SESSION['user_table'] ?? 'admin_users';
+        $query = "SELECT id, username, reset_token, reset_expires FROM $user_table WHERE email = ?";
         $stmt = $conn->prepare($query);
         
         if ($stmt) {
@@ -83,14 +84,15 @@ if (isset($_POST['resend_otp'])) {
     $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
     
     // Update OTP in database
-    $update_query = "UPDATE admin_users SET reset_token = ?, reset_expires = ? WHERE email = ?";
+    $user_table = $_SESSION['user_table'] ?? 'admin_users';
+    $update_query = "UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE email = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("sss", $otp, $expires, $email);
     $update_stmt->execute();
     $update_stmt->close();
     
     // Get user details for email
-    $query = "SELECT full_name FROM admin_users WHERE email = ?";
+    $query = "SELECT full_name FROM $user_table WHERE email = ?";
     $stmt = $conn->prepare($query);
     $stmt->bind_param("s", $email);
     $stmt->execute();
