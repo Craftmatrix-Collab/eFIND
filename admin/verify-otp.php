@@ -12,9 +12,19 @@ if (!isset($_SESSION['reset_email'])) {
 }
 
 $error = '';
+$message = '';
 $attempts = isset($_SESSION['otp_attempts']) ? $_SESSION['otp_attempts'] : 0;
 
+// Generate CSRF token if not exists
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
+    // CSRF check
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $error = "Invalid request. Please try again.";
+    } else {
     $otp = trim($_POST['otp']);
     $email = $_SESSION['reset_email'];
 
@@ -73,14 +83,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
     }
     
     $conn->close();
+    } // end csrf-valid else
 }
 
 // Resend OTP functionality
 if (isset($_POST['resend_otp'])) {
+    // CSRF check
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $error = "Invalid request. Please try again.";
+    } else {
     $email = $_SESSION['reset_email'];
     
-    // Generate new OTP
-    $otp = sprintf("%06d", mt_rand(0, 999999));
+    // Generate new OTP using cryptographically secure method
+    $otp = sprintf("%06d", random_int(0, 999999));
     $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
     
     // Update OTP in database
@@ -152,11 +167,12 @@ if (isset($_POST['resend_otp'])) {
         $_SESSION['otp_attempts'] = 0;
         
     } catch (Exception $e) {
-        $error = "Failed to resend OTP. Please try again later.";
-        error_log("Resend Error: " . $e->getMessage());
+        $error = "Failed to resend OTP email. Please contact the system administrator.";
+        error_log("Resend Error in verify-otp resend: " . $e->getMessage());
     }
     
     $conn->close();
+    } // end csrf-valid else
 }
 ?>
 
@@ -359,6 +375,7 @@ if (isset($_POST['resend_otp'])) {
         <?php endif; ?>
 
         <form method="post" action="verify-otp.php" id="otpForm">
+            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
             <div class="otp-input-group">
                 <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
                 <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
@@ -376,6 +393,7 @@ if (isset($_POST['resend_otp'])) {
         </form>
 
         <form method="post" action="verify-otp.php">
+            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
             <button type="submit" class="btn btn-resend" name="resend_otp">
                 <i class="fas fa-redo me-2"></i>Resend OTP
             </button>

@@ -132,8 +132,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                         exit();
 
                     } catch (Exception $e) {
-                        $error = "Failed to send OTP. Please try again later.";
-                        error_log("Resend Error: " . $e->getMessage());
+                        $error = "Failed to send OTP email. Please contact the system administrator.";
+                        error_log("Resend Error in forgot-password: " . $e->getMessage());
                     }
                 } else {
                     // Prevent user enumeration - show generic message

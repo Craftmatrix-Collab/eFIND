@@ -68,7 +68,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
         echo json_encode(['success' => true, 'message' => 'OTP sent to ' . htmlspecialchars($email)]);
     } catch (Exception $e) {
         error_log('Resend Error (add user verify): ' . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Failed to send OTP. Please try again.']);
+        echo json_encode(['success' => false, 'message' => 'Failed to send OTP email. Please contact the system administrator.']);
     }
     exit();
 }
