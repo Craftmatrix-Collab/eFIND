@@ -1,0 +1,15 @@
+[22-Feb-2026 11:07:43 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
+[22-Feb-2026 11:07:50 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
+[22-Feb-2026 11:07:57 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
+[22-Feb-2026 11:08:06 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
+[22-Feb-2026 11:08:13 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
+[22-Feb-2026 11:08:31 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
+[22-Feb-2026 11:09:17 Asia/Manila] PHP Fatal error:  Uncaught Error: Failed opening required '/tmp/vendor/autoload.php' (include_path='.:/usr/share/php') in /tmp/test_ajax.php:23
+Stack trace:
+#0 {main}
+  thrown in /tmp/test_ajax.php on line 23
+[22-Feb-2026 11:09:33 Asia/Manila] PHP Fatal error:  Uncaught Error: Failed opening required '/tmp/vendor/autoload.php' (include_path='.:/usr/share/php') in /tmp/test_ajax2.php:14
+Stack trace:
+#0 {main}
+  thrown in /tmp/test_ajax2.php on line 14
+[22-Feb-2026 11:09:53 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10

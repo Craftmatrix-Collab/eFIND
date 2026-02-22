@@ -300,13 +300,19 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
         exit();
     }
     $id = (int)$_GET['id'];
-    $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
+    $userType = isset($_GET['user_type']) ? $_GET['user_type'] : 'users';
+    $table = ($userType === 'admin_users') ? 'admin_users' : 'users';
+    $stmt = $conn->prepare("SELECT *, '$table' as user_type FROM $table WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
     $user = $result->fetch_assoc();
     $stmt->close();
     if ($user) {
+        // Ensure role field exists for admin_users (they don't have a role column)
+        if ($table === 'admin_users' && !isset($user['role'])) {
+            $user['role'] = 'admin';
+        }
         header('Content-Type: application/json');
         echo json_encode($user);
         exit();
@@ -1496,9 +1502,13 @@ $count_stmt->close();
                 button.addEventListener('click', function() {
                     const id = this.getAttribute('data-id');
                     const userType = this.getAttribute('data-user-type');
-                    fetch(`?action=fetch_user&id=${id}&user_type=${userType}&csrf_token=<?php echo $_SESSION['csrf_token']; ?>`)
+                    fetch(`?action=get_user&id=${id}&user_type=${userType}&csrf_token=<?php echo $_SESSION['csrf_token']; ?>`)
                         .then(response => response.json())
                         .then(user => {
+                            if (user.error) {
+                                alert('Error loading user data: ' + user.error);
+                                return;
+                            }
                             document.getElementById('editUserId').value = user.id;
                             document.getElementById('editFullName').value = user.full_name;
                             document.getElementById('editContactNumber').value = user.contact_number || '';
