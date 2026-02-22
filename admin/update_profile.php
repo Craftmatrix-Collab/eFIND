@@ -64,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $isAdmin = isset($_SESSION['admin_id']);
     $userRole = $isAdmin ? 'admin' : 'staff';
     $userName = $fullName ?: ($username ?: 'Unknown');
+    $table = $isAdmin ? 'admin_users' : 'users';
 
     if ($fullName === '' || $username === '' || $email === '') {
         if ($is_ajax) {
@@ -132,8 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Update user in database
-    $table = $isAdmin ? 'admin_users' : 'users';
-    
     if ($profilePicture) {
         $query = "UPDATE $table SET full_name = ?, username = ?, email = ?, contact_number = ?, profile_picture = ?, updated_at = NOW() WHERE id = ?";
         if ($stmt = $conn->prepare($query)) {

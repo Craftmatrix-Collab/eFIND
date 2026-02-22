@@ -33,6 +33,11 @@ if (!$user) {
     exit();
 }
 
+// Generate CSRF token if not already set
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Get success or error messages
 $success = isset($_SESSION['success']) ? $_SESSION['success'] : '';
 $error = isset($_SESSION['error']) ? $_SESSION['error'] : '';
@@ -289,6 +294,7 @@ unset($_SESSION['success'], $_SESSION['error']);
             <!-- Profile Edit Form -->
             <form id="editProfileForm" action="update_profile.php" method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 
                 <div class="row">
                     <div class="col-lg-4">
