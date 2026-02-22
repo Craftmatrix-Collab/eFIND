@@ -49,7 +49,7 @@ try {
 define('OPENAI_API_KEY', 'your-openai-api-key-here');
 
 // Resend API Configuration
-define('RESEND_API_KEY', 're_3pZ4GAqn_D4oEzSYTzsxQvy9WjQosBHkk');
+define('RESEND_API_KEY', 're_MaK7wSyE_GC8rNpZYwMTtHxdMXeMXoqyL');
 define('FROM_EMAIL', 'no-reply@efind.craftmatrix.org');
 
 // MariaDB Configuration for PDO
