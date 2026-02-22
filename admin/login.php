@@ -1045,9 +1045,6 @@ checkActivityLogsTable();
                         <i class="fas fa-sign-in-alt me-2"></i>Login
                     </button>
 
-                    <div class="register-link">
-                        Don't have an account? <a href="register.php">Request access</a>
-                    </div>
                 </form>
             </div>
         </div>
