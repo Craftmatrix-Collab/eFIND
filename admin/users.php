@@ -1311,9 +1311,9 @@ $count_stmt->close();
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
+                                <label for="addUserEmail" class="form-label">Email <span class="text-danger">*</span></label>
                                 <div class="input-group">
-                                    <input type="email" class="form-control" id="email" name="email" required placeholder="user@example.com">
+                                    <input type="email" class="form-control" id="addUserEmail" name="email" required placeholder="user@example.com">
                                     <button class="btn btn-outline-primary" type="button" id="sendOtpBtn">
                                         <i class="fas fa-paper-plane me-1"></i> Send OTP
                                     </button>
@@ -1322,20 +1322,21 @@ $count_stmt->close();
                                     <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Email Verified</span>
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-3" id="otpSection" style="display:none !important">
+                            <div class="col-md-6 mb-3">
+                                <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="username" name="username" required>
+                            </div>
+                        </div>
+                        <div class="row" id="otpSection" style="display:none !important">
+                            <div class="col-12 mb-3">
                                 <label class="form-label">Enter OTP <span class="text-danger">*</span></label>
                                 <div class="input-group">
-                                    <input type="text" class="form-control" id="otpInput" maxlength="6" placeholder="6-digit code" inputmode="numeric">
+                                    <input type="text" class="form-control" id="otpInput" maxlength="6" placeholder="6-digit OTP code" inputmode="numeric">
                                     <button class="btn btn-outline-success" type="button" id="verifyOtpBtn">
                                         <i class="fas fa-check me-1"></i> Verify
                                     </button>
                                 </div>
                                 <small class="text-muted" id="otpTimer"></small>
-                            </div>
-                        </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="username" name="username" required>
                             </div>
                         </div>
                         <div class="row">
@@ -1574,7 +1575,7 @@ $count_stmt->close();
         let otpTimer      = null;
         let verifiedEmail = '';
 
-        const emailInput       = document.getElementById('email');
+        const emailInput       = document.getElementById('addUserEmail');
         const sendOtpBtn       = document.getElementById('sendOtpBtn');
         const otpSection       = document.getElementById('otpSection');
         const otpInput         = document.getElementById('otpInput');
