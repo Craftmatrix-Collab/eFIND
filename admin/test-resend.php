@@ -9,8 +9,6 @@
 require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/includes/config.php';
 
-use Resend\Resend;
-
 // Check if email argument is provided
 if ($argc < 2) {
     echo "Usage: php test-resend.php your-email@example.com\n";
@@ -44,7 +42,7 @@ echo "Generated test OTP: $testOTP\n";
 echo "Sending email...\n\n";
 
 try {
-    $resend = Resend::client(RESEND_API_KEY);
+    $resend = \Resend::client(RESEND_API_KEY);
     
     $html_content = "
     <!DOCTYPE html>

@@ -3,8 +3,6 @@ session_start();
 include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
 
-use Resend\Resend;
-
 $message = '';
 $error = '';
 
@@ -77,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
 
                     // Send OTP via Resend
                     try {
-                        $resend = Resend::client(RESEND_API_KEY);
+                        $resend = \Resend::client(RESEND_API_KEY);
 
                         $html_content = "
                         <!DOCTYPE html>

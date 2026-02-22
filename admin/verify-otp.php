@@ -3,8 +3,6 @@ session_start();
 include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
 
-use Resend\Resend;
-
 // Check if email is set in session
 if (!isset($_SESSION['reset_email'])) {
     header("Location: forgot-password.php");
@@ -117,7 +115,7 @@ if (isset($_POST['resend_otp'])) {
     
     // Send OTP via Resend
     try {
-        $resend = Resend::client(RESEND_API_KEY);
+        $resend = \Resend::client(RESEND_API_KEY);
         
         $html_content = "
         <!DOCTYPE html>

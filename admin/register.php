@@ -3,8 +3,6 @@ session_start();
 include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
 
-use Resend\Resend;
-
 // Redirect if already logged in
 if (isset($_SESSION['admin_id'])) {
     header("Location: dashboard.php");
@@ -97,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $verification_link = $app_url . '/verify-email.php?token=' . $verification_token;
 
                     try {
-                        $resend = Resend::client(RESEND_API_KEY);
+                        $resend = \Resend::client(RESEND_API_KEY);
                         $resend->emails->send([
                             'from' => FROM_EMAIL,
                             'to' => [$email],
