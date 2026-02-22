@@ -14,6 +14,94 @@ if (!isLoggedIn()) {
     exit();
 }
 
+// ── AJAX: Send email verification OTP ────────────────────────────────────────
+if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
+    header('Content-Type: application/json');
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+        exit();
+    }
+    $email = trim($_POST['email'] ?? '');
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid email address.']);
+        exit();
+    }
+    // Check email not already taken
+    $chk = $conn->prepare("SELECT id FROM users WHERE email = ? UNION SELECT id FROM admin_users WHERE email = ?");
+    $chk->bind_param("ss", $email, $email);
+    $chk->execute();
+    $chk->store_result();
+    if ($chk->num_rows > 0) {
+        $chk->close();
+        echo json_encode(['success' => false, 'message' => 'This email is already registered.']);
+        exit();
+    }
+    $chk->close();
+    $otp = sprintf("%06d", random_int(0, 999999));
+    $_SESSION['add_user_verify_otp']     = $otp;
+    $_SESSION['add_user_verify_email']   = $email;
+    $_SESSION['add_user_verify_expires'] = time() + 600; // 10 min
+    unset($_SESSION['add_user_verified_email']);
+    require_once __DIR__ . '/vendor/autoload.php';
+    try {
+        $resend = \Resend\Resend::client(RESEND_API_KEY);
+        $resend->emails->send([
+            'from'    => FROM_EMAIL,
+            'to'      => [$email],
+            'subject' => 'Email Verification OTP – eFIND System',
+            'html'    => "
+                <div style='font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px'>
+                    <div style='background:linear-gradient(135deg,#4361ee,#3a0ca3);color:#fff;padding:24px;border-radius:10px 10px 0 0;text-align:center'>
+                        <h2 style='margin:0'>Email Verification</h2>
+                    </div>
+                    <div style='background:#f8f9fa;padding:24px;border-radius:0 0 10px 10px'>
+                        <p>An administrator is adding you as a new user in the <strong>eFIND System</strong>.</p>
+                        <p>Please share this OTP with the administrator to verify your email address:</p>
+                        <div style='background:#fff;border:2px dashed #4361ee;border-radius:8px;padding:20px;text-align:center;margin:20px 0'>
+                            <p style='margin:0;color:#666;font-size:13px'>Your OTP Code</p>
+                            <div style='font-size:36px;font-weight:bold;color:#4361ee;letter-spacing:8px;margin-top:6px'>{$otp}</div>
+                        </div>
+                        <p style='color:#666;font-size:13px'>This code expires in <strong>10 minutes</strong>. If you did not expect this, please ignore.</p>
+                    </div>
+                </div>"
+        ]);
+        echo json_encode(['success' => true, 'message' => 'OTP sent to ' . htmlspecialchars($email)]);
+    } catch (Exception $e) {
+        error_log('Resend Error (add user verify): ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to send OTP. Please try again.']);
+    }
+    exit();
+}
+
+// ── AJAX: Check email verification OTP ───────────────────────────────────────
+if (isset($_POST['action']) && $_POST['action'] === 'check_verify_otp') {
+    header('Content-Type: application/json');
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+        exit();
+    }
+    $email = trim($_POST['email'] ?? '');
+    $otp   = trim($_POST['otp']   ?? '');
+    if (
+        empty($_SESSION['add_user_verify_otp']) ||
+        $_SESSION['add_user_verify_email'] !== $email ||
+        time() > ($_SESSION['add_user_verify_expires'] ?? 0)
+    ) {
+        echo json_encode(['success' => false, 'message' => 'OTP expired or invalid. Please request a new one.']);
+        exit();
+    }
+    if ($_SESSION['add_user_verify_otp'] !== $otp) {
+        echo json_encode(['success' => false, 'message' => 'Incorrect OTP. Please try again.']);
+        exit();
+    }
+    // Mark email as verified in session
+    $_SESSION['add_user_verified_email'] = $email;
+    unset($_SESSION['add_user_verify_otp'], $_SESSION['add_user_verify_expires']);
+    echo json_encode(['success' => true, 'message' => 'Email verified successfully!']);
+    exit();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Generate CSRF token if not exists
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -102,14 +190,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['error'] = "Full Name, Email, Username, Password, and Role are required fields.";
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
+        } elseif (empty($_SESSION['add_user_verified_email']) || $_SESSION['add_user_verified_email'] !== $email) {
+            $_SESSION['error'] = "Please verify the email address before adding the user.";
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit();
         } else {
             // Hash password
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            // Insert new user
+            // Insert new user with email_verified = 1
             $created_at = date('Y-m-d H:i:s');
-            $stmt = $conn->prepare("INSERT INTO users (full_name, contact_number, email, username, password, role, profile_picture, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO users (full_name, contact_number, email, username, password, role, profile_picture, email_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)");
             $stmt->bind_param("ssssssss", $full_name, $contact_number, $email, $username, $hashed_password, $role, $profile_picture, $created_at);
             if ($stmt->execute()) {
+                unset($_SESSION['add_user_verified_email'], $_SESSION['add_user_verify_email']);
                 $_SESSION['success'] = "User added successfully!";
             } else {
                 $_SESSION['error'] = "Error adding user: " . $stmt->error;
@@ -1219,8 +1312,27 @@ $count_stmt->close();
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
-                                <input type="email" class="form-control" id="email" name="email" required>
+                                <div class="input-group">
+                                    <input type="email" class="form-control" id="email" name="email" required placeholder="user@example.com">
+                                    <button class="btn btn-outline-primary" type="button" id="sendOtpBtn">
+                                        <i class="fas fa-paper-plane me-1"></i> Send OTP
+                                    </button>
+                                </div>
+                                <div id="emailVerifiedBadge" class="mt-1 d-none">
+                                    <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Email Verified</span>
+                                </div>
                             </div>
+                            <div class="col-md-6 mb-3" id="otpSection" style="display:none !important">
+                                <label class="form-label">Enter OTP <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="otpInput" maxlength="6" placeholder="6-digit code" inputmode="numeric">
+                                    <button class="btn btn-outline-success" type="button" id="verifyOtpBtn">
+                                        <i class="fas fa-check me-1"></i> Verify
+                                    </button>
+                                </div>
+                                <small class="text-muted" id="otpTimer"></small>
+                            </div>
+                        </div>
                             <div class="col-md-6 mb-3">
                                 <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" id="username" name="username" required>
@@ -1254,7 +1366,9 @@ $count_stmt->close();
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" name="add_user" class="btn btn-primary-custom">Add User</button>
+                            <button type="submit" name="add_user" class="btn btn-primary-custom" id="addUserSubmitBtn" disabled>
+                                <i class="fas fa-user-plus me-1"></i> Add User
+                            </button>
                         </div>
                     </form>
                 </div>
@@ -1451,6 +1565,157 @@ $count_stmt->close();
             window.addEventListener('resize', updateTableHeight);
             window.addEventListener('load', updateTableHeight);
         });
+    </script>
+
+    <script>
+    // ── Email Verification OTP (Add User Modal) ──────────────────────────────
+    (function () {
+        const csrfToken   = '<?php echo $_SESSION['csrf_token']; ?>';
+        let otpTimer      = null;
+        let verifiedEmail = '';
+
+        const emailInput       = document.getElementById('email');
+        const sendOtpBtn       = document.getElementById('sendOtpBtn');
+        const otpSection       = document.getElementById('otpSection');
+        const otpInput         = document.getElementById('otpInput');
+        const verifyOtpBtn     = document.getElementById('verifyOtpBtn');
+        const verifiedBadge    = document.getElementById('emailVerifiedBadge');
+        const submitBtn        = document.getElementById('addUserSubmitBtn');
+        const otpTimerEl       = document.getElementById('otpTimer');
+
+        if (!sendOtpBtn) return; // guard for other pages
+
+        // Reset modal state when it closes
+        document.getElementById('addUserModal').addEventListener('hidden.bs.modal', function () {
+            clearOtpTimer();
+            otpSection.style.setProperty('display', 'none', 'important');
+            verifiedBadge.classList.add('d-none');
+            submitBtn.disabled = true;
+            otpInput.value = '';
+            emailInput.disabled = false;
+            verifiedEmail = '';
+        });
+
+        // Reset verification if email changes after verification
+        emailInput.addEventListener('input', function () {
+            if (verifiedEmail && this.value !== verifiedEmail) {
+                verifiedEmail = '';
+                verifiedBadge.classList.add('d-none');
+                submitBtn.disabled = true;
+                otpSection.style.setProperty('display', 'none', 'important');
+                otpInput.value = '';
+                clearOtpTimer();
+            }
+        });
+
+        sendOtpBtn.addEventListener('click', function () {
+            const email = emailInput.value.trim();
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                alert('Please enter a valid email address first.');
+                return;
+            }
+            sendOtpBtn.disabled = true;
+            sendOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending…';
+
+            fetch('users.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ action: 'send_verify_otp', email: email, csrf_token: csrfToken })
+            })
+            .then(r => r.json())
+            .then(data => {
+                sendOtpBtn.disabled = false;
+                sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Resend OTP';
+                if (data.success) {
+                    otpSection.style.removeProperty('display');
+                    otpInput.value = '';
+                    otpInput.focus();
+                    startOtpTimer(600);
+                    showToast(data.message, 'success');
+                } else {
+                    showToast(data.message, 'danger');
+                }
+            })
+            .catch(() => {
+                sendOtpBtn.disabled = false;
+                sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+                showToast('Network error. Please try again.', 'danger');
+            });
+        });
+
+        verifyOtpBtn.addEventListener('click', function () {
+            const email = emailInput.value.trim();
+            const otp   = otpInput.value.trim();
+            if (otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+                showToast('Please enter the 6-digit OTP.', 'warning');
+                return;
+            }
+            verifyOtpBtn.disabled = true;
+            verifyOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+
+            fetch('users.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ action: 'check_verify_otp', email: email, otp: otp, csrf_token: csrfToken })
+            })
+            .then(r => r.json())
+            .then(data => {
+                verifyOtpBtn.disabled = false;
+                verifyOtpBtn.innerHTML = '<i class="fas fa-check me-1"></i> Verify';
+                if (data.success) {
+                    verifiedEmail = email;
+                    otpSection.style.setProperty('display', 'none', 'important');
+                    verifiedBadge.classList.remove('d-none');
+                    submitBtn.disabled = false;
+                    clearOtpTimer();
+                    showToast('Email verified! You can now add the user.', 'success');
+                } else {
+                    showToast(data.message, 'danger');
+                }
+            })
+            .catch(() => {
+                verifyOtpBtn.disabled = false;
+                verifyOtpBtn.innerHTML = '<i class="fas fa-check me-1"></i> Verify';
+                showToast('Network error. Please try again.', 'danger');
+            });
+        });
+
+        function startOtpTimer(seconds) {
+            clearOtpTimer();
+            let remaining = seconds;
+            otpTimerEl.textContent = `OTP expires in ${remaining}s`;
+            otpTimer = setInterval(function () {
+                remaining--;
+                if (remaining <= 0) {
+                    clearOtpTimer();
+                    otpTimerEl.textContent = 'OTP expired. Please request a new one.';
+                    otpTimerEl.style.color = '#dc3545';
+                } else {
+                    otpTimerEl.textContent = `OTP expires in ${remaining}s`;
+                    otpTimerEl.style.color = '';
+                }
+            }, 1000);
+        }
+
+        function clearOtpTimer() {
+            if (otpTimer) { clearInterval(otpTimer); otpTimer = null; }
+            otpTimerEl.textContent = '';
+        }
+
+        function showToast(message, type) {
+            const id = 'toast_' + Date.now();
+            const toast = document.createElement('div');
+            toast.id = id;
+            toast.className = `toast align-items-center text-white bg-${type} border-0 position-fixed bottom-0 end-0 m-3`;
+            toast.style.zIndex = 9999;
+            toast.setAttribute('role', 'alert');
+            toast.innerHTML = `<div class="d-flex"><div class="toast-body">${message}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+            document.body.appendChild(toast);
+            new bootstrap.Toast(toast, { delay: 4000 }).show();
+            toast.addEventListener('hidden.bs.toast', () => toast.remove());
+        }
+    })();
     </script>
     <footer class="bg-white p-3">
         <?php include(__DIR__ . '/includes/footer.php'); ?>
