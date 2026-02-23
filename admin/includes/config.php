@@ -53,7 +53,7 @@ define('OPENAI_API_KEY', 'your-openai-api-key-here');
 // the verified owner email of your Resend account. For production use, replace it with
 // a sender address from a custom domain you have verified in Resend (e.g. 'noreply@yourdomain.com').
 define('RESEND_API_KEY', 're_deTt6GnC_7a4nJ7x2nJePTNoNzZUkcu3e');
-define('FROM_EMAIL', 'eFIND System <onboarding@resend.dev>');
+define('FROM_EMAIL', 'eFIND System <youremail@craftmatrix.org>');
 
 // MariaDB Configuration for PDO
 define('DB_HOST', $servername);

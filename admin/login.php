@@ -24,8 +24,10 @@ function getSafeRedirect() {
     $redirect = $_POST['redirect'] ?? $_GET['redirect'] ?? '';
     if ($redirect) {
         $decoded = urldecode($redirect);
-        // Only allow relative paths (no protocol, no external hosts)
-        if (preg_match('#^[^/]#', $decoded) || strpos($decoded, '://') !== false) {
+        // Only allow paths that start with exactly one "/" followed by a non-slash character.
+        // This blocks: external URLs (https://...), protocol-relative URLs (//evil.com),
+        // and bare filenames without a leading slash.
+        if (!preg_match('#^/[^/]#', $decoded)) {
             return 'dashboard.php';
         }
         return $decoded;

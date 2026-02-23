@@ -142,7 +142,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $success = "Registration successful! However, we could not send the verification email. Please <a href='resend-verification.php'>click here to resend the verification email</a> or contact the system administrator.";
                     }
                 } else {
-                    $error = "Registration failed: " . $stmt->error;
+                    $error = "Registration failed due to a database error. Please try again.";
+                    error_log("Registration DB error: " . $stmt->error);
                     $stmt->close();
                     
                     // Delete uploaded file if registration failed
