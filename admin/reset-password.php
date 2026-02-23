@@ -5,37 +5,52 @@ include('includes/config.php');
 $error = '';
 $message = '';
 
-// Validate token from GET
-$token = trim($_GET['token'] ?? '');
-$user_table_param = trim($_GET['table'] ?? 'admin_users');
+// Accept either session-based auth (from OTP flow) or token-based auth (legacy)
+$use_session_auth = false;
 
-// Whitelist allowed tables
-$allowed_tables = ['admin_users', 'users'];
-if (!in_array($user_table_param, $allowed_tables)) {
-    $user_table_param = 'admin_users';
-}
+if (isset($_SESSION['otp_verified']) && $_SESSION['otp_verified'] === true && isset($_SESSION['reset_user_id'])) {
+    // OTP flow: user already verified via verify-otp.php
+    $use_session_auth = true;
+    $reset_user_id = (int) $_SESSION['reset_user_id'];
+    $user_table_param = $_SESSION['user_table'] ?? 'admin_users';
+    // Whitelist allowed tables
+    $allowed_tables = ['admin_users', 'users'];
+    if (!in_array($user_table_param, $allowed_tables)) {
+        $user_table_param = 'admin_users';
+    }
+} else {
+    // Token-based flow (fallback)
+    $token = trim($_GET['token'] ?? '');
+    $user_table_param = trim($_GET['table'] ?? 'admin_users');
 
-if (empty($token) || !preg_match('/^[a-f0-9]{64}$/', $token)) {
-    header("Location: forgot-password.php");
-    exit();
-}
+    // Whitelist allowed tables
+    $allowed_tables = ['admin_users', 'users'];
+    if (!in_array($user_table_param, $allowed_tables)) {
+        $user_table_param = 'admin_users';
+    }
 
-// Look up user by token
-$lookup = $conn->prepare("SELECT id FROM $user_table_param WHERE reset_token = ? AND reset_expires > NOW()");
-if (!$lookup) {
-    header("Location: forgot-password.php");
-    exit();
+    if (empty($token) || !preg_match('/^[a-f0-9]{64}$/', $token)) {
+        header("Location: forgot-password.php");
+        exit();
+    }
+
+    // Look up user by token
+    $lookup = $conn->prepare("SELECT id FROM $user_table_param WHERE reset_token = ? AND reset_expires > NOW()");
+    if (!$lookup) {
+        header("Location: forgot-password.php");
+        exit();
+    }
+    $lookup->bind_param("s", $token);
+    $lookup->execute();
+    $lookup_result = $lookup->get_result();
+    if ($lookup_result->num_rows !== 1) {
+        header("Location: forgot-password.php?expired=1");
+        exit();
+    }
+    $reset_user = $lookup_result->fetch_assoc();
+    $reset_user_id = $reset_user['id'];
+    $lookup->close();
 }
-$lookup->bind_param("s", $token);
-$lookup->execute();
-$lookup_result = $lookup->get_result();
-if ($lookup_result->num_rows !== 1) {
-    header("Location: forgot-password.php?expired=1");
-    exit();
-}
-$reset_user = $lookup_result->fetch_assoc();
-$reset_user_id = $reset_user['id'];
-$lookup->close();
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
     $password = $_POST['password'];
@@ -61,7 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
             $stmt->bind_param("si", $hashed_password, $reset_user_id);
             
             if ($stmt->execute()) {
-                // Set success message and redirect
+                // Clear OTP session vars
+                unset($_SESSION['otp_verified'], $_SESSION['reset_user_id'], $_SESSION['user_table'], $_SESSION['reset_email']);
                 $_SESSION['password_reset_success'] = true;
                 header("Location: login.php");
                 exit();

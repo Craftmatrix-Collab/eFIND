@@ -63,21 +63,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                 }
 
                 if ($user) {
-                    // Generate a secure reset token
-                    $reset_token = bin2hex(random_bytes(32));
+                    // Generate a cryptographically secure 6-digit OTP
+                    $reset_token = sprintf("%06d", random_int(0, 999999));
                     $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
 
-                    // Store token in correct table
+                    // Store OTP in correct table
                     $update_stmt = $conn->prepare("UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE id = ?");
                     $update_stmt->bind_param("ssi", $reset_token, $expires, $user['id']);
                     $update_stmt->execute();
                     $update_stmt->close();
 
-                    // Build reset link
-                    $app_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
-                    $reset_link = $app_url . '/reset-password.php?token=' . $reset_token . '&table=' . urlencode($user_table);
+                    // Store email and table in session so verify-otp.php can use them
+                    $_SESSION['reset_email'] = $email;
+                    $_SESSION['user_table'] = $user_table;
 
-                    // Send reset link via Resend
+                    // Send OTP via Resend
                     try {
                         $resend = \Resend::client(RESEND_API_KEY);
 
@@ -90,24 +90,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
                                 .header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
                                 .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-                                .btn { display: inline-block; background: #4361ee; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0; }
-                                .link { color: #666; font-size: 13px; word-break: break-all; }
+                                .otp-box { background: white; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; border: 2px dashed #4361ee; }
+                                .otp-code { font-size: 32px; font-weight: bold; color: #4361ee; letter-spacing: 5px; }
                                 .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
                             </style>
                         </head>
                         <body>
                             <div class='container'>
                                 <div class='header'>
-                                    <h1>Password Reset</h1>
+                                    <h1>Password Reset OTP</h1>
                                 </div>
                                 <div class='content'>
                                     <p>Hello " . htmlspecialchars($user['full_name']) . ",</p>
                                     <p>We received a request to reset your password for your eFIND System account.</p>
-                                    <div style='text-align:center;'>
-                                        <a href='" . $reset_link . "' class='btn'>Reset Password</a>
+                                    <div class='otp-box'>
+                                        <p style='margin: 0; color: #666;'>Your OTP Code:</p>
+                                        <div class='otp-code'>" . $reset_token . "</div>
                                     </div>
-                                    <p class='link'>Or copy and paste this link in your browser:<br>" . $reset_link . "</p>
-                                    <p><strong>This link will expire in 15 minutes.</strong></p>
+                                    <p><strong>This code will expire in 15 minutes.</strong></p>
                                     <p>If you didn't request this, please ignore this email.</p>
                                     <div class='footer'>
                                         <p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p>
@@ -121,19 +121,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                         $resend->emails->send([
                             'from' => FROM_EMAIL,
                             'to' => [$email],
-                            'subject' => 'Password Reset - eFIND System',
+                            'subject' => 'Password Reset OTP - eFIND System',
                             'html' => $html_content
                         ]);
 
-                        $message = "If this email is registered, a password reset link has been sent to your inbox. Please check your email.";
+                        // Redirect to OTP verification page
+                        header("Location: verify-otp.php");
+                        exit();
 
                     } catch (Exception $e) {
                         $error = "Failed to send reset email. Please contact the system administrator.";
                         error_log("Resend Error in forgot-password: " . $e->getMessage());
+                        // Clean up session on failure
+                        unset($_SESSION['reset_email'], $_SESSION['user_table']);
                     }
                 } else {
                     // Prevent user enumeration - show generic message
-                    $message = "If this email is registered, a password reset link has been sent to your inbox. Please check your email.";
+                    $message = "If this email is registered, a password reset OTP has been sent to your inbox. Please check your email.";
                 }
 
                 if (!headers_sent()) {

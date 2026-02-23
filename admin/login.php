@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
         $loginSuccessful = false;
         
         // Try admin login first
-        $query = "SELECT id, username, password_hash, full_name, profile_picture FROM admin_users WHERE username = ?";
+        $query = "SELECT id, username, password_hash, full_name, profile_picture, is_verified FROM admin_users WHERE username = ?";
         $stmt = $conn->prepare($query);
         
         if ($stmt) {
@@ -62,31 +62,39 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                 
                 // Verify password
                 if (password_verify($password, $user['password_hash'])) {
-                    // Regenerate session ID to prevent session fixation
-                    session_regenerate_id(true);
+                    // Block login if email is not yet verified
+                    if (!$user['is_verified']) {
+                        $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
+                        logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified');
+                        logActivity(null, 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username");
+                        $loginSuccessful = true; // Mark as processed to skip staff login
+                    } else {
+                        // Regenerate session ID to prevent session fixation
+                        session_regenerate_id(true);
 
-                    // Set session variables for admin
-                    $_SESSION['admin_id'] = $user['id'];
-                    $_SESSION['admin_username'] = $user['username'];
-                    $_SESSION['admin_full_name'] = $user['full_name'];
-                    $_SESSION['admin_profile_picture'] = $user['profile_picture'];
-                    $_SESSION['admin_logged_in'] = true;
+                        // Set session variables for admin
+                        $_SESSION['admin_id'] = $user['id'];
+                        $_SESSION['admin_username'] = $user['username'];
+                        $_SESSION['admin_full_name'] = $user['full_name'];
+                        $_SESSION['admin_profile_picture'] = $user['profile_picture'];
+                        $_SESSION['admin_logged_in'] = true;
 
-                    // Set these for compatibility
-                    $_SESSION['user_id'] = $user['id'];
-                    $_SESSION['role'] = 'admin';
-                    $_SESSION['full_name'] = $user['full_name'];
-                    $_SESSION['profile_picture'] = $user['profile_picture'];
+                        // Set these for compatibility
+                        $_SESSION['user_id'] = $user['id'];
+                        $_SESSION['role'] = 'admin';
+                        $_SESSION['full_name'] = $user['full_name'];
+                        $_SESSION['profile_picture'] = $user['profile_picture'];
 
-                    // Log successful admin login
-                    logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
-                    logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
+                        // Log successful admin login
+                        logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
+                        logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
 
-                    $loginSuccessful = true;
-                    
-                    // Redirect to dashboard or original requested URL
-                    header("Location: " . getSafeRedirect());
-                    exit();
+                        $loginSuccessful = true;
+                        
+                        // Redirect to dashboard or original requested URL
+                        header("Location: " . getSafeRedirect());
+                        exit();
+                    }
                 } else {
                     // Admin account exists but password is wrong - stop here, don't try staff login
                     logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid admin password');

@@ -49,7 +49,10 @@ try {
 define('OPENAI_API_KEY', 'your-openai-api-key-here');
 
 // Resend API Configuration
-define('RESEND_API_KEY', 're_MaK7wSyE_GC8rNpZYwMTtHxdMXeMXoqyL');
+// NOTE: 'onboarding@resend.dev' is a Resend sandbox sender that can ONLY deliver to
+// the verified owner email of your Resend account. For production use, replace it with
+// a sender address from a custom domain you have verified in Resend (e.g. 'noreply@yourdomain.com').
+define('RESEND_API_KEY', 're_deTt6GnC_7a4nJ7x2nJePTNoNzZUkcu3e');
 define('FROM_EMAIL', 'eFIND System <onboarding@resend.dev>');
 
 // MariaDB Configuration for PDO
