@@ -11,11 +11,6 @@ session_start();
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 
-if (!isLoggedIn()) {
-    $returnUrl = urlencode($_SERVER['REQUEST_URI']);
-    header("Location: login.php?redirect={$returnUrl}");
-    exit;
-}
 
 $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ordinances'])
     ? $_GET['type']
