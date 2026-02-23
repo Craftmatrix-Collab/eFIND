@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                     // Log successful admin login
                     logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
-                    logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}");
+                    logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username']);
 
                     $loginSuccessful = true;
                     
@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                         // Log successful staff login
                         logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
-                        logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}");
+                        logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username']);
 
                         // Redirect to dashboard or original requested URL
                         header("Location: " . getSafeRedirect());
@@ -198,23 +198,35 @@ function logLoginAttempt($username, $ip_address, $status, $details = '', $user_i
 /**
  * Log activity to activity_logs table
  */
-function logActivity($user_id, $action, $description, $document_type = 'system', $ip_address = null, $details = null) {
+function logActivity($user_id, $action, $description, $document_type = 'system', $ip_address = null, $details = null, $known_username = null) {
     global $conn;
     
     try {
-        $user_name = null;
-        // If user_id is provided, get the username
-        if ($user_id) {
-            $user_query = "SELECT username FROM users WHERE id = ? UNION SELECT username FROM admin_users WHERE id = ?";
-            $user_stmt = $conn->prepare($user_query);
-            $user_stmt->bind_param("ii", $user_id, $user_id);
+        // Use the provided username directly to avoid ID collisions between users/admin_users tables
+        $user_name = $known_username;
+
+        // Only do a DB lookup if username was not passed in
+        if (!$user_name && $user_id) {
+            // Check admin_users first, then fall back to users (staff)
+            $user_stmt = $conn->prepare("SELECT username FROM admin_users WHERE id = ?");
+            $user_stmt->bind_param("i", $user_id);
             $user_stmt->execute();
             $user_result = $user_stmt->get_result();
             if ($user_result->num_rows > 0) {
-                $user_data = $user_result->fetch_assoc();
-                $user_name = $user_data['username'];
+                $user_name = $user_result->fetch_assoc()['username'];
             }
             $user_stmt->close();
+
+            if (!$user_name) {
+                $user_stmt = $conn->prepare("SELECT username FROM users WHERE id = ?");
+                $user_stmt->bind_param("i", $user_id);
+                $user_stmt->execute();
+                $user_result = $user_stmt->get_result();
+                if ($user_result->num_rows > 0) {
+                    $user_name = $user_result->fetch_assoc()['username'];
+                }
+                $user_stmt->close();
+            }
         }
         
         $ip_address = $ip_address ?: $_SERVER['REMOTE_ADDR'];
