@@ -2123,7 +2123,7 @@ $count_stmt->close();
 
         function ordGenerateQR() {
             if (ordQrCreated) return;
-            const url = `${location.protocol}//${location.host}${location.pathname.replace('ordinances.php','mobile_upload.php')}?type=ordinances`;
+            const url = `${location.protocol}//${location.host}${location.pathname.replace('ordinances.php','mobile_upload.php')}?type=ordinances&camera=1`;
             document.getElementById('ord-qr-link').href = url;
             document.getElementById('ord-qrcode').innerHTML = '';
             new QRCode(document.getElementById('ord-qrcode'), {

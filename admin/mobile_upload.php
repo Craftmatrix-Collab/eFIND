@@ -20,6 +20,8 @@ if (!isLoggedIn()) {
 $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ordinances'])
     ? $_GET['type']
     : '';
+
+$autoCameraMode = ($preselectedType !== '' && ($_GET['camera'] ?? '') === '1');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -98,6 +100,23 @@ $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ord
 </style>
 </head>
 <body>
+
+<?php if ($autoCameraMode): ?>
+<!-- Camera splash overlay — shown when arriving via QR with ?camera=1 -->
+<div id="camera-splash" onclick="dismissCameraSplash()"
+     style="position:fixed;inset:0;z-index:9999;background:#002147;
+            display:flex;flex-direction:column;align-items:center;justify-content:center;
+            color:#fff;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;">
+  <i class="fas fa-camera" style="font-size:72px;margin-bottom:24px;opacity:.9;"></i>
+  <div style="font-size:22px;font-weight:700;margin-bottom:10px;">Tap to Open Camera</div>
+  <div style="font-size:14px;opacity:.7;">
+    <?php
+      $labels = ['resolutions'=>'Resolution','minutes'=>'Minutes of Meeting','ordinances'=>'Ordinance'];
+      echo 'Uploading ' . ($labels[$preselectedType] ?? '');
+    ?>
+  </div>
+</div>
+<?php endif; ?>
 
 <div class="top-bar">
   <a href="dashboard.php" class="text-white me-1"><i class="fas fa-arrow-left"></i></a>
@@ -428,6 +447,13 @@ videoInput.addEventListener('change',  e => addFiles([...e.target.files]));
 
 // ── Camera helpers ──
 let cameraStream = null;
+
+// Dismiss the camera splash overlay and open the native camera
+function dismissCameraSplash() {
+  const splash = document.getElementById('camera-splash');
+  if (splash) splash.remove();
+  openCamera();
+}
 
 function openCamera() {
   // Prefer native capture sheet on mobile (works on iOS & Android)

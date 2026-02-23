@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
         $loginSuccessful = false;
         
         // Try admin login first
-        $query = "SELECT id, username, password_hash, full_name, profile_picture, is_verified FROM admin_users WHERE username = ?";
+        $query = "SELECT id, username, password_hash, full_name, profile_picture FROM admin_users WHERE username = ?";
         $stmt = $conn->prepare($query);
         
         if ($stmt) {
@@ -62,11 +62,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                 
                 // Verify password
                 if (password_verify($password, $user['password_hash'])) {
-                    // Check email verification
-                    if (!$user['is_verified']) {
-                        $error = "Your email address has not been verified yet. Please check your inbox for the verification link.";
-                        $loginSuccessful = true; // stop staff check
-                    } else {
                     // Regenerate session ID to prevent session fixation
                     session_regenerate_id(true);
 
@@ -92,7 +87,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                     // Redirect to dashboard or original requested URL
                     header("Location: " . getSafeRedirect());
                     exit();
-                    } // end is_verified else
                 } else {
                     // Admin account exists but password is wrong - stop here, don't try staff login
                     logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid admin password');

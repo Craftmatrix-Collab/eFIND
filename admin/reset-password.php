@@ -2,14 +2,40 @@
 session_start();
 include('includes/config.php');
 
-// Check if OTP is verified
-if (!isset($_SESSION['otp_verified']) || !isset($_SESSION['reset_user_id'])) {
+$error = '';
+$message = '';
+
+// Validate token from GET
+$token = trim($_GET['token'] ?? '');
+$user_table_param = trim($_GET['table'] ?? 'admin_users');
+
+// Whitelist allowed tables
+$allowed_tables = ['admin_users', 'users'];
+if (!in_array($user_table_param, $allowed_tables)) {
+    $user_table_param = 'admin_users';
+}
+
+if (empty($token) || !preg_match('/^[a-f0-9]{64}$/', $token)) {
     header("Location: forgot-password.php");
     exit();
 }
 
-$error = '';
-$message = '';
+// Look up user by token
+$lookup = $conn->prepare("SELECT id FROM $user_table_param WHERE reset_token = ? AND reset_expires > NOW()");
+if (!$lookup) {
+    header("Location: forgot-password.php");
+    exit();
+}
+$lookup->bind_param("s", $token);
+$lookup->execute();
+$lookup_result = $lookup->get_result();
+if ($lookup_result->num_rows !== 1) {
+    header("Location: forgot-password.php?expired=1");
+    exit();
+}
+$reset_user = $lookup_result->fetch_assoc();
+$reset_user_id = $reset_user['id'];
+$lookup->close();
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
     $password = $_POST['password'];
@@ -24,25 +50,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
     } else {
         // Hash the password
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-        $user_id = $_SESSION['reset_user_id'];
-        $user_table = $_SESSION['user_table'] ?? 'admin_users';
         // admin_users stores password in 'password_hash'; staff users table uses 'password'
-        $pass_column = ($user_table === 'admin_users') ? 'password_hash' : 'password';
+        $pass_column = ($user_table_param === 'admin_users') ? 'password_hash' : 'password';
         
         // Update password and clear reset token
-        $update_query = "UPDATE $user_table SET $pass_column = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?";
+        $update_query = "UPDATE $user_table_param SET $pass_column = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?";
         $stmt = $conn->prepare($update_query);
         
         if ($stmt) {
-            $stmt->bind_param("si", $hashed_password, $user_id);
+            $stmt->bind_param("si", $hashed_password, $reset_user_id);
             
             if ($stmt->execute()) {
-                // Clear session variables
-                unset($_SESSION['reset_user_id']);
-                unset($_SESSION['reset_email']);
-                unset($_SESSION['otp_verified']);
-                unset($_SESSION['user_table']);
-                
                 // Set success message and redirect
                 $_SESSION['password_reset_success'] = true;
                 header("Location: login.php");
@@ -278,7 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
             </ul>
         </div>
 
-        <form method="post" action="reset-password.php">
+        <form method="post" action="reset-password.php?token=<?php echo htmlspecialchars($token); ?>&table=<?php echo htmlspecialchars($user_table_param); ?>">
             <div class="mb-3">
                 <label for="password" class="form-label">New Password</label>
                 <div class="password-wrapper">

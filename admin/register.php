@@ -72,71 +72,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
 
             if (empty($error)) {
-                // Insert new admin
-                $query = "INSERT INTO admin_users (full_name, email, username, password_hash, contact_number, profile_picture) 
-                          VALUES (?, ?, ?, ?, ?, ?)";
+                // Insert new admin (mark as verified immediately)
+                $query = "INSERT INTO admin_users (full_name, email, username, password_hash, contact_number, profile_picture, is_verified) 
+                          VALUES (?, ?, ?, ?, ?, ?, 1)";
                 $stmt = $conn->prepare($query);
                 $stmt->bind_param("ssssss", $full_name, $email, $username, $password_hash, $contact_number, $profile_picture);
 
                 if ($stmt->execute()) {
-                    $new_user_id = $stmt->insert_id;
-
-                    // Generate email verification token
-                    $verification_token = bin2hex(random_bytes(32));
-                    $token_expiry = date("Y-m-d H:i:s", strtotime('+24 hours'));
-
-                    $token_stmt = $conn->prepare("UPDATE admin_users SET verification_token = ?, token_expiry = ? WHERE id = ?");
-                    $token_stmt->bind_param("ssi", $verification_token, $token_expiry, $new_user_id);
-                    $token_stmt->execute();
-                    $token_stmt->close();
-
-                    // Send verification email via Resend
-                    $app_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
-                    $verification_link = $app_url . '/verify-email.php?token=' . $verification_token;
-
-                    try {
-                        $resend = \Resend::client(RESEND_API_KEY);
-                        $resend->emails->send([
-                            'from' => FROM_EMAIL,
-                            'to' => [$email],
-                            'subject' => 'Verify your eFIND System account',
-                            'html' => "
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                                <style>
-                                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                                    .header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-                                    .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-                                    .btn { display: inline-block; background: #4361ee; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0; }
-                                    .link { color: #666; font-size: 13px; word-break: break-all; }
-                                    .footer { text-align: center; margin-top: 20px; color: #999; font-size: 12px; }
-                                </style>
-                            </head>
-                            <body>
-                                <div class='container'>
-                                    <div class='header'><h1>Verify Your Email Address</h1></div>
-                                    <div class='content'>
-                                        <p>Hello " . htmlspecialchars($full_name) . ",</p>
-                                        <p>Thank you for registering an admin account in the eFIND System. Please verify your email address by clicking the button below:</p>
-                                        <div style='text-align:center;'>
-                                            <a href='" . $verification_link . "' class='btn'>Verify Email Address</a>
-                                        </div>
-                                        <p class='link'>Or copy and paste this link in your browser:<br>" . $verification_link . "</p>
-                                        <p><strong>This link will expire in 24 hours.</strong></p>
-                                        <p>If you didn't create an account, you can safely ignore this email.</p>
-                                        <div class='footer'><p>eFIND System &mdash; Barangay Poblacion South</p></div>
-                                    </div>
-                                </div>
-                            </body>
-                            </html>"
-                        ]);
-                        $success = "Registration successful! A verification email has been sent to <strong>" . htmlspecialchars($email) . "</strong>. Please check your inbox and verify your account before logging in.";
-                    } catch (Exception $e) {
-                        error_log("Verification email error: " . $e->getMessage());
-                        $success = "Registration successful! However, we could not send the verification email. Please contact the administrator.";
-                    }
+                    $success = "Registration successful! You can now <a href='login.php'>log in</a>.";
                 } else {
                     $error = "Registration failed: " . $stmt->error;
                     

@@ -2109,7 +2109,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
     const panel = document.getElementById('ud-qr-panel');
     panel.classList.remove('d-none');
 
-    const url = `${location.protocol}//${location.host}${location.pathname.replace('dashboard.php','mobile_upload.php')}?type=${udType}`;
+    const url = `${location.protocol}//${location.host}${location.pathname.replace('dashboard.php','mobile_upload.php')}?type=${udType}&camera=1`;
     document.getElementById('ud-qr-link').href = url;
 
     if (!udQrCreated) {
