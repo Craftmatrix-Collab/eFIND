@@ -215,8 +215,9 @@ if (!empty($token) && preg_match('/^[a-f0-9]{64}$/', $token)) {
                 <a href="login.php" class="btn-login"><i class="fas fa-sign-in-alt me-2"></i>Go to Login</a>
             <?php elseif ($status === 'expired'): ?>
                 <div class="status-icon error"><i class="fas fa-clock"></i></div>
-                <p class="status-message"><?php echo htmlspecialchars($message); ?></p>
-                <div class="back-link"><a href="register.php"><i class="fas fa-user-plus me-1"></i>Register again</a></div>
+                <p class="status-message">Your verification link has expired. Please request a new one.</p>
+                <a href="resend-verification.php" class="btn-login"><i class="fas fa-envelope me-2"></i>Resend Verification Email</a>
+                <div class="back-link" style="margin-top:15px;"><a href="login.php">Back to Login</a></div>
             <?php else: ?>
                 <div class="status-icon error"><i class="fas fa-times-circle"></i></div>
                 <p class="status-message"><?php echo htmlspecialchars($message); ?></p>

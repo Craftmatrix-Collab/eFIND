@@ -6,6 +6,12 @@ require_once __DIR__ . '/vendor/autoload.php';
 $message = '';
 $error = '';
 
+// Flash error from verify-otp.php (too many attempts redirect)
+if (isset($_SESSION['fp_error'])) {
+    $error = $_SESSION['fp_error'];
+    unset($_SESSION['fp_error']);
+}
+
 // Generate CSRF token if not exists
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -23,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
         }
         
         // Reset counter if 15 minutes have passed
-        $time_passed = time() - $_SESSION['forgot_first_attempt'];
+        $time_passed = time() - ($_SESSION['forgot_first_attempt'] ?? time());
         if ($time_passed >= 900) { // 15 minutes
             $_SESSION['forgot_attempts'] = 0;
             $_SESSION['forgot_first_attempt'] = time();
@@ -48,7 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                 $user = null;
                 $user_table = null;
                 foreach (['admin_users', 'users'] as $tbl) {
-                    $s = $conn->prepare("SELECT id, username, full_name FROM $tbl WHERE email = ?");
+                    $extra = ($tbl === 'admin_users') ? ', is_verified' : '';
+                    $s = $conn->prepare("SELECT id, username, full_name{$extra} FROM $tbl WHERE email = ?");
                     if ($s) {
                         $s->bind_param("s", $email);
                         $s->execute();
@@ -63,6 +70,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                 }
 
                 if ($user) {
+                    // Block unverified admin accounts — they must verify email first
+                    if ($user_table === 'admin_users' && empty($user['is_verified'])) {
+                        $error = 'Your account email is not verified. Please <a href="resend-verification.php">resend the verification email</a> and verify your account before resetting your password.';
+                    } else {
                     // Generate a cryptographically secure 6-digit OTP
                     $reset_token = sprintf("%06d", random_int(0, 999999));
                     $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
@@ -135,6 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                         // Clean up session on failure
                         unset($_SESSION['reset_email'], $_SESSION['user_table']);
                     }
+                    } // end is_verified check else
                 } else {
                     // Prevent user enumeration - show generic message
                     $message = "If this email is registered, a password reset OTP has been sent to your inbox. Please check your email.";

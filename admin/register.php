@@ -24,6 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Basic validation
     if (empty($full_name) || empty($email) || empty($username) || empty($password)) {
         $error = "All fields are required except contact number.";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = "Please enter a valid email address.";
     } elseif ($password !== $confirm_password) {
         $error = "Passwords do not match.";
     } elseif (strlen($password) < 8) {
@@ -38,7 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         if ($check_result->num_rows > 0) {
             $error = "Username or email already exists.";
+            $check_stmt->close();
         } else {
+            $check_stmt->close();
             // Hash password
             $password_hash = password_hash($password, PASSWORD_BCRYPT);
 
@@ -83,6 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt->bind_param("ssssssss", $full_name, $email, $username, $password_hash, $contact_number, $profile_picture, $verification_token, $token_expiry);
 
                 if ($stmt->execute()) {
+                    $stmt->close();
                     // Build verification link
                     $app_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
                     $verify_link = $app_url . '/verify-email.php?token=' . $verification_token;
@@ -134,10 +139,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $success = "Registration successful! A verification link has been sent to <strong>" . htmlspecialchars($email) . "</strong>. Please check your inbox and verify your account before logging in.";
                     } catch (Exception $e) {
                         error_log("Resend Error in register: " . $e->getMessage());
-                        $success = "Registration successful! However, we could not send the verification email. Please contact the system administrator.";
+                        $success = "Registration successful! However, we could not send the verification email. Please <a href='resend-verification.php'>click here to resend the verification email</a> or contact the system administrator.";
                     }
                 } else {
                     $error = "Registration failed: " . $stmt->error;
+                    $stmt->close();
                     
                     // Delete uploaded file if registration failed
                     if ($profile_picture && file_exists($upload_dir . $profile_picture)) {

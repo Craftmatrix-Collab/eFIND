@@ -7,6 +7,7 @@ $message = '';
 
 // Accept either session-based auth (from OTP flow) or token-based auth (legacy)
 $use_session_auth = false;
+$token = ''; // always defined to avoid undefined-variable notice in form action
 
 if (isset($_SESSION['otp_verified']) && $_SESSION['otp_verified'] === true && isset($_SESSION['reset_user_id'])) {
     // OTP flow: user already verified via verify-otp.php

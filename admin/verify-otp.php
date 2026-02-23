@@ -33,6 +33,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
     } else {
         // Check OTP in database
         $user_table = $_SESSION['user_table'] ?? 'admin_users';
+        if (!in_array($user_table, ['admin_users', 'users'])) {
+            $user_table = 'admin_users';
+        }
         $query = "SELECT id, username, reset_token, reset_expires FROM $user_table WHERE email = ?";
         $stmt = $conn->prepare($query);
         
@@ -46,13 +49,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
                 
                 // Check if OTP has expired
                 if (strtotime($user['reset_expires']) < time()) {
-                    $error = "OTP has expired. Please request a new one.";
-                    unset($_SESSION['reset_email']);
+                    // Keep reset_email so the user can still click "Resend OTP"
+                    $error = "OTP has expired. Please request a new one using the button below.";
                 } elseif ($user['reset_token'] === $otp) {
                     // OTP is correct
                     $_SESSION['reset_user_id'] = $user['id'];
                     $_SESSION['otp_verified'] = true;
                     unset($_SESSION['otp_attempts']);
+                    session_regenerate_id(true);
                     
                     // Redirect to reset password page
                     header("Location: reset-password.php");
@@ -62,16 +66,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
                     $_SESSION['otp_attempts'] = $attempts;
                     
                     if ($attempts >= 5) {
-                        $error = "Too many failed attempts. Please request a new OTP.";
                         unset($_SESSION['reset_email']);
                         unset($_SESSION['otp_attempts']);
+                        $_SESSION['fp_error'] = "Too many failed OTP attempts. Please request a new code.";
+                        header("Location: forgot-password.php");
+                        exit();
                     } else {
                         $error = "Invalid OTP. You have " . (5 - $attempts) . " attempts remaining.";
                     }
                 }
             } else {
-                $error = "Invalid session. Please try again.";
                 unset($_SESSION['reset_email']);
+                header("Location: forgot-password.php");
+                exit();
             }
             
             $stmt->close();
@@ -79,8 +86,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
             $error = "Database error. Please try again later.";
         }
     }
-    
-    $conn->close();
     } // end csrf-valid else
 }
 
@@ -98,6 +103,9 @@ if (isset($_POST['resend_otp'])) {
     
     // Update OTP in database
     $user_table = $_SESSION['user_table'] ?? 'admin_users';
+    if (!in_array($user_table, ['admin_users', 'users'])) {
+        $user_table = 'admin_users';
+    }
     $update_query = "UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE email = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("sss", $otp, $expires, $email);
@@ -112,7 +120,10 @@ if (isset($_POST['resend_otp'])) {
     $result = $stmt->get_result();
     $user = $result->fetch_assoc();
     $stmt->close();
-    
+
+    if (!$user) {
+        $error = "Account not found. Please restart the password reset process.";
+    } else
     // Send OTP via Resend
     try {
         $resend = \Resend::client(RESEND_API_KEY);
@@ -168,8 +179,6 @@ if (isset($_POST['resend_otp'])) {
         $error = "Failed to resend OTP email. Please contact the system administrator.";
         error_log("Resend Error in verify-otp resend: " . $e->getMessage());
     }
-    
-    $conn->close();
     } // end csrf-valid else
 }
 ?>
@@ -357,7 +366,7 @@ if (isset($_POST['resend_otp'])) {
         <p class="subtitle">Enter the 6-digit code sent to your email</p>
 
         <div class="email-display">
-            <i class="fas fa-envelope me-2"></i><?php echo htmlspecialchars($_SESSION['reset_email']); ?>
+            <i class="fas fa-envelope me-2"></i><?php echo htmlspecialchars($_SESSION['reset_email'] ?? ''); ?>
         </div>
 
         <?php if (isset($message) && $message): ?>
