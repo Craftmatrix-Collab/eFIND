@@ -16,12 +16,6 @@ require_once __DIR__ . '/includes/minio_helper.php';
 
 header('Content-Type: application/json');
 
-if (!isLoggedIn()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
-    exit;
-}
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['success' => false, 'error' => 'Method not allowed']);
@@ -29,6 +23,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $body = json_decode(file_get_contents('php://input'), true);
+
+// Allow mobile session token as alternative to login
+$mobileSession = preg_replace('/[^a-f0-9]/', '', $body['session_id'] ?? '');
+$isMobileAuth  = false;
+if ($mobileSession) {
+    $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (session_id VARCHAR(64) PRIMARY KEY, doc_type VARCHAR(50) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'waiting', result_id INT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $st = $conn->prepare("SELECT session_id FROM mobile_upload_sessions WHERE session_id = ? AND status = 'waiting'");
+    $st->bind_param('s', $mobileSession);
+    $st->execute();
+    $isMobileAuth = $st->get_result()->num_rows > 0;
+}
+
+if (!isLoggedIn() && !$isMobileAuth) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+    exit;
+}
 
 $docType     = $body['doc_type']     ?? '';
 $fileName    = $body['file_name']    ?? '';

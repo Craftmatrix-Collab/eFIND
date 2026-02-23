@@ -17,6 +17,7 @@ $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ord
     : '';
 
 $autoCameraMode = ($preselectedType !== '' && ($_GET['camera'] ?? '') === '1');
+$mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -303,9 +304,10 @@ $autoCameraMode = ($preselectedType !== '' && ($_GET['camera'] ?? '') === '1');
 // ──────────────────────────────────────────────────────────────
 // State
 // ──────────────────────────────────────────────────────────────
-let selectedType = '<?= $preselectedType ?>';
-let selectedFiles = [];
-let currentStep = 1;
+let selectedType    = '<?= $preselectedType ?>';
+let selectedFiles   = [];
+let currentStep     = 1;
+const mobileSession = '<?= $mobileSession ?>';
 
 // ──────────────────────────────────────────────────────────────
 // Step navigation helpers
@@ -597,6 +599,7 @@ async function startUpload() {
           doc_type:     selectedType,
           file_name:    file.name,
           content_type: file.type || 'application/octet-stream',
+          session_id:   mobileSession,
         }),
       });
       const data = await res.json();
@@ -631,7 +634,7 @@ async function startUpload() {
     const res = await fetch('confirm_upload.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ doc_type: selectedType, object_keys: objectKeys, ...meta }),
+      body: JSON.stringify({ doc_type: selectedType, object_keys: objectKeys, session_id: mobileSession, ...meta }),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error || 'DB save failed');

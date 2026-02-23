@@ -1960,6 +1960,19 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                 <i class="fas fa-external-link-alt me-1"></i>Open Mobile Upload Page
               </a>
             </div>
+            <!-- Mobile status: shown after session is created -->
+            <div id="ud-mobile-status" class="mt-3 d-none">
+              <div id="ud-mobile-waiting">
+                <i class="fas fa-spinner fa-spin text-primary me-1"></i>
+                <span class="small text-muted">Waiting for mobile to capture and upload...</span>
+              </div>
+              <div id="ud-mobile-complete" class="d-none">
+                <div class="alert alert-success py-2 mb-0 text-start">
+                  <i class="fas fa-check-circle me-2"></i><strong>Mobile upload complete!</strong>
+                  <div class="small mt-1 text-muted" id="ud-mobile-result-info"></div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="mt-4 d-flex justify-content-between">
             <button class="btn btn-outline-secondary" onclick="udGoToStep(1)">
@@ -2017,9 +2030,11 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
   'use strict';
 
   /* ── state ── */
-  let udType      = '';
-  let udFiles     = [];
-  let udQrCreated = false;
+  let udType           = '';
+  let udFiles          = [];
+  let udQrCreated      = false;
+  let udMobileSession  = null;
+  let udPollTimer      = null;
 
   /* ── step dots ── */
   function udSetDots(active) {
@@ -2104,12 +2119,26 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
       </div>`
   };
 
-  /* ── show QR panel ── */
-  window.udShowQR = function () {
+  /* ── show QR panel (async: creates mobile session, then polls for completion) ── */
+  window.udShowQR = async function () {
     const panel = document.getElementById('ud-qr-panel');
     panel.classList.remove('d-none');
 
-    const url = `${location.protocol}//${location.host}${location.pathname.replace('dashboard.php','mobile_upload.php')}?type=${udType}&camera=1`;
+    // Create a new pairing session if needed
+    if (!udMobileSession) {
+      try {
+        const r = await fetch('mobile_session.php', {
+          method:  'POST',
+          headers: {'Content-Type': 'application/json'},
+          body:    JSON.stringify({doc_type: udType}),
+        });
+        const d = await r.json();
+        if (d.success) udMobileSession = d.session_id;
+      } catch (e) { /* proceed without session */ }
+    }
+
+    const sessionPart = udMobileSession ? `&session=${udMobileSession}` : '';
+    const url = `${location.protocol}//${location.host}${location.pathname.replace('dashboard.php','mobile_upload.php')}?type=${udType}&camera=1${sessionPart}`;
     document.getElementById('ud-qr-link').href = url;
 
     if (!udQrCreated) {
@@ -2123,7 +2152,35 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
       });
       udQrCreated = true;
     }
+
+    // Show waiting spinner and start polling
+    if (udMobileSession) {
+      document.getElementById('ud-mobile-status').classList.remove('d-none');
+      document.getElementById('ud-mobile-waiting').classList.remove('d-none');
+      document.getElementById('ud-mobile-complete').classList.add('d-none');
+      udStartMobilePoll();
+    }
   };
+
+  function udStartMobilePoll() {
+    if (udPollTimer) clearInterval(udPollTimer);
+    udPollTimer = setInterval(async () => {
+      if (!udMobileSession) return;
+      try {
+        const r = await fetch(`mobile_session.php?action=check&session=${udMobileSession}`);
+        const d = await r.json();
+        if (d.status === 'complete') {
+          clearInterval(udPollTimer); udPollTimer = null;
+          document.getElementById('ud-mobile-waiting').classList.add('d-none');
+          document.getElementById('ud-mobile-complete').classList.remove('d-none');
+          const info = document.getElementById('ud-mobile-result-info');
+          if (info) info.textContent = `Document saved (ID: ${d.result_id})`;
+          udMobileSession = null;
+          udQrCreated = false;
+        }
+      } catch (e) {}
+    }, 3000);
+  }
 
   /* ── reset QR when type changes ── */
   const origSelectType = window.udSelectType;
@@ -2132,6 +2189,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
     origSelectType(type, btn);
     // rebuild QR if panel already visible
     if (!document.getElementById('ud-qr-panel').classList.contains('d-none')) {
+      udMobileSession = null;
       udQrCreated = false;
       udShowQR();
     }
@@ -2334,6 +2392,8 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
 
   /* ── reset modal when closed ── */
   window.udResetModal = function () {
+    if (udPollTimer) { clearInterval(udPollTimer); udPollTimer = null; }
+    udMobileSession = null;
     udType      = '';
     udFiles     = [];
     udQrCreated = false;
@@ -2345,6 +2405,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
     document.getElementById('ud-upload-result').innerHTML = '';
     document.getElementById('ud-qr-panel').classList.add('d-none');
     document.getElementById('ud-qrcode').innerHTML = '';
+    document.getElementById('ud-mobile-status').classList.add('d-none');
     udGoToStep(1);
   };
 
