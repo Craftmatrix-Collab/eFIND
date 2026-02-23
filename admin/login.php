@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                     // Log successful admin login
                     logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
-                    logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username']);
+                    logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
 
                     $loginSuccessful = true;
                     
@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                         // Log successful staff login
                         logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
-                        logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username']);
+                        logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
 
                         // Redirect to dashboard or original requested URL
                         header("Location: " . getSafeRedirect());
@@ -198,7 +198,7 @@ function logLoginAttempt($username, $ip_address, $status, $details = '', $user_i
 /**
  * Log activity to activity_logs table
  */
-function logActivity($user_id, $action, $description, $document_type = 'system', $ip_address = null, $details = null, $known_username = null) {
+function logActivity($user_id, $action, $description, $document_type = 'system', $ip_address = null, $details = null, $known_username = null, $user_role = null) {
     global $conn;
     
     try {
@@ -231,10 +231,10 @@ function logActivity($user_id, $action, $description, $document_type = 'system',
         
         $ip_address = $ip_address ?: $_SERVER['REMOTE_ADDR'];
         
-        $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, user_name, action, description, document_type, details, ip_address, log_time) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+        $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, user_name, user_role, action, description, document_type, details, ip_address, log_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())");
         
         if ($stmt) {
-            $stmt->bind_param("issssss", $user_id, $user_name, $action, $description, $document_type, $details, $ip_address);
+            $stmt->bind_param("isssssss", $user_id, $user_name, $user_role, $action, $description, $document_type, $details, $ip_address);
             $stmt->execute();
             $stmt->close();
         }

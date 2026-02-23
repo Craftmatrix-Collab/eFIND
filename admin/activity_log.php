@@ -51,8 +51,8 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     // Build query with filters for print
     $printQuery = "SELECT al.*, u.username as user_username, au.username as admin_username
                    FROM activity_logs al
-                   LEFT JOIN users u ON al.user_id = u.id AND (al.user_role IS NULL OR al.user_role != 'admin')
-                   LEFT JOIN admin_users au ON al.user_id = au.id AND al.user_role = 'admin'
+                   LEFT JOIN users u ON al.user_id = u.id
+                   LEFT JOIN admin_users au ON al.user_id = au.id
                    WHERE 1=1";
     $printConditions = [];
     $printParams = [];
@@ -187,9 +187,15 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         $count = 0;
         foreach ($printLogs as $log) {
             $count++;
+            // Resolve correct username: use user_role if stored, else sniff 'Admin:' prefix in details for old records
+            $is_admin_log = ($log['user_role'] === 'admin') ||
+                            ($log['user_role'] === null && str_starts_with($log['details'] ?? '', 'Admin:'));
+            $resolved_user = $is_admin_log
+                ? ($log['admin_username'] ?? $log['user_name'] ?? 'System')
+                : ($log['user_username'] ?? $log['user_name'] ?? 'System');
             echo '<tr>
                 <td>' . $count . '</td>
-                <td>' . htmlspecialchars($log['admin_username'] ?? ($log['user_username'] ?? ($log['user_name'] ?? 'System'))) . '</td>
+                <td>' . htmlspecialchars($resolved_user) . '</td>
                 <td><span class="user-role-' . htmlspecialchars($log['user_role'] ?? 'system') . '">' . htmlspecialchars(ucfirst($log['user_role'] ?? 'System')) . '</span></td>
                 <td>
                     <span class="badge ';
@@ -318,8 +324,8 @@ if (!empty($filter_date)) {
 // Build the query
 $query = "SELECT al.*, u.username as user_username, au.username as admin_username
           FROM activity_logs al
-          LEFT JOIN users u ON al.user_id = u.id AND (al.user_role IS NULL OR al.user_role != 'admin')
-          LEFT JOIN admin_users au ON al.user_id = au.id AND al.user_role = 'admin'
+          LEFT JOIN users u ON al.user_id = u.id
+          LEFT JOIN admin_users au ON al.user_id = au.id
           WHERE 1=1";
 
 if (!empty($where_clauses)) {
@@ -363,7 +369,7 @@ $logs = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 $stmt->close();
 
 // Fetch total count for pagination
-$count_query = "SELECT COUNT(*) as total FROM activity_logs al LEFT JOIN users u ON al.user_id = u.id AND (al.user_role IS NULL OR al.user_role != 'admin') LEFT JOIN admin_users au ON al.user_id = au.id AND al.user_role = 'admin' WHERE 1=1";
+$count_query = "SELECT COUNT(*) as total FROM activity_logs al LEFT JOIN users u ON al.user_id = u.id LEFT JOIN admin_users au ON al.user_id = au.id WHERE 1=1";
 if (!empty($where_clauses)) {
     $count_query .= " AND " . implode(" AND ", $where_clauses);
 }
@@ -1241,11 +1247,19 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                 <?php else: ?>
                     <?php $row_num = $offset + 1; ?>
                     <?php foreach ($logs as $log): ?>
+                        <?php
+                        // Resolve correct username: use user_role if stored, else sniff 'Admin:' prefix in details for old records
+                        $is_admin_log = ($log['user_role'] === 'admin') ||
+                                        ($log['user_role'] === null && str_starts_with($log['details'] ?? '', 'Admin:'));
+                        $resolved_user = $is_admin_log
+                            ? ($log['admin_username'] ?? $log['user_name'] ?? 'System')
+                            : ($log['user_username'] ?? $log['user_name'] ?? 'System');
+                        ?>
                         <tr>
                             <td><?php echo $row_num++; ?></td>
                             <td>
                                 <span class="badge bg-primary">
-                                    <?php echo htmlspecialchars($log['admin_username'] ?? ($log['user_username'] ?? ($log['user_name'] ?? 'System'))); ?>
+                                    <?php echo htmlspecialchars($resolved_user); ?>
                                 </span>
                             </td>
                             <td>
