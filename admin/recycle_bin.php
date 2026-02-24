@@ -18,13 +18,161 @@ if (!isAdmin()) {
     exit();
 }
 
-$table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 10;
 $valid_limits = [10, 25, 50, 100];
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+function recycleBindParams($stmt, $types, array &$values) {
+    $bind = [$types];
+    foreach ($values as $idx => &$value) {
+        $bind[] = &$value;
+    }
+    return call_user_func_array([$stmt, 'bind_param'], $bind);
+}
+
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 10;
 if (!in_array($table_limit, $valid_limits, true)) {
     $table_limit = 10;
 }
 
-$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'restore') {
+    $return_page = max(1, intval($_POST['return_page'] ?? 1));
+    $return_limit = intval($_POST['return_limit'] ?? 10);
+    if (!in_array($return_limit, $valid_limits, true)) {
+        $return_limit = 10;
+    }
+
+    if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
+        $_SESSION['error'] = "CSRF token validation failed.";
+        header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+        exit();
+    }
+
+    $recycle_id = intval($_POST['recycle_id'] ?? 0);
+    if ($recycle_id <= 0) {
+        $_SESSION['error'] = "Invalid recycle entry.";
+        header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+        exit();
+    }
+
+    $allowed_tables = ['resolutions', 'ordinances', 'minutes_of_meeting'];
+
+    try {
+        $conn->begin_transaction();
+
+        $entryStmt = $conn->prepare("SELECT id, original_table, original_id, data, restored_at FROM recycle_bin WHERE id = ? FOR UPDATE");
+        if (!$entryStmt) {
+            throw new Exception("Failed to prepare recycle lookup.");
+        }
+        $entryStmt->bind_param("i", $recycle_id);
+        $entryStmt->execute();
+        $entry = $entryStmt->get_result()->fetch_assoc();
+        $entryStmt->close();
+
+        if (!$entry) {
+            throw new Exception("Recycle entry not found.");
+        }
+        if (!empty($entry['restored_at'])) {
+            throw new Exception("This record has already been restored.");
+        }
+        if (!in_array($entry['original_table'], $allowed_tables, true)) {
+            throw new Exception("Restore is not supported for this table.");
+        }
+
+        $record = json_decode((string)$entry['data'], true);
+        if (!is_array($record) || empty($record)) {
+            throw new Exception("Archived data is invalid or empty.");
+        }
+
+        $restoreId = isset($record['id']) ? (int)$record['id'] : 0;
+        if ($restoreId <= 0) {
+            $restoreId = (int)($entry['original_id'] ?? 0);
+        }
+        if ($restoreId > 0) {
+            $record['id'] = $restoreId;
+            $idCheckSql = "SELECT id FROM `{$entry['original_table']}` WHERE id = ? LIMIT 1";
+            $idCheckStmt = $conn->prepare($idCheckSql);
+            if (!$idCheckStmt) {
+                throw new Exception("Failed to prepare restore ID check.");
+            }
+            $idCheckStmt->bind_param("i", $restoreId);
+            $idCheckStmt->execute();
+            $existingId = $idCheckStmt->get_result()->fetch_assoc();
+            $idCheckStmt->close();
+            if ($existingId) {
+                throw new Exception("Cannot restore record because original ID already exists.");
+            }
+        } else {
+            unset($record['id']);
+        }
+
+        $columns = [];
+        $values = [];
+        $types = '';
+        foreach ($record as $column => $value) {
+            if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string)$column)) {
+                continue;
+            }
+            $columns[] = "`{$column}`";
+            if (is_array($value) || is_object($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+            $values[] = $value;
+            if (is_int($value)) {
+                $types .= 'i';
+            } elseif (is_float($value)) {
+                $types .= 'd';
+            } else {
+                $types .= 's';
+            }
+        }
+
+        if (empty($columns)) {
+            throw new Exception("No restorable columns found.");
+        }
+
+        $restoreSql = "INSERT INTO `{$entry['original_table']}` (" . implode(", ", $columns) . ") VALUES (" . implode(", ", array_fill(0, count($columns), '?')) . ")";
+        $restoreStmt = $conn->prepare($restoreSql);
+        if (!$restoreStmt) {
+            throw new Exception("Failed to prepare restore statement.");
+        }
+        if (!recycleBindParams($restoreStmt, $types, $values)) {
+            $restoreStmt->close();
+            throw new Exception("Failed to bind restore parameters.");
+        }
+        if (!$restoreStmt->execute()) {
+            $error = $restoreStmt->error;
+            $restoreStmt->close();
+            throw new Exception("Restore insert failed: " . $error);
+        }
+        $restoreStmt->close();
+
+        $updateStmt = $conn->prepare("UPDATE recycle_bin SET restored_at = CURRENT_TIMESTAMP WHERE id = ? AND restored_at IS NULL");
+        if (!$updateStmt) {
+            throw new Exception("Failed to prepare recycle update.");
+        }
+        $updateStmt->bind_param("i", $recycle_id);
+        if (!$updateStmt->execute()) {
+            $error = $updateStmt->error;
+            $updateStmt->close();
+            throw new Exception("Failed to update recycle status: " . $error);
+        }
+        $updateStmt->close();
+
+        $conn->commit();
+        $_SESSION['success'] = "Record restored successfully.";
+    } catch (Throwable $e) {
+        $conn->rollback();
+        error_log("Recycle restore failed: " . $e->getMessage());
+        $_SESSION['error'] = $e->getMessage();
+    }
+
+    header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+    exit();
+}
+
 $offset = ($page - 1) * $table_limit;
 
 $total_entries = 0;
@@ -66,6 +214,10 @@ function recycleDataPreview($jsonData) {
 
     return $normalized;
 }
+
+$error = isset($_SESSION['error']) ? $_SESSION['error'] : '';
+$success = isset($_SESSION['success']) ? $_SESSION['success'] : '';
+unset($_SESSION['error'], $_SESSION['success']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -430,6 +582,19 @@ function recycleDataPreview($jsonData) {
                 </form>
             </div>
 
+            <?php if (!empty($success)): ?>
+                <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
+                    <i class="fas fa-check-circle me-2"></i><?php echo htmlspecialchars($success); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php endif; ?>
+            <?php if (!empty($error)): ?>
+                <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i><?php echo htmlspecialchars($error); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php endif; ?>
+
             <div class="table-info d-flex justify-content-between align-items-center">
                 <div>
                     <i class="fas fa-trash-restore-alt me-2"></i>
@@ -448,13 +613,14 @@ function recycleDataPreview($jsonData) {
                                 <th style="width: 15%;">Deleted By</th>
                                 <th style="width: 15%;">Deleted At</th>
                                 <th style="width: 15%;">Restored At</th>
-                                <th style="width: 25%;">Data</th>
+                                <th style="width: 18%;">Data</th>
+                                <th style="width: 10%;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($entries)): ?>
                                 <tr>
-                                    <td colspan="7" class="text-center py-4">Recycle bin is empty.</td>
+                                    <td colspan="8" class="text-center py-4">Recycle bin is empty.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($entries as $entry): ?>
@@ -476,6 +642,22 @@ function recycleDataPreview($jsonData) {
                                             <span class="data-preview" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo htmlspecialchars((string)$entry['data']); ?>">
                                                 <?php echo htmlspecialchars(recycleDataPreview($entry['data'])); ?>
                                             </span>
+                                        </td>
+                                        <td>
+                                            <?php if (empty($entry['restored_at'])): ?>
+                                                <form method="POST" action="" onsubmit="return confirm('Restore this record?');" class="d-inline">
+                                                    <input type="hidden" name="action" value="restore">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                                                    <input type="hidden" name="recycle_id" value="<?php echo (int)$entry['id']; ?>">
+                                                    <input type="hidden" name="return_page" value="<?php echo (int)$page; ?>">
+                                                    <input type="hidden" name="return_limit" value="<?php echo (int)$table_limit; ?>">
+                                                    <button type="submit" class="btn btn-sm btn-primary">
+                                                        <i class="fas fa-undo me-1"></i>Restore
+                                                    </button>
+                                                </form>
+                                            <?php else: ?>
+                                                <span class="badge bg-success">Restored</span>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

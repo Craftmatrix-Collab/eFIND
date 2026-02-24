@@ -25,6 +25,10 @@ if (!isLoggedIn()) {
     exit();
 }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Function to check if a file already exists in the uploads directory
 function isFileDuplicate($uploadDir, $fileName) {
     $targetPath = $uploadDir . basename($fileName);
@@ -352,15 +356,32 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
 }
 
 // Handle delete action
-if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
-    $id = intval($_GET['id']);
-    $stmt = $conn->prepare("SELECT * FROM minutes_of_meeting WHERE id = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $minute = $result->fetch_assoc();
-    $stmt->close();
-    if ($minute) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete' && isset($_POST['id'])) {
+    if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
+        $_SESSION['error'] = "CSRF token validation failed.";
+        header("Location: minutes_of_meeting.php");
+        exit();
+    }
+
+    $id = intval($_POST['id']);
+
+    try {
+        $conn->begin_transaction();
+
+        $stmt = $conn->prepare("SELECT * FROM minutes_of_meeting WHERE id = ?");
+        if (!$stmt) {
+            throw new Exception("Failed to prepare minute lookup.");
+        }
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $minute = $result->fetch_assoc();
+        $stmt->close();
+
+        if (!$minute) {
+            throw new Exception("Minute not found.");
+        }
+
         if (function_exists('logDocumentDelete')) {
             try {
                 logDocumentDelete('minute', $minute['title'], $id);
@@ -368,31 +389,35 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
                 error_log("Logger error: " . $e->getMessage());
             }
         }
+
         if (!archiveToRecycleBin('minutes_of_meeting', $id, $minute)) {
-            $_SESSION['error'] = "Failed to archive minute to recycle bin. Deletion cancelled.";
-            header("Location: minutes_of_meeting.php");
-            exit();
+            throw new Exception("Failed to archive minute to recycle bin.");
         }
-    }
-    $stmt = $conn->prepare("DELETE FROM minutes_of_meeting WHERE id = ?");
-    $stmt->bind_param("i", $id);
-    if ($stmt->execute()) {
+
+        $stmt = $conn->prepare("DELETE FROM minutes_of_meeting WHERE id = ?");
+        if (!$stmt) {
+            throw new Exception("Failed to prepare delete query.");
+        }
+        $stmt->bind_param("i", $id);
+        if (!$stmt->execute()) {
+            $error = $stmt->error;
+            $stmt->close();
+            throw new Exception("Failed to delete minute: " . $error);
+        }
+        if ($stmt->affected_rows < 1) {
+            $stmt->close();
+            throw new Exception("Minute was not deleted.");
+        }
+        $stmt->close();
+
+        $conn->commit();
         $_SESSION['success'] = "Minute deleted successfully!";
-        // Clean up associated MinIO files
-        if (!empty($minute['image_path'])) {
-            $minio = new MinioS3Client();
-            foreach (preg_split('/[|,]/', (string)$minute['image_path']) as $fileUrl) {
-                $fileUrl = trim($fileUrl);
-                if (empty($fileUrl) || strpos($fileUrl, 'http') !== 0) continue;
-                $parsed = parse_url($fileUrl);
-                $pathParts = explode('/', ltrim($parsed['path'] ?? '', '/'), 2);
-                if (count($pathParts) === 2) { $minio->deleteFile($pathParts[1]); }
-            }
-        }
-    } else {
-        $_SESSION['error'] = "Failed to delete minute: " . $conn->error;
+    } catch (Throwable $e) {
+        $conn->rollback();
+        error_log("Minute delete failed: " . $e->getMessage());
+        $_SESSION['error'] = $e->getMessage();
     }
-    $stmt->close();
+
     header("Location: minutes_of_meeting.php");
     exit();
 }
@@ -1681,7 +1706,7 @@ $count_stmt->close();
                                                 <button class="btn btn-sm btn-outline-primary p-1 edit-btn" data-id="<?php echo $minute['id']; ?>">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
-                                                <button class="btn btn-sm btn-outline-danger p-1 delete-btn"
+                                                <button type="button" class="btn btn-sm btn-outline-danger p-1 delete-btn"
         data-id="<?php echo $minute['id']; ?>"
         data-title="<?php echo htmlspecialchars($minute['title']); ?>"
        >
@@ -1729,9 +1754,14 @@ $count_stmt->close();
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     <i class="fas fa-times me-1"></i>Cancel
                 </button>
-                <a href="#" class="btn btn-danger disabled" id="confirmDeleteBtn" aria-disabled="true">
-                    <i class="fas fa-trash me-1"></i>Delete Minute
-                </a>
+                <form method="POST" action="" class="d-inline">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="id" id="deleteItemId">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                    <button type="submit" class="btn btn-danger disabled" id="confirmDeleteBtn" aria-disabled="true" disabled>
+                        <i class="fas fa-trash me-1"></i>Delete Minute
+                    </button>
+                </form>
             </div>
         </div>
     </div>
@@ -2083,7 +2113,7 @@ $count_stmt->close();
                     const id = this.getAttribute('data-id');
                     const title = this.getAttribute('data-title');
                     document.getElementById('deleteItemTitle').textContent = title;
-                    document.getElementById('confirmDeleteBtn').href = `?action=delete&id=${id}`;
+                    document.getElementById('deleteItemId').value = id;
 
                     // Reset confirm input and disable button
                     const confirmInput = document.getElementById('deleteConfirmInput');
@@ -2091,6 +2121,7 @@ $count_stmt->close();
                     confirmInput.value = '';
                     confirmBtn.classList.add('disabled');
                     confirmBtn.setAttribute('aria-disabled', 'true');
+                    confirmBtn.disabled = true;
 
                     const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
                     deleteModal.show();
@@ -2103,9 +2134,11 @@ $count_stmt->close();
                 if (this.value === 'MINUTES') {
                     confirmBtn.classList.remove('disabled');
                     confirmBtn.removeAttribute('aria-disabled');
+                    confirmBtn.disabled = false;
                 } else {
                     confirmBtn.classList.add('disabled');
                     confirmBtn.setAttribute('aria-disabled', 'true');
+                    confirmBtn.disabled = true;
                 }
             });
 
@@ -2116,6 +2149,7 @@ $count_stmt->close();
                 confirmInput.value = '';
                 confirmBtn.classList.add('disabled');
                 confirmBtn.setAttribute('aria-disabled', 'true');
+                confirmBtn.disabled = true;
             });
             // Auto-hide alerts after 5 seconds
             const alerts = document.querySelectorAll('.alert');

@@ -25,6 +25,10 @@ if (!isLoggedIn()) {
     exit();
 }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Function to check if a file already exists in the uploads directory
 function isFileDuplicate($uploadDir, $fileName) {
     $targetPath = $uploadDir . basename($fileName);
@@ -418,17 +422,32 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
 }
 
 // Handle delete action
-if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
-    $id = intval($_GET['id']);
-    // Log the deletion before executing
-    $stmt = $conn->prepare("SELECT * FROM ordinances WHERE id = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $ordinance = $result->fetch_assoc();
-    $stmt->close();
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete' && isset($_POST['id'])) {
+    if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
+        $_SESSION['error'] = "CSRF token validation failed.";
+        header("Location: ordinances.php");
+        exit();
+    }
 
-    if ($ordinance) {
+    $id = intval($_POST['id']);
+
+    try {
+        $conn->begin_transaction();
+
+        $stmt = $conn->prepare("SELECT * FROM ordinances WHERE id = ?");
+        if (!$stmt) {
+            throw new Exception("Failed to prepare ordinance lookup.");
+        }
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $ordinance = $result->fetch_assoc();
+        $stmt->close();
+
+        if (!$ordinance) {
+            throw new Exception("Ordinance not found.");
+        }
+
         if (function_exists('logDocumentDelete')) {
             try {
                 logDocumentDelete('ordinance', $ordinance['title'], $id);
@@ -436,32 +455,35 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
                 error_log("Logger error: " . $e->getMessage());
             }
         }
+
         if (!archiveToRecycleBin('ordinances', $id, $ordinance)) {
-            $_SESSION['error'] = "Failed to archive ordinance to recycle bin. Deletion cancelled.";
-            header("Location: ordinances.php");
-            exit();
+            throw new Exception("Failed to archive ordinance to recycle bin.");
         }
+
+        $stmt = $conn->prepare("DELETE FROM ordinances WHERE id = ?");
+        if (!$stmt) {
+            throw new Exception("Failed to prepare delete query.");
+        }
+        $stmt->bind_param("i", $id);
+        if (!$stmt->execute()) {
+            $error = $stmt->error;
+            $stmt->close();
+            throw new Exception("Failed to delete ordinance: " . $error);
+        }
+        if ($stmt->affected_rows < 1) {
+            $stmt->close();
+            throw new Exception("Ordinance was not deleted.");
+        }
+        $stmt->close();
+
+        $conn->commit();
+        $_SESSION['success'] = "Ordinance deleted successfully!";
+    } catch (Throwable $e) {
+        $conn->rollback();
+        error_log("Ordinance delete failed: " . $e->getMessage());
+        $_SESSION['error'] = $e->getMessage();
     }
 
-    $stmt = $conn->prepare("DELETE FROM ordinances WHERE id = ?");
-    $stmt->bind_param("i", $id);
-    if ($stmt->execute()) {
-        $_SESSION['success'] = "Ordinance deleted successfully!";
-        // Clean up associated MinIO files
-        if (!empty($ordinance['image_path'])) {
-            $minio = new MinioS3Client();
-            foreach (preg_split('/[|,]/', (string)$ordinance['image_path']) as $fileUrl) {
-                $fileUrl = trim($fileUrl);
-                if (empty($fileUrl) || strpos($fileUrl, 'http') !== 0) continue;
-                $parsed = parse_url($fileUrl);
-                $pathParts = explode('/', ltrim($parsed['path'] ?? '', '/'), 2);
-                if (count($pathParts) === 2) { $minio->deleteFile($pathParts[1]); }
-            }
-        }
-    } else {
-        $_SESSION['error'] = "Failed to delete ordinance: " . $conn->error;
-    }
-    $stmt->close();
     header("Location: ordinances.php");
     exit();
 }
@@ -1665,9 +1687,9 @@ $count_stmt->close();
                                                 <button class="btn btn-sm btn-outline-primary p-1 edit-btn" data-id="<?php echo $ordinance['id']; ?>" data-bs-toggle="tooltip" data-bs-placement="top" title="Edit">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
-                                                <a href="?action=delete&id=<?php echo $ordinance['id']; ?>" class="btn btn-sm btn-outline-danger p-1 delete-btn" data-id="<?php echo $ordinance['id']; ?>" data-title="<?php echo htmlspecialchars($ordinance['title']); ?>" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete">
+                                                <button type="button" class="btn btn-sm btn-outline-danger p-1 delete-btn" data-id="<?php echo $ordinance['id']; ?>" data-title="<?php echo htmlspecialchars($ordinance['title']); ?>" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete">
                                                     <i class="fas fa-trash"></i>
-                                                </a>
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
@@ -1781,9 +1803,14 @@ $count_stmt->close();
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                         <i class="fas fa-times me-1"></i>Cancel
                     </button>
-                    <a href="#" class="btn btn-danger disabled" id="confirmDeleteBtn" aria-disabled="true">
-                        <i class="fas fa-trash me-1"></i>Delete Ordinance
-                    </a>
+                    <form method="POST" action="" class="d-inline">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" id="deleteItemId">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                        <button type="submit" class="btn btn-danger disabled" id="confirmDeleteBtn" aria-disabled="true" disabled>
+                            <i class="fas fa-trash me-1"></i>Delete Ordinance
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -2267,13 +2294,14 @@ $count_stmt->close();
                     const id = this.getAttribute('data-id');
                     const title = this.getAttribute('data-title');
                     document.getElementById('deleteItemTitle').textContent = title;
-                    document.getElementById('confirmDeleteBtn').href = `?action=delete&id=${id}`;
+                    document.getElementById('deleteItemId').value = id;
 
                     const confirmInput = document.getElementById('deleteConfirmInput');
                     const confirmBtn = document.getElementById('confirmDeleteBtn');
                     confirmInput.value = '';
                     confirmBtn.classList.add('disabled');
                     confirmBtn.setAttribute('aria-disabled', 'true');
+                    confirmBtn.disabled = true;
 
                     const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
                     deleteModal.show();
@@ -2286,9 +2314,11 @@ $count_stmt->close();
                 if (this.value === 'ORDINANCE') {
                     confirmBtn.classList.remove('disabled');
                     confirmBtn.removeAttribute('aria-disabled');
+                    confirmBtn.disabled = false;
                 } else {
                     confirmBtn.classList.add('disabled');
                     confirmBtn.setAttribute('aria-disabled', 'true');
+                    confirmBtn.disabled = true;
                 }
             });
 
@@ -2299,6 +2329,7 @@ $count_stmt->close();
                 confirmInput.value = '';
                 confirmBtn.classList.add('disabled');
                 confirmBtn.setAttribute('aria-disabled', 'true');
+                confirmBtn.disabled = true;
             });
             // Initialize pagination position
             updatePaginationPosition();
