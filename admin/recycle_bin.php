@@ -76,30 +76,230 @@ function recycleDataPreview($jsonData) {
     <link rel="icon" type="image/png" href="images/eFind_logo.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@700&display=swap" rel="stylesheet">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <style>
-        body { background: #f5f7fa; font-family: 'Poppins', sans-serif; padding-top: 40px; }
-        .dashboard-container { margin-left: 250px; padding: 20px; margin-top: 0; margin-bottom: 60px; }
-        .section-card { border: 0; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
-        .section-header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: #fff; border-radius: 14px 14px 0 0; }
-        .table thead th { background-color: #1a3a8f; color: #fff; vertical-align: middle; }
-        .data-preview { max-width: 420px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        :root {
+            --primary-blue: #4361ee;
+            --secondary-blue: #3a0ca3;
+            --light-blue: #e8f0fe;
+            --accent-orange: #ff6d00;
+            --dark-gray: #2b2d42;
+            --medium-gray: #8d99ae;
+            --light-gray: #f8f9fa;
+            --white: #ffffff;
+            --box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa, #e4e8f0);
+            color: var(--dark-gray);
+            min-height: 100vh;
+            padding-top: 70px;
+        }
+        .management-container {
+            margin-left: 250px;
+            padding: 20px;
+            margin-top: 0;
+            transition: all 0.3s;
+            margin-bottom: 60px;
+            position: relative;
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            position: sticky;
+            top: 70px;
+            background: linear-gradient(135deg, #f5f7fa, #e4e8f0);
+            padding: 15px 0;
+            border-bottom: 2px solid var(--light-blue);
+            flex-wrap: wrap;
+            gap: 15px;
+            z-index: 100;
+        }
+        .page-title {
+            font-family: 'Montserrat', sans-serif;
+            color: var(--secondary-blue);
+            font-weight: 700;
+            margin: 0;
+            position: relative;
+        }
+        .page-title::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: -17px;
+            width: 60px;
+            height: 4px;
+            background: var(--accent-orange);
+            border-radius: 2px;
+        }
+        .table-info {
+            padding: 10px 20px;
+            background-color: var(--light-blue);
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            border-bottom: 1px solid var(--light-blue);
+            font-weight: 600;
+            color: var(--secondary-blue);
+        }
+        .table-container {
+            background-color: var(--white);
+            border-radius: 16px;
+            box-shadow: var(--box-shadow);
+            padding: 0;
+            margin-bottom: 0;
+            overflow: hidden;
+            position: relative;
+            z-index: 0;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            max-height: calc(100vh - 360px);
+            overflow-y: auto;
+            display: block;
+        }
+        .table {
+            margin-bottom: 0;
+            min-width: 1000px;
+        }
+        .table th {
+            background-color: var(--primary-blue);
+            color: var(--white);
+            font-weight: 600;
+            border: none;
+            padding: 12px 15px;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        .table td {
+            vertical-align: middle;
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            padding: 8px;
+            word-break: break-word;
+        }
+        .table tr:hover td {
+            background-color: rgba(67, 97, 238, 0.05);
+        }
+        .data-preview {
+            max-width: 360px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+            cursor: help;
+        }
+        .floating-shapes {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: -1;
+        }
+        .shape {
+            position: absolute;
+            opacity: 0.1;
+            transition: all 10s linear;
+        }
+        .shape-1 {
+            width: 150px;
+            height: 150px;
+            background: var(--primary-blue);
+            border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
+            top: 10%;
+            left: 10%;
+            animation: float 15s infinite ease-in-out;
+        }
+        .shape-2 {
+            width: 100px;
+            height: 100px;
+            background: var(--accent-orange);
+            border-radius: 50%;
+            bottom: 15%;
+            right: 10%;
+            animation: float 12s infinite ease-in-out reverse;
+        }
+        .shape-3 {
+            width: 180px;
+            height: 180px;
+            background: var(--secondary-blue);
+            border-radius: 50% 20% 50% 30%;
+            top: 50%;
+            right: 20%;
+            animation: float 18s infinite ease-in-out;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(5deg); }
+        }
+        .pagination-container {
+            position: sticky;
+            bottom: 0;
+            background: var(--white);
+            padding: 15px 20px;
+            border-top: 2px solid var(--light-blue);
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            border-radius: 0 0 16px 16px;
+            margin-bottom: 50px;
+        }
+        .pagination-info {
+            font-weight: 600;
+            color: var(--secondary-blue);
+            background-color: rgba(67, 97, 238, 0.1);
+            padding: 8px 15px;
+            border-radius: 8px;
+            border: 1px solid var(--light-blue);
+        }
+        .page-link {
+            border: 1px solid var(--light-blue);
+            color: var(--primary-blue);
+            font-weight: 500;
+        }
+        .page-item.active .page-link {
+            background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
+            border-color: var(--primary-blue);
+        }
         @media (max-width: 992px) {
-            .dashboard-container { margin-left: 0; padding: 15px; }
+            .management-container {
+                margin-left: 0;
+                padding: 15px;
+                margin-bottom: 60px;
+            }
+            .page-header {
+                top: 60px;
+            }
+            .table-responsive {
+                max-height: calc(100vh - 320px);
+            }
+            .pagination-container {
+                padding: 10px 15px;
+            }
         }
     </style>
 </head>
 <body>
+    <div class="floating-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
+    </div>
     <?php include(__DIR__ . '/includes/sidebar.php'); ?>
     <?php include(__DIR__ . '/includes/navbar.php'); ?>
 
-    <div class="dashboard-container">
+    <div class="management-container">
         <div class="container-fluid">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h1 class="h3 mb-0 text-primary"><i class="fas fa-recycle me-2"></i>Recycle Bin</h1>
+            <div class="page-header">
+                <h1 class="page-title">Recycle Bin</h1>
                 <form method="GET" class="d-flex align-items-center gap-2">
-                    <label for="table_limit" class="mb-0 small text-muted">Rows</label>
+                    <label for="table_limit" class="form-label mb-0">Rows:</label>
                     <select id="table_limit" name="table_limit" class="form-select form-select-sm" onchange="this.form.submit()">
                         <?php foreach ($valid_limits as $limit): ?>
                             <option value="<?php echo $limit; ?>" <?php echo $table_limit === $limit ? 'selected' : ''; ?>>
@@ -111,56 +311,65 @@ function recycleDataPreview($jsonData) {
                 </form>
             </div>
 
-            <div class="card section-card">
-                <div class="card-header section-header d-flex justify-content-between align-items-center">
-                    <span><i class="fas fa-trash-restore-alt me-2"></i>Deleted Records</span>
-                    <span class="badge bg-light text-dark"><?php echo $total_entries; ?> total</span>
+            <div class="table-info d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="fas fa-trash-restore-alt me-2"></i>
+                    Showing <?php echo count($entries); ?> of <?php echo $total_entries; ?> recycled records
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover table-striped mb-0">
-                            <thead>
+            </div>
+
+            <div class="table-container">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover align-middle text-center">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 7%;">ID</th>
+                                <th style="width: 15%;">Original Table</th>
+                                <th style="width: 8%;">Original ID</th>
+                                <th style="width: 15%;">Deleted By</th>
+                                <th style="width: 15%;">Deleted At</th>
+                                <th style="width: 15%;">Restored At</th>
+                                <th style="width: 25%;">Data</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($entries)): ?>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>Original Table</th>
-                                    <th>Original ID</th>
-                                    <th>Deleted By</th>
-                                    <th>Deleted At</th>
-                                    <th>Restored At</th>
-                                    <th>Data</th>
+                                    <td colspan="7" class="text-center py-4">Recycle bin is empty.</td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($entries)): ?>
+                            <?php else: ?>
+                                <?php foreach ($entries as $entry): ?>
                                     <tr>
-                                        <td colspan="7" class="text-center py-4 text-muted">Recycle bin is empty.</td>
-                                    </tr>
-                                <?php else: ?>
-                                    <?php foreach ($entries as $entry): ?>
-                                        <tr>
-                                            <td><?php echo (int)$entry['id']; ?></td>
-                                            <td><?php echo htmlspecialchars((string)$entry['original_table']); ?></td>
-                                            <td><?php echo (int)$entry['original_id']; ?></td>
-                                            <td><?php echo htmlspecialchars((string)($entry['deleted_by'] ?? 'N/A')); ?></td>
-                                            <td><?php echo !empty($entry['deleted_at']) ? date('M d, Y h:i:s A', strtotime($entry['deleted_at'])) : 'N/A'; ?></td>
-                                            <td>
-                                                <?php echo !empty($entry['restored_at']) ? date('M d, Y h:i:s A', strtotime($entry['restored_at'])) : '<span class="badge bg-secondary">Not Restored</span>'; ?>
-                                            </td>
-                                            <td class="data-preview" title="<?php echo htmlspecialchars((string)$entry['data']); ?>">
+                                        <td><?php echo (int)$entry['id']; ?></td>
+                                        <td><span class="badge bg-primary"><?php echo htmlspecialchars((string)$entry['original_table']); ?></span></td>
+                                        <td><?php echo (int)$entry['original_id']; ?></td>
+                                        <td><?php echo htmlspecialchars((string)($entry['deleted_by'] ?? 'N/A')); ?></td>
+                                        <td><?php echo !empty($entry['deleted_at']) ? date('M d, Y h:i:s A', strtotime($entry['deleted_at'])) : 'N/A'; ?></td>
+                                        <td>
+                                            <?php if (!empty($entry['restored_at'])): ?>
+                                                <span class="badge bg-success mb-1">Restored</span><br>
+                                                <small><?php echo date('M d, Y h:i:s A', strtotime($entry['restored_at'])); ?></small>
+                                            <?php else: ?>
+                                                <span class="badge bg-secondary">Not Restored</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-start">
+                                            <span class="data-preview" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo htmlspecialchars((string)$entry['data']); ?>">
                                                 <?php echo htmlspecialchars(recycleDataPreview($entry['data'])); ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
             <?php if ($total_pages > 1): ?>
-                <nav class="mt-3">
-                    <ul class="pagination pagination-sm justify-content-end">
+                <div class="pagination-container d-flex justify-content-between align-items-center">
+                    <span class="pagination-info">Page <?php echo $page; ?> of <?php echo $total_pages; ?></span>
+                    <ul class="pagination pagination-sm mb-0">
                         <?php for ($p = 1; $p <= $total_pages; $p++): ?>
                             <li class="page-item <?php echo $p === $page ? 'active' : ''; ?>">
                                 <a class="page-link" href="?page=<?php echo $p; ?>&table_limit=<?php echo $table_limit; ?>">
@@ -169,9 +378,17 @@ function recycleDataPreview($jsonData) {
                             </li>
                         <?php endfor; ?>
                     </ul>
-                </nav>
+                </div>
             <?php endif; ?>
         </div>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        });
+    </script>
 </body>
 </html>
