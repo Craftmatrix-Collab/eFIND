@@ -14,6 +14,11 @@ if (!isLoggedIn()) {
     header('Location: login.php');
     exit();
 }
+if (!isAdmin()) {
+    $_SESSION['error'] = 'You do not have permission to access this page.';
+    header('Location: dashboard.php');
+    exit();
+}
 
 // ── AJAX: Send email verification OTP ────────────────────────────────────────
 if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
@@ -130,7 +135,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
         die("CSRF token validation failed.");
     }
     $id = (int)$_GET['id'];
-    $user_type = isset($_GET['user_type']) ? $_GET['user_type'] : 'users';
+    $user_type = isset($_GET['user_type']) ? $_GET['user_type'] : '';
+    if (!in_array($user_type, ['users', 'admin_users'], true)) {
+        $_SESSION['error'] = "Invalid user type.";
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
     
     // Determine which table to delete from
     $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
@@ -224,55 +234,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif (isset($_POST['update_user'])) {
         $id = (int)$_POST['user_id'];
-        $user_type = isset($_POST['user_type']) ? $_POST['user_type'] : 'users';
+        $user_type = isset($_POST['user_type']) ? $_POST['user_type'] : '';
         $full_name = trim($_POST['full_name']);
         $contact_number = trim($_POST['contact_number']);
         $email = trim($_POST['email']);
         $username = trim($_POST['username']);
         $password = !empty(trim($_POST['password'])) ? password_hash(trim($_POST['password']), PASSWORD_DEFAULT) : null;
         $role = trim($_POST['role']);
-        $existing_profile_picture = $_POST['existing_profile_picture'] ?? '';
-        $profile_picture = $existing_profile_picture;
-
-        // Handle file upload if present
-        if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-            $allowed_types = ['image/jpeg', 'image/png'];
-            $file_type = $_FILES['profile_picture']['type'];
-            if (!in_array($file_type, $allowed_types)) {
-                $_SESSION['error'] = "Only JPG and PNG files are allowed.";
-                header("Location: " . $_SERVER['PHP_SELF']);
-                exit();
-            } else {
-                // Delete old file if exists
-                if (!empty($existing_profile_picture)) {
-                    @unlink(__DIR__ . '/uploads/profiles/' . basename($existing_profile_picture));
-                }
-                $upload_dir = __DIR__ . '/uploads/profiles/';
-                if (!is_dir($upload_dir)) {
-                    mkdir($upload_dir, 0755, true);
-                }
-                $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
-                $target_path = $upload_dir . $file_name;
-                if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_path)) {
-                    $profile_picture = $file_name;
-                } else {
-                    $_SESSION['error'] = "Failed to upload profile picture.";
-                    header("Location: " . $_SERVER['PHP_SELF']);
-                    exit();
-                }
-            }
-        }
+        $profile_picture = '';
 
         // Validate inputs
-        if (empty($full_name) || empty($email) || empty($username) || empty($role)) {
+        if (!in_array($user_type, ['users', 'admin_users'], true)) {
+            $_SESSION['error'] = "Invalid user type.";
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit();
+        } elseif (empty($full_name) || empty($email) || empty($username) || empty($role)) {
             $_SESSION['error'] = "Full Name, Email, Username, and Role are required fields.";
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
         } else {
+            $dupStmt = $conn->prepare("SELECT 1 FROM users WHERE (email = ? OR username = ?) AND NOT (? = 'users' AND id = ?) UNION ALL SELECT 1 FROM admin_users WHERE (email = ? OR username = ?) AND NOT (? = 'admin_users' AND id = ?) LIMIT 1");
+            $dupStmt->bind_param("sssisssi", $email, $username, $user_type, $id, $email, $username, $user_type, $id);
+            $dupStmt->execute();
+            $dupStmt->store_result();
+            $duplicateExists = $dupStmt->num_rows > 0;
+            $dupStmt->close();
+
+            if ($duplicateExists) {
+                $_SESSION['error'] = "Email or username is already in use by another account.";
+                header("Location: " . $_SERVER['PHP_SELF']);
+                exit();
+            }
+
             // Determine which table to update
             $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
             $password_field = ($user_type === 'admin_users') ? 'password_hash' : 'password';
-            
+
+            $existsStmt = $conn->prepare("SELECT profile_picture FROM $table WHERE id = ?");
+            $existsStmt->bind_param("i", $id);
+            $existsStmt->execute();
+            $existsResult = $existsStmt->get_result();
+            $currentUser = $existsResult->fetch_assoc();
+            $existsStmt->close();
+            if (!$currentUser) {
+                $_SESSION['error'] = "User not found.";
+                header("Location: " . $_SERVER['PHP_SELF']);
+                exit();
+            }
+            $profile_picture = $currentUser['profile_picture'] ?? '';
+
+            // Handle file upload if present (only after validating target user)
+            if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
+                $allowed_types = ['image/jpeg', 'image/png'];
+                $file_type = $_FILES['profile_picture']['type'];
+                if (!in_array($file_type, $allowed_types)) {
+                    $_SESSION['error'] = "Only JPG and PNG files are allowed.";
+                    header("Location: " . $_SERVER['PHP_SELF']);
+                    exit();
+                } else {
+                    // Delete old file if exists
+                    if (!empty($profile_picture)) {
+                        @unlink(__DIR__ . '/uploads/profiles/' . basename($profile_picture));
+                    }
+                    $upload_dir = __DIR__ . '/uploads/profiles/';
+                    if (!is_dir($upload_dir)) {
+                        mkdir($upload_dir, 0755, true);
+                    }
+                    $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
+                    $target_path = $upload_dir . $file_name;
+                    if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_path)) {
+                        $profile_picture = $file_name;
+                    } else {
+                        $_SESSION['error'] = "Failed to upload profile picture.";
+                        header("Location: " . $_SERVER['PHP_SELF']);
+                        exit();
+                    }
+                }
+            }
+
             // Update existing user - admin_users doesn't have role column
             if ($user_type === 'admin_users') {
                 if ($password) {
@@ -313,7 +352,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
         exit();
     }
     $id = (int)$_GET['id'];
-    $userType = isset($_GET['user_type']) ? $_GET['user_type'] : 'users';
+    $userType = isset($_GET['user_type']) ? $_GET['user_type'] : '';
+    if (!in_array($userType, ['users', 'admin_users'], true)) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Invalid user type']);
+        exit();
+    }
     $table = ($userType === 'admin_users') ? 'admin_users' : 'users';
     $stmt = $conn->prepare("SELECT *, '$table' as user_type FROM $table WHERE id = ?");
     $stmt->bind_param("i", $id);
