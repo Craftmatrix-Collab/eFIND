@@ -111,6 +111,50 @@ if (!function_exists('checkRecycleBinTable')) {
     }
 }
 
+if (!function_exists('archiveToRecycleBin')) {
+    /**
+     * Archive a record into recycle_bin before permanent deletion.
+     */
+    function archiveToRecycleBin($original_table, $original_id, $record_data, $deleted_by = null) {
+        global $conn;
+
+        if (empty($original_table) || !is_array($record_data) || empty($record_data)) {
+            error_log("archiveToRecycleBin: invalid input");
+            return false;
+        }
+
+        $json_data = json_encode($record_data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($json_data === false) {
+            error_log("archiveToRecycleBin: json_encode failed - " . json_last_error_msg());
+            return false;
+        }
+
+        if ($deleted_by === null || $deleted_by === '') {
+            $deleted_by = $_SESSION['admin_username']
+                ?? $_SESSION['username']
+                ?? $_SESSION['admin_full_name']
+                ?? $_SESSION['full_name']
+                ?? 'system';
+        }
+
+        $stmt = $conn->prepare("INSERT INTO recycle_bin (original_table, original_id, data, deleted_by) VALUES (?, ?, ?, ?)");
+        if (!$stmt) {
+            error_log("archiveToRecycleBin: prepare failed - " . $conn->error);
+            return false;
+        }
+
+        $original_id = (int)$original_id;
+        $stmt->bind_param("siss", $original_table, $original_id, $json_data, $deleted_by);
+        $ok = $stmt->execute();
+        if (!$ok) {
+            error_log("archiveToRecycleBin: execute failed - " . $stmt->error);
+        }
+        $stmt->close();
+
+        return $ok;
+    }
+}
+
 if (!function_exists('logActivity')) {
     /**
      * Main activity logging function

@@ -389,7 +389,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
 // Handle delete action
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     $id = intval($_GET['id']);
-    $stmt = $conn->prepare("SELECT title, image_path FROM resolutions WHERE id = ?");
+    $stmt = $conn->prepare("SELECT * FROM resolutions WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -402,6 +402,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
             } catch (Exception $e) {
                 error_log("Logger error: " . $e->getMessage());
             }
+        }
+        if (!archiveToRecycleBin('resolutions', $id, $resolution)) {
+            $_SESSION['error'] = "Failed to archive resolution to recycle bin. Deletion cancelled.";
+            header("Location: resolutions.php");
+            exit();
         }
     }
     $stmt = $conn->prepare("DELETE FROM resolutions WHERE id = ?");

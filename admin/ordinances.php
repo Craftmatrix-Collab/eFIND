@@ -421,7 +421,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     $id = intval($_GET['id']);
     // Log the deletion before executing
-    $stmt = $conn->prepare("SELECT title, image_path FROM ordinances WHERE id = ?");
+    $stmt = $conn->prepare("SELECT * FROM ordinances WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -435,6 +435,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
             } catch (Exception $e) {
                 error_log("Logger error: " . $e->getMessage());
             }
+        }
+        if (!archiveToRecycleBin('ordinances', $id, $ordinance)) {
+            $_SESSION['error'] = "Failed to archive ordinance to recycle bin. Deletion cancelled.";
+            header("Location: ordinances.php");
+            exit();
         }
     }
 
