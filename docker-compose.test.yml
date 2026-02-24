@@ -1,0 +1,86 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: efind-app-test
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+    ports:
+      - "7070:80"
+    volumes:
+      - ./admin/includes/minio_config.test.php:/var/www/html/admin/includes/minio_config.php:ro
+    networks:
+      - app_net
+      - internal_net
+
+  db:
+    image: mariadb:10.11
+    container_name: efind-db-test
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 3xQ7fuQVu7SyYCnu15Hj44U0wf0ozulOH2U3Ggt8shqZ1K27MuvC3tHqY9dyOZd6
+      MYSQL_DATABASE: barangay_poblacion_south
+      TZ: Asia/Manila
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data_test:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - internal_net
+
+  minio:
+    image: minio/minio:latest
+    container_name: efind-minio-test
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: Mq3UbZJnPo9noPnN
+      MINIO_ROOT_PASSWORD: ASrDcE00C6I8mwn4Be8uhM91FQ0rEH6K
+    volumes:
+      - minio_data_test:/data
+    networks:
+      - internal_net
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: efind-minio-init-test
+    restart: "no"
+    depends_on:
+      - minio
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      until mc alias set local http://minio:9000 Mq3UbZJnPo9noPnN ASrDcE00C6I8mwn4Be8uhM91FQ0rEH6K; do
+        sleep 2;
+      done;
+      mc mb -p local/efind-documents || true;
+      mc anonymous set download local/efind-documents || true;
+      "
+    networks:
+      - internal_net
+
+volumes:
+  db_data_test:
+  minio_data_test:
+
+networks:
+  app_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+    internal: true
