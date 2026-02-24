@@ -3,6 +3,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 include 'includes/config.php';
+require_once __DIR__ . '/includes/image_compression_helper.php';
 
 // Check if this is an AJAX request
 $is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
@@ -118,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newFileName = 'profile_' . $userId . '_' . time() . '.' . $fileExtension;
             $uploadPath = $uploadDir . $newFileName;
             
-            if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $uploadPath)) {
+            if (saveOptimizedUploadedImage($_FILES['profile_picture'], $uploadPath)) {
                 $profilePicture = $newFileName;
                 
                 // Delete old profile picture if it exists and is different

@@ -18,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Include your database connection
 require_once 'db_connection.php';
+require_once __DIR__ . '/includes/image_compression_helper.php';
 
 // Sanitize and validate inputs
 $full_name = htmlspecialchars(trim($_POST['full_name']));
@@ -48,7 +49,7 @@ if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] ===
     }
 
     // Move uploaded file
-    if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_file)) {
+    if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_file)) {
         $profile_picture = $file_name;
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to upload profile picture.']);

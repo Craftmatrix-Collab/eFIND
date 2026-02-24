@@ -7,6 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 include(__DIR__ . '/includes/auth.php');
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
+require_once __DIR__ . '/includes/image_compression_helper.php';
 
 // Check if user is logged in - redirect to login if not
 if (!isLoggedIn()) {
@@ -183,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
                 $target_path = $upload_dir . $file_name;
-                if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_path)) {
+                if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_path)) {
                     $profile_picture = 'uploads/profiles/' . $file_name;
                 } else {
                     $_SESSION['error'] = "Failed to upload profile picture.";
@@ -252,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
                 $target_path = $upload_dir . $file_name;
-                if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_path)) {
+                if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_path)) {
                     $profile_picture = 'uploads/profiles/' . $file_name;
                 } else {
                     $_SESSION['error'] = "Failed to upload profile picture.";

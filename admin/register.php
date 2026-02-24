@@ -2,6 +2,7 @@
 session_start();
 include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/includes/image_compression_helper.php';
 
 // Redirect if already logged in
 if (isset($_SESSION['admin_id'])) {
@@ -62,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $file_name = 'admin_' . time() . '.' . $file_ext;
                         $target_file = $upload_dir . $file_name;
                         
-                        if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_file)) {
+                        if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_file)) {
                             $profile_picture = $file_name;
                         } else {
                             $error = "Error uploading profile picture.";
