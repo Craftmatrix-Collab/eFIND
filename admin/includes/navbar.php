@@ -43,10 +43,9 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
             $profile_picture = $_SESSION['profile_picture'] ?? '';
             $full_name = $_SESSION['full_name'] ?? 'Admin';
             if (!empty($profile_picture)) {
-                $profile_path = (strpos($profile_picture, 'uploads/profiles/') === 0)
-                    ? $profile_picture
-                    : 'uploads/profiles/' . ltrim($profile_picture, '/');
-                if (file_exists($profile_path)) {
+                $profile_file = basename((string)$profile_picture);
+                $profile_path = 'uploads/profiles/' . $profile_file;
+                if (!empty($profile_file) && file_exists(__DIR__ . '/../uploads/profiles/' . $profile_file)) {
                     echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">';
                 } else {
                     echo '<i class="fas fa-user-circle me-2" style="font-size: 1.5rem;"></i>';

@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle profile picture upload
     $profilePicture = null;
     if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = 'uploads/profiles/';
+        $uploadDir = __DIR__ . '/uploads/profiles/';
         
         // Create directory if it doesn't exist
         if (!is_dir($uploadDir)) {
@@ -124,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // Delete old profile picture if it exists and is different
                 if (!empty($oldPicturePath) && $oldPicturePath !== $newFileName) {
-                    $oldFullPath = $uploadDir . $oldPicturePath;
+                    $oldFullPath = $uploadDir . basename((string)$oldPicturePath);
                     if (file_exists($oldFullPath)) {
                         unlink($oldFullPath);
                     }

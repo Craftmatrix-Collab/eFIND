@@ -73,7 +73,7 @@ try {
             <div class="card-body text-center">
                 <div class="profile-picture-container mb-3">
                 <?php $profile_picture_file = !empty($user['profile_picture']) ? basename((string)$user['profile_picture']) : ''; ?>
-                <?php if (!empty($profile_picture_file) && file_exists("uploads/profiles/" . $profile_picture_file)): ?>
+                <?php if (!empty($profile_picture_file) && file_exists(__DIR__ . "/uploads/profiles/" . $profile_picture_file)): ?>
                     <img src="uploads/profiles/<?php echo htmlspecialchars($profile_picture_file); ?>"
                         class="img-thumbnail rounded-circle profile-picture"
                         alt="Profile Picture"
