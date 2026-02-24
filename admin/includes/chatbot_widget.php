@@ -250,7 +250,7 @@ if ($chatbot_profile_picture_raw !== '') {
         background: linear-gradient(135deg, #2563eb, #1d4ed8);
         color: white;
         border-radius: 16px 16px 5px 16px;
-        box-shadow: 0 6px 14px rgba(37, 99, 235, 0.24);
+        
     }
     
     .message-time {
