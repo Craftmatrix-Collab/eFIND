@@ -12,7 +12,7 @@ if (!isLoggedIn()) {
     exit();
 }
 
-if (!isSuperAdmin()) {
+if (!isAdmin()) {
     $_SESSION['error_message'] = 'You do not have permission to access Recycle Bin.';
     header('Location: dashboard.php');
     exit();

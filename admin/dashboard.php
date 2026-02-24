@@ -16,6 +16,13 @@ $ordinances_count = $conn->query("SELECT COUNT(*) FROM ordinances")->fetch_row()
 $resolutions_count = $conn->query("SELECT COUNT(*) FROM resolutions")->fetch_row()[0];
 $meeting_minutes_count = $conn->query("SELECT COUNT(*) FROM minutes_of_meeting")->fetch_row()[0];
 $users_count = $conn->query("SELECT COUNT(*) FROM users")->fetch_row()[0];
+$recycle_count = 0;
+if (isAdmin()) {
+    $recycleCountResult = $conn->query("SELECT COUNT(*) FROM recycle_bin WHERE restored_at IS NULL");
+    if ($recycleCountResult) {
+        $recycle_count = (int)$recycleCountResult->fetch_row()[0];
+    }
+}
 // Get table row limit from request or set default
 $table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 5;
 $valid_limits = [5, 10, 25, 50, 100];
@@ -1270,6 +1277,25 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
         </a>
     </div>
 </div>
+
+            <?php if (isAdmin()): ?>
+            <div class="documents-table-section card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-shield-alt me-2"></i>Admin Tools</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        <a href="activity_log.php" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-cog me-2 text-primary"></i>Activity Logs</span>
+                        </a>
+                        <a href="recycle_bin.php" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-recycle me-2 text-success"></i>Recycle Bin</span>
+                            <span class="badge bg-secondary rounded-pill"><?php echo $recycle_count; ?></span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <!-- Search Form -->
             <form method="GET" action="dashboard.php" class="mb-2">

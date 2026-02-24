@@ -45,13 +45,11 @@
                         <i class="fas fa-cog me-2"></i> Activity Logs
                     </a>
                 </li>
-                <?php if (function_exists('isSuperAdmin') && isSuperAdmin()): ?>
-                    <li class="<?= basename($_SERVER['PHP_SELF']) == 'recycle_bin.php' ? 'active' : '' ?>">
-                        <a href="recycle_bin.php" class="d-flex align-items-center py-2 px-3 text-white text-decoration-none <?= basename($_SERVER['PHP_SELF']) == 'recycle_bin.php' ? 'bg-dark text-dark rounded' : '' ?>">
-                            <i class="fas fa-recycle me-2"></i> Recycle Bin
-                        </a>
-                    </li>
-                <?php endif; ?>
+                <li class="<?= basename($_SERVER['PHP_SELF']) == 'recycle_bin.php' ? 'active' : '' ?>">
+                    <a href="recycle_bin.php" class="d-flex align-items-center py-2 px-3 text-white text-decoration-none <?= basename($_SERVER['PHP_SELF']) == 'recycle_bin.php' ? 'bg-dark text-dark rounded' : '' ?>">
+                        <i class="fas fa-recycle me-2"></i> Recycle Bin
+                    </a>
+                </li>
             <?php endif; ?>
         </ul>
     </div>
