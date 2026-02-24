@@ -437,12 +437,60 @@
 let chatbotIsOpen = false;
 let chatbotSessionId = null;
 let isProcessing = false;
+let chatbotHistory = [];
+const chatbotUserId = '<?php echo isset($_SESSION["user_id"]) ? $_SESSION["user_id"] : "guest"; ?>';
+const chatbotSessionStorageKey = `efind_chatbot_session_${chatbotUserId}`;
+const chatbotHistoryStorageKey = `efind_chatbot_history_${chatbotUserId}`;
 
 // Initialize chatbot session
 function initChatbotSession() {
     if (!chatbotSessionId) {
-        chatbotSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const storedSessionId = localStorage.getItem(chatbotSessionStorageKey);
+        chatbotSessionId = storedSessionId || ('session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
+        localStorage.setItem(chatbotSessionStorageKey, chatbotSessionId);
     }
+}
+
+// Restore chat history from storage
+function restoreChatHistory() {
+    const messagesContainer = document.getElementById('chatbotMessages');
+    const storedHistory = localStorage.getItem(chatbotHistoryStorageKey);
+    
+    if (!storedHistory) {
+        return;
+    }
+    
+    try {
+        const parsedHistory = JSON.parse(storedHistory);
+        
+        if (!Array.isArray(parsedHistory) || parsedHistory.length === 0) {
+            return;
+        }
+        
+        chatbotHistory = parsedHistory;
+        
+        const welcomeMsg = messagesContainer.querySelector('.welcome-message');
+        if (welcomeMsg) {
+            welcomeMsg.remove();
+        }
+        
+        parsedHistory.forEach((entry) => {
+            if (entry.type === 'message') {
+                addMessageToChat(entry.message, entry.sender, entry.time, false);
+            } else if (entry.type === 'sources' && Array.isArray(entry.sources)) {
+                addSourcesToChat(entry.sources, false);
+            }
+        });
+    } catch (error) {
+        console.error('Failed to restore chatbot history:', error);
+        localStorage.removeItem(chatbotHistoryStorageKey);
+        chatbotHistory = [];
+    }
+}
+
+// Save chat history to storage
+function persistChatHistory() {
+    localStorage.setItem(chatbotHistoryStorageKey, JSON.stringify(chatbotHistory));
 }
 
 // Toggle chatbot visibility
@@ -519,7 +567,7 @@ async function sendMessage() {
             body: JSON.stringify({
                 message: message,
                 sessionId: chatbotSessionId,
-                userId: '<?php echo isset($_SESSION["user_id"]) ? $_SESSION["user_id"] : "guest"; ?>',
+                userId: chatbotUserId,
                 context: {
                     page: 'documents',
                     categories: ['ordinances', 'resolutions', 'minutes']
@@ -566,7 +614,7 @@ async function sendMessage() {
 }
 
 // Add message to chat
-function addMessageToChat(message, sender) {
+function addMessageToChat(message, sender, time = null, persist = true) {
     const messagesContainer = document.getElementById('chatbotMessages');
     const welcomeMsg = messagesContainer.querySelector('.welcome-message');
     
@@ -578,7 +626,7 @@ function addMessageToChat(message, sender) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `chatbot-message ${sender}-message`;
     
-    const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const messageTime = time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     
     messageDiv.innerHTML = `
         <div class="message-avatar ${sender}-avatar">
@@ -586,16 +634,26 @@ function addMessageToChat(message, sender) {
         </div>
         <div class="message-content">
             <div class="message-bubble">${escapeHtml(message)}</div>
-            <span class="message-time">${time}</span>
+            <span class="message-time">${messageTime}</span>
         </div>
     `;
     
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    
+    if (persist) {
+        chatbotHistory.push({
+            type: 'message',
+            sender: sender,
+            message: message,
+            time: messageTime
+        });
+        persistChatHistory();
+    }
 }
 
 // Add sources to chat
-function addSourcesToChat(sources) {
+function addSourcesToChat(sources, persist = true) {
     const messagesContainer = document.getElementById('chatbotMessages');
     
     const sourcesDiv = document.createElement('div');
@@ -612,6 +670,14 @@ function addSourcesToChat(sources) {
     sourcesDiv.innerHTML = sourcesHtml;
     messagesContainer.appendChild(sourcesDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    
+    if (persist) {
+        chatbotHistory.push({
+            type: 'sources',
+            sources: sources
+        });
+        persistChatHistory();
+    }
 }
 
 // Show typing indicator
@@ -656,5 +722,6 @@ function escapeHtml(text) {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initChatbotSession();
+    restoreChatHistory();
 });
 </script>
