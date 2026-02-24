@@ -1934,14 +1934,48 @@ $count_stmt->close();
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Image Files (JPG, PNG)</label>
-                            <div class="file-upload">
-                                <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFilesWithAutoFill(this)">
-                                <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
+                            <div class="d-flex gap-2 mb-2">
+                                <button type="button" class="btn btn-sm btn-primary active" id="mom-method-desktop" onclick="momSwitchMethod('desktop')">
+                                    <i class="fas fa-desktop me-1"></i> This Device
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="mom-method-mobile" onclick="momSwitchMethod('mobile')">
+                                    <i class="fas fa-qrcode me-1"></i> Mobile Camera
+                                </button>
                             </div>
-                            <div id="ocrProcessing" class="mt-2" style="display: none;">
-                                <div class="d-flex align-items-center">
-                                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                                    <span>Processing files and detecting content...</span>
+
+                            <div id="mom-desktop-upload">
+                                <div class="file-upload">
+                                    <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFilesWithAutoFill(this)">
+                                    <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
+                                </div>
+                                <div id="ocrProcessing" class="mt-2" style="display: none;">
+                                    <div class="d-flex align-items-center">
+                                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                        <span>Processing files and detecting content...</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="mom-mobile-upload" class="d-none">
+                                <div class="text-center p-4 border rounded-3 bg-light">
+                                    <p class="fw-semibold mb-1"><i class="fas fa-mobile-alt me-2 text-primary"></i>Scan to Upload from Mobile</p>
+                                    <p class="text-muted small mb-3">Point your phone's camera at this QR code to open the mobile upload page for meeting minutes.</p>
+                                    <div id="mom-qrcode" class="d-inline-block p-2 bg-white rounded border"></div>
+                                    <div class="mt-3">
+                                        <a id="mom-qr-link" href="#" target="_blank" class="btn btn-outline-primary btn-sm">
+                                            <i class="fas fa-external-link-alt me-1"></i>Open on Mobile
+                                        </a>
+                                    </div>
+                                    <div id="mom-mobile-status" class="mt-3 d-none">
+                                        <div class="d-flex align-items-center justify-content-center gap-2 text-success">
+                                            <i class="fas fa-check-circle"></i>
+                                            <span id="mom-mobile-status-text">Upload detected! Refreshing…</span>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <span class="badge bg-secondary"><i class="fas fa-circle-notch fa-spin me-1"></i>Waiting for mobile upload…</span>
+                                        <div class="text-muted small mt-1">After uploading on mobile, this page will automatically refresh.</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2110,6 +2144,214 @@ $count_stmt->close();
             </div>
         </div>
     </div>
+    <!-- QRCode.js for mobile upload QR generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script>
+    /* ── Minutes Mobile Upload QR ── */
+    (function () {
+        let momQrCreated = false;
+        let momMobileSession = null;
+        let momWs = null;
+        let momPollTimer = null;
+        let momWsReconnectTimer = null;
+        let momHandledComplete = false;
+
+        function momResolveWsUrl() {
+            if (window.EFIND_MOBILE_WS_URL) {
+                return window.EFIND_MOBILE_WS_URL;
+            }
+            const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+            const host = location.hostname;
+            const port = window.EFIND_MOBILE_WS_PORT || '8090';
+            return `${scheme}://${host}:${port}/mobile-upload`;
+        }
+
+        async function momEnsureSession() {
+            if (momMobileSession) return momMobileSession;
+            const res = await fetch('mobile_session.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ doc_type: 'minutes' }),
+            });
+            const data = await res.json();
+            if (!data.success || !data.session_id) {
+                throw new Error(data.error || 'Failed to create mobile session');
+            }
+            momMobileSession = data.session_id;
+            return momMobileSession;
+        }
+
+        window.momSwitchMethod = async function (method) {
+            const desktopBtn  = document.getElementById('mom-method-desktop');
+            const mobileBtn   = document.getElementById('mom-method-mobile');
+            const desktopPane = document.getElementById('mom-desktop-upload');
+            const mobilePane  = document.getElementById('mom-mobile-upload');
+
+            if (!desktopBtn || !mobileBtn || !desktopPane || !mobilePane) return;
+
+            if (method === 'mobile') {
+                desktopBtn.classList.replace('btn-primary', 'btn-outline-primary');
+                desktopBtn.classList.remove('active');
+                mobileBtn.classList.replace('btn-outline-primary', 'btn-primary');
+                mobileBtn.classList.add('active');
+                desktopPane.classList.add('d-none');
+                mobilePane.classList.remove('d-none');
+                momHandledComplete = false;
+                try {
+                    await momGenerateQR();
+                    momStartRealtime();
+                } catch (error) {
+                    console.error('Unable to initialize mobile upload session:', error);
+                    alert('Unable to create mobile upload session. Please try again.');
+                    momSwitchMethod('desktop');
+                }
+            } else {
+                mobileBtn.classList.replace('btn-primary', 'btn-outline-primary');
+                mobileBtn.classList.remove('active');
+                desktopBtn.classList.replace('btn-outline-primary', 'btn-primary');
+                desktopBtn.classList.add('active');
+                mobilePane.classList.add('d-none');
+                desktopPane.classList.remove('d-none');
+                momStopRealtime();
+            }
+        };
+
+        async function momGenerateQR() {
+            if (momQrCreated && momMobileSession) return;
+            const sessionId = await momEnsureSession();
+            const url = `${location.protocol}//${location.host}${location.pathname.replace('minutes_of_meeting.php', 'mobile_upload.php')}?type=minutes&camera=1&session=${encodeURIComponent(sessionId)}`;
+            const qrLink = document.getElementById('mom-qr-link');
+            const qrWrap = document.getElementById('mom-qrcode');
+            if (!qrLink || !qrWrap) return;
+            qrLink.href = url;
+            qrWrap.innerHTML = '';
+            new QRCode(qrWrap, {
+                text: url,
+                width: 200,
+                height: 200,
+                colorDark: '#002147',
+                colorLight: '#ffffff',
+            });
+            momQrCreated = true;
+        }
+
+        function momStartRealtime() {
+            momStopRealtime();
+            momStartPollingFallback();
+            momStartWebSocket();
+        }
+
+        function momStartWebSocket() {
+            if (!momMobileSession || !window.WebSocket) return;
+            try {
+                momWs = new WebSocket(momResolveWsUrl());
+            } catch (error) {
+                console.error('WebSocket connection failed:', error);
+                momWs = null;
+                return;
+            }
+
+            momWs.onopen = function () {
+                if (!momWs || !momMobileSession) return;
+                momWs.send(JSON.stringify({
+                    action: 'subscribe',
+                    session_id: momMobileSession,
+                    doc_type: 'minutes',
+                }));
+            };
+
+            momWs.onmessage = function (event) {
+                let data;
+                try {
+                    data = JSON.parse(event.data);
+                } catch (error) {
+                    return;
+                }
+                if (data.type === 'upload_complete' && data.session_id === momMobileSession) {
+                    momHandleComplete(data);
+                }
+            };
+
+            momWs.onclose = function () {
+                momWs = null;
+                const mobilePane = document.getElementById('mom-mobile-upload');
+                if (mobilePane && !mobilePane.classList.contains('d-none') && momMobileSession && !momHandledComplete) {
+                    clearTimeout(momWsReconnectTimer);
+                    momWsReconnectTimer = setTimeout(momStartWebSocket, 3000);
+                }
+            };
+
+            momWs.onerror = function () {
+                // Poll fallback remains active.
+            };
+        }
+
+        function momStartPollingFallback() {
+            if (!momMobileSession) return;
+            momPollTimer = setInterval(async function () {
+                try {
+                    const response = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(momMobileSession)}`, { cache: 'no-store' });
+                    const data = await response.json();
+                    if (data.status === 'complete') {
+                        momHandleComplete({
+                            title: 'Minutes of Meeting',
+                            uploaded_by: 'mobile',
+                            result_id: data.result_id || null,
+                        });
+                    }
+                } catch (error) {
+                    // Keep polling on transient errors.
+                }
+            }, 3000);
+        }
+
+        function momHandleComplete(data) {
+            if (momHandledComplete) return;
+            momHandledComplete = true;
+            momStopRealtime();
+            const statusEl = document.getElementById('mom-mobile-status');
+            const textEl = document.getElementById('mom-mobile-status-text');
+            if (textEl) {
+                if (data && data.title && data.uploaded_by) {
+                    textEl.textContent = `"${data.title}" uploaded by ${data.uploaded_by}. Refreshing…`;
+                } else {
+                    textEl.textContent = 'Upload detected! Refreshing…';
+                }
+            }
+            if (statusEl) statusEl.classList.remove('d-none');
+            setTimeout(() => location.reload(), 2000);
+        }
+
+        function momStopRealtime() {
+            clearTimeout(momWsReconnectTimer);
+            momWsReconnectTimer = null;
+            if (momWs) {
+                momWs.onclose = null;
+                momWs.close();
+                momWs = null;
+            }
+            if (momPollTimer) {
+                clearInterval(momPollTimer);
+                momPollTimer = null;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const modal = document.getElementById('addMinuteModal');
+            if (modal) {
+                modal.addEventListener('hidden.bs.modal', function () {
+                    momStopRealtime();
+                    momQrCreated = false;
+                    momMobileSession = null;
+                    momHandledComplete = false;
+                    const statusEl = document.getElementById('mom-mobile-status');
+                    if (statusEl) statusEl.classList.add('d-none');
+                    momSwitchMethod('desktop');
+                });
+            }
+        });
+    })();
+    </script>
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- jsPDF & html2canvas for PDF generation -->

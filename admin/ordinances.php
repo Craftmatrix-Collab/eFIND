@@ -2148,13 +2148,44 @@ $count_stmt->close();
     /* ── Ordinance Mobile Upload QR ── */
     (function () {
         let ordQrCreated = false;
-        let ordSseSource = null;
+        let ordMobileSession = null;
+        let ordWs = null;
+        let ordPollTimer = null;
+        let ordWsReconnectTimer = null;
+        let ordHandledComplete = false;
 
-        window.ordSwitchMethod = function (method) {
+        function ordResolveWsUrl() {
+            if (window.EFIND_MOBILE_WS_URL) {
+                return window.EFIND_MOBILE_WS_URL;
+            }
+            const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+            const host = location.hostname;
+            const port = window.EFIND_MOBILE_WS_PORT || '8090';
+            return `${scheme}://${host}:${port}/mobile-upload`;
+        }
+
+        async function ordEnsureSession() {
+            if (ordMobileSession) return ordMobileSession;
+            const res = await fetch('mobile_session.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ doc_type: 'ordinances' }),
+            });
+            const data = await res.json();
+            if (!data.success || !data.session_id) {
+                throw new Error(data.error || 'Failed to create mobile session');
+            }
+            ordMobileSession = data.session_id;
+            return ordMobileSession;
+        }
+
+        window.ordSwitchMethod = async function (method) {
             const desktopBtn  = document.getElementById('ord-method-desktop');
             const mobileBtn   = document.getElementById('ord-method-mobile');
             const desktopPane = document.getElementById('ord-desktop-upload');
             const mobilePane  = document.getElementById('ord-mobile-upload');
+
+            if (!desktopBtn || !mobileBtn || !desktopPane || !mobilePane) return;
 
             if (method === 'mobile') {
                 desktopBtn.classList.replace('btn-primary','btn-outline-primary');
@@ -2163,8 +2194,15 @@ $count_stmt->close();
                 mobileBtn.classList.add('active');
                 desktopPane.classList.add('d-none');
                 mobilePane.classList.remove('d-none');
-                ordGenerateQR();
-                ordStartPolling();
+                ordHandledComplete = false;
+                try {
+                    await ordGenerateQR();
+                    ordStartRealtime();
+                } catch (error) {
+                    console.error('Unable to initialize mobile upload session:', error);
+                    alert('Unable to create mobile upload session. Please try again.');
+                    ordSwitchMethod('desktop');
+                }
             } else {
                 mobileBtn.classList.replace('btn-primary','btn-outline-primary');
                 mobileBtn.classList.remove('active');
@@ -2172,16 +2210,20 @@ $count_stmt->close();
                 desktopBtn.classList.add('active');
                 mobilePane.classList.add('d-none');
                 desktopPane.classList.remove('d-none');
-                ordStopPolling();
+                ordStopRealtime();
             }
         };
 
-        function ordGenerateQR() {
-            if (ordQrCreated) return;
-            const url = `${location.protocol}//${location.host}${location.pathname.replace('ordinances.php','mobile_upload.php')}?type=ordinances&camera=1`;
-            document.getElementById('ord-qr-link').href = url;
-            document.getElementById('ord-qrcode').innerHTML = '';
-            new QRCode(document.getElementById('ord-qrcode'), {
+        async function ordGenerateQR() {
+            if (ordQrCreated && ordMobileSession) return;
+            const sessionId = await ordEnsureSession();
+            const url = `${location.protocol}//${location.host}${location.pathname.replace('ordinances.php','mobile_upload.php')}?type=ordinances&camera=1&session=${encodeURIComponent(sessionId)}`;
+            const qrLink = document.getElementById('ord-qr-link');
+            const qrWrap = document.getElementById('ord-qrcode');
+            if (!qrLink || !qrWrap) return;
+            qrLink.href = url;
+            qrWrap.innerHTML = '';
+            new QRCode(qrWrap, {
                 text:       url,
                 width:      200,
                 height:     200,
@@ -2191,43 +2233,117 @@ $count_stmt->close();
             ordQrCreated = true;
         }
 
-        function ordStartPolling() {
-            ordStopPolling();
-            if (!window.EventSource) return;
-            ordSseSource = new EventSource('upload_events.php');
-            ordSseSource.addEventListener('new_upload', function (e) {
-                const d = JSON.parse(e.data);
-                if (d.doc_type === 'ordinances') {
-                    ordStopPolling();
-                    const statusEl = document.getElementById('ord-mobile-status');
-                    const textEl   = document.getElementById('ord-mobile-status-text');
-                    textEl.textContent = `"${d.title}" uploaded by ${d.uploaded_by}. Refreshing…`;
-                    statusEl.classList.remove('d-none');
-                    setTimeout(() => location.reload(), 2000);
+        function ordStartRealtime() {
+            ordStopRealtime();
+            ordStartPollingFallback();
+            ordStartWebSocket();
+        }
+
+        function ordStartWebSocket() {
+            if (!ordMobileSession || !window.WebSocket) return;
+            try {
+                ordWs = new WebSocket(ordResolveWsUrl());
+            } catch (error) {
+                console.error('WebSocket connection failed:', error);
+                ordWs = null;
+                return;
+            }
+
+            ordWs.onopen = function () {
+                if (!ordWs || !ordMobileSession) return;
+                ordWs.send(JSON.stringify({
+                    action: 'subscribe',
+                    session_id: ordMobileSession,
+                    doc_type: 'ordinances',
+                }));
+            };
+
+            ordWs.onmessage = function (event) {
+                let data;
+                try {
+                    data = JSON.parse(event.data);
+                } catch (error) {
+                    return;
                 }
-            });
-            ordSseSource.onerror = function () {
-                ordStopPolling();
-                // retry after 10 s
-                setTimeout(function () {
-                    if (!document.getElementById('ord-mobile-upload').classList.contains('d-none')) {
-                        ordStartPolling();
-                    }
-                }, 10000);
+                if (data.type === 'upload_complete' && data.session_id === ordMobileSession) {
+                    ordHandleComplete(data);
+                }
+            };
+
+            ordWs.onclose = function () {
+                ordWs = null;
+                const mobilePane = document.getElementById('ord-mobile-upload');
+                if (mobilePane && !mobilePane.classList.contains('d-none') && ordMobileSession && !ordHandledComplete) {
+                    clearTimeout(ordWsReconnectTimer);
+                    ordWsReconnectTimer = setTimeout(ordStartWebSocket, 3000);
+                }
+            };
+
+            ordWs.onerror = function () {
+                // Poll fallback remains active.
             };
         }
 
-        function ordStopPolling() {
-            if (ordSseSource) { ordSseSource.close(); ordSseSource = null; }
+        function ordStartPollingFallback() {
+            if (!ordMobileSession) return;
+            ordPollTimer = setInterval(async function () {
+                try {
+                    const response = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(ordMobileSession)}`, { cache: 'no-store' });
+                    const data = await response.json();
+                    if (data.status === 'complete') {
+                        ordHandleComplete({
+                            title: 'Ordinance',
+                            uploaded_by: 'mobile',
+                            result_id: data.result_id || null,
+                        });
+                    }
+                } catch (error) {
+                    // Keep polling on transient errors.
+                }
+            }, 3000);
         }
 
-        // Stop polling when modal is closed
+        function ordHandleComplete(data) {
+            if (ordHandledComplete) return;
+            ordHandledComplete = true;
+            ordStopRealtime();
+            const statusEl = document.getElementById('ord-mobile-status');
+            const textEl = document.getElementById('ord-mobile-status-text');
+            if (textEl) {
+                if (data && data.title && data.uploaded_by) {
+                    textEl.textContent = `"${data.title}" uploaded by ${data.uploaded_by}. Refreshing…`;
+                } else {
+                    textEl.textContent = 'Upload detected! Refreshing…';
+                }
+            }
+            if (statusEl) statusEl.classList.remove('d-none');
+            setTimeout(() => location.reload(), 2000);
+        }
+
+        function ordStopRealtime() {
+            clearTimeout(ordWsReconnectTimer);
+            ordWsReconnectTimer = null;
+            if (ordWs) {
+                ordWs.onclose = null;
+                ordWs.close();
+                ordWs = null;
+            }
+            if (ordPollTimer) {
+                clearInterval(ordPollTimer);
+                ordPollTimer = null;
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             const modal = document.getElementById('addOrdinanceModal');
             if (modal) {
                 modal.addEventListener('hidden.bs.modal', function () {
-                    ordStopPolling();
+                    ordStopRealtime();
                     ordQrCreated = false;
+                    ordMobileSession = null;
+                    ordHandledComplete = false;
+                    const statusEl = document.getElementById('ord-mobile-status');
+                    if (statusEl) statusEl.classList.add('d-none');
                     ordSwitchMethod('desktop');
                 });
             }

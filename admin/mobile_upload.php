@@ -309,6 +309,68 @@ let selectedFiles   = [];
 let currentStep     = 1;
 const mobileSession = '<?= $mobileSession ?>';
 
+function getMobileUploadWsUrl() {
+  if (window.EFIND_MOBILE_WS_URL) {
+    return window.EFIND_MOBILE_WS_URL;
+  }
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const host = location.hostname;
+  const port = window.EFIND_MOBILE_WS_PORT || '8090';
+  return `${scheme}://${host}:${port}/mobile-upload`;
+}
+
+async function notifyDesktopUploadComplete(payload) {
+  if (!mobileSession || !window.WebSocket) return;
+
+  await new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    let ws;
+    try {
+      ws = new WebSocket(getMobileUploadWsUrl());
+    } catch (error) {
+      finish();
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      try { ws.close(); } catch (e) {}
+      finish();
+    }, 2500);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        action: 'upload_complete',
+        session_id: mobileSession,
+        doc_type: selectedType,
+        title: payload.title || 'Document',
+        uploaded_by: payload.uploaded_by || 'mobile',
+        result_id: payload.result_id || null,
+      }));
+      setTimeout(() => {
+        clearTimeout(timeout);
+        try { ws.close(); } catch (e) {}
+        finish();
+      }, 200);
+    };
+
+    ws.onerror = () => {
+      clearTimeout(timeout);
+      finish();
+    };
+
+    ws.onclose = () => {
+      clearTimeout(timeout);
+      finish();
+    };
+  });
+}
+
 // ──────────────────────────────────────────────────────────────
 // Step navigation helpers
 // ──────────────────────────────────────────────────────────────
@@ -704,6 +766,11 @@ async function startUpload() {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error || 'DB save failed');
+    await notifyDesktopUploadComplete({
+      title: meta.title || 'Document',
+      uploaded_by: 'mobile',
+      result_id: data.id || null,
+    });
     showResult(true, data);
   } catch (err) {
     showResult(false, err.message);
