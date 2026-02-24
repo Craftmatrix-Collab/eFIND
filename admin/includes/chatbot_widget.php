@@ -1,3 +1,17 @@
+<?php
+$chatbot_profile_picture_raw = trim((string)($_SESSION['profile_picture'] ?? ''));
+$chatbot_profile_picture_path = '';
+if ($chatbot_profile_picture_raw !== '') {
+    if (preg_match('#^(https?:)?//#i', $chatbot_profile_picture_raw) || stripos($chatbot_profile_picture_raw, 'data:image/') === 0) {
+        $chatbot_profile_picture_path = $chatbot_profile_picture_raw;
+    } else {
+        $chatbot_profile_picture_path = 'uploads/profiles/' . basename($chatbot_profile_picture_raw);
+    }
+    if (strpos($chatbot_profile_picture_path, 'data:') !== 0) {
+        $chatbot_profile_picture_path .= (strpos($chatbot_profile_picture_path, '?') === false ? '?t=' : '&t=') . time();
+    }
+}
+?>
 <!-- AI Chatbot Widget for Ordinances, Resolutions, and Meeting Minutes -->
 <style>
     /* Chatbot Button */
@@ -159,6 +173,14 @@
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
+    }
+    
+    .message-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+        display: block;
     }
     
     .bot-avatar {
@@ -439,6 +461,7 @@ let chatbotSessionId = null;
 let isProcessing = false;
 let chatbotHistory = [];
 const chatbotUserId = '<?php echo isset($_SESSION["user_id"]) ? $_SESSION["user_id"] : "guest"; ?>';
+const chatbotUserAvatarUrl = <?php echo json_encode($chatbot_profile_picture_path); ?>;
 const chatbotSessionStorageKey = `efind_chatbot_session_${chatbotUserId}`;
 const chatbotHistoryStorageKey = `efind_chatbot_history_${chatbotUserId}`;
 
@@ -614,6 +637,26 @@ async function sendMessage() {
 }
 
 // Add message to chat
+function createMessageAvatar(sender) {
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = `message-avatar ${sender}-avatar`;
+    
+    if (sender === 'user' && chatbotUserAvatarUrl) {
+        const avatarImg = document.createElement('img');
+        avatarImg.src = chatbotUserAvatarUrl;
+        avatarImg.alt = 'User profile picture';
+        avatarImg.loading = 'lazy';
+        avatarImg.onerror = function() {
+            avatarDiv.innerHTML = '<i class="fas fa-user"></i>';
+        };
+        avatarDiv.appendChild(avatarImg);
+    } else {
+        avatarDiv.innerHTML = `<i class="fas fa-${sender === 'bot' ? 'robot' : 'user'}"></i>`;
+    }
+    
+    return avatarDiv;
+}
+
 function addMessageToChat(message, sender, time = null, persist = true) {
     const messagesContainer = document.getElementById('chatbotMessages');
     const welcomeMsg = messagesContainer.querySelector('.welcome-message');
@@ -627,17 +670,16 @@ function addMessageToChat(message, sender, time = null, persist = true) {
     messageDiv.className = `chatbot-message ${sender}-message`;
     
     const messageTime = time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    
-    messageDiv.innerHTML = `
-        <div class="message-avatar ${sender}-avatar">
-            <i class="fas fa-${sender === 'bot' ? 'robot' : 'user'}"></i>
-        </div>
-        <div class="message-content">
-            <div class="message-bubble">${escapeHtml(message)}</div>
-            <span class="message-time">${messageTime}</span>
-        </div>
+    const avatarDiv = createMessageAvatar(sender);
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.innerHTML = `
+        <div class="message-bubble">${escapeHtml(message)}</div>
+        <span class="message-time">${messageTime}</span>
     `;
     
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
