@@ -301,10 +301,23 @@ unset($_SESSION['success'], $_SESSION['error']);
                         <div class="card mb-4">
                             <div class="card-body text-center">
                                 <div class="profile-picture-container mb-3">
-                                    <?php if (!empty($user['profile_picture'])): ?>
-                                        <?php $profile_picture_file = basename((string)$user['profile_picture']); ?>
+                                    <?php
+                                    $profile_picture_raw = trim((string)($user['profile_picture'] ?? ''));
+                                    $profile_picture_src = '';
+                                    if ($profile_picture_raw !== '') {
+                                        if (preg_match('#^(https?:)?//#i', $profile_picture_raw) || stripos($profile_picture_raw, 'data:image/') === 0) {
+                                            $profile_picture_src = $profile_picture_raw;
+                                        } else {
+                                            $profile_picture_src = 'uploads/profiles/' . basename($profile_picture_raw);
+                                        }
+                                        if (strpos($profile_picture_src, 'data:') !== 0) {
+                                            $profile_picture_src .= (strpos($profile_picture_src, '?') === false ? '?t=' : '&t=') . time();
+                                        }
+                                    }
+                                    ?>
+                                    <?php if (!empty($profile_picture_src)): ?>
                                         <img id="profileImagePreview"
-                                             src="uploads/profiles/<?php echo htmlspecialchars($profile_picture_file); ?>"
+                                             src="<?php echo htmlspecialchars($profile_picture_src); ?>"
                                              class="img-thumbnail rounded-circle profile-picture"
                                              alt="Profile Picture"
                                              onerror="this.onerror=null;this.src='images/eFind_logo.png';">

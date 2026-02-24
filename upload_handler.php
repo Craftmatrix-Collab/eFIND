@@ -33,7 +33,7 @@ switch ($action) {
         break;
     
     case 'extract':
-        handleExtractText($textExtractor);
+        handleExtractText($textExtractor, $uploadManager);
         break;
     
     case 'capabilities':
@@ -86,10 +86,14 @@ function handleUpload($uploadManager, $textExtractor) {
     $result = $uploadManager->upload($_FILES['file'], $options);
     
     if ($result['success']) {
+        if (!empty($result['data']['file_url'])) {
+            $result['data']['file_path'] = $result['data']['file_url'];
+        }
+
         // Auto-extract text if requested
         $extractText = isset($_POST['extract_text']) && $_POST['extract_text'] === '1';
         if ($extractText) {
-            $filePath = 'uploads/' . $result['data']['stored_name'];
+            $filePath = $_FILES['file']['tmp_name'];
             $extractOptions = [
                 'ocr' => isset($_POST['use_ocr']) ? $_POST['use_ocr'] === '1' : true,
                 'lang' => $_POST['ocr_lang'] ?? 'eng'
@@ -109,7 +113,7 @@ function handleUpload($uploadManager, $textExtractor) {
 /**
  * Handle text extraction request
  */
-function handleExtractText($textExtractor) {
+function handleExtractText($textExtractor, $uploadManager) {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         sendResponse([
             'success' => false,
@@ -118,9 +122,9 @@ function handleExtractText($textExtractor) {
         ], 405);
     }
     
-    $fileName = $_POST['filename'] ?? null;
+    $fileName = trim((string)($_POST['filename'] ?? $_POST['file_url'] ?? ''));
     
-    if (!$fileName) {
+    if ($fileName === '') {
         sendResponse([
             'success' => false,
             'error' => 'missing_filename',
@@ -128,9 +132,51 @@ function handleExtractText($textExtractor) {
         ], 400);
     }
     
-    $filePath = 'uploads/' . basename($fileName);
-    
-    if (!file_exists($filePath)) {
+    $tempFilePath = null;
+    $filePath = null;
+
+    if (preg_match('#^(https?:)?//#i', $fileName)) {
+        $download = downloadRemoteFileToTemp($fileName);
+        if (!$download['success']) {
+            sendResponse([
+                'success' => false,
+                'error' => 'file_not_found',
+                'message' => $download['message']
+            ], 404);
+        }
+        $tempFilePath = $download['path'];
+        $filePath = $tempFilePath;
+    } else {
+        // Legacy local-file support
+        $legacyLocalPath = 'uploads/' . basename($fileName);
+        if (file_exists($legacyLocalPath)) {
+            $filePath = $legacyLocalPath;
+        } else {
+            $history = $uploadManager->getUploadHistory();
+            $fileUrl = null;
+            foreach ($history as $record) {
+                if (($record['stored_name'] ?? '') === basename($fileName) && !empty($record['file_url'])) {
+                    $fileUrl = (string)$record['file_url'];
+                    break;
+                }
+            }
+
+            if ($fileUrl) {
+                $download = downloadRemoteFileToTemp($fileUrl);
+                if (!$download['success']) {
+                    sendResponse([
+                        'success' => false,
+                        'error' => 'file_not_found',
+                        'message' => $download['message']
+                    ], 404);
+                }
+                $tempFilePath = $download['path'];
+                $filePath = $tempFilePath;
+            }
+        }
+    }
+
+    if (!$filePath || !file_exists($filePath)) {
         sendResponse([
             'success' => false,
             'error' => 'file_not_found',
@@ -144,8 +190,65 @@ function handleExtractText($textExtractor) {
     ];
     
     $result = $textExtractor->extractText($filePath, $options);
-    
+
+    if ($tempFilePath && file_exists($tempFilePath)) {
+        unlink($tempFilePath);
+    }
+
     sendResponse($result, $result['success'] ? 200 : 400);
+}
+
+/**
+ * Download a remote file to a temporary path for OCR/text extraction.
+ */
+function downloadRemoteFileToTemp($url) {
+    $url = trim((string)$url);
+    if ($url === '') {
+        return ['success' => false, 'message' => 'Remote file URL is empty.'];
+    }
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'efind_remote_');
+    if (!$tmpFile) {
+        return ['success' => false, 'message' => 'Failed to allocate temporary file.'];
+    }
+
+    $downloaded = false;
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        $fp = fopen($tmpFile, 'wb');
+        if ($ch && $fp) {
+            curl_setopt($ch, CURLOPT_FILE, $fp);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_exec($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $downloaded = $httpCode >= 200 && $httpCode < 300 && filesize($tmpFile) > 0;
+            curl_close($ch);
+        }
+        if ($fp) {
+            fclose($fp);
+        }
+    }
+
+    if (!$downloaded) {
+        $content = @file_get_contents($url);
+        if ($content !== false && $content !== '') {
+            file_put_contents($tmpFile, $content);
+            $downloaded = filesize($tmpFile) > 0;
+        }
+    }
+
+    if (!$downloaded) {
+        if (file_exists($tmpFile)) {
+            unlink($tmpFile);
+        }
+        return ['success' => false, 'message' => 'Failed to download remote file for extraction.'];
+    }
+
+    return ['success' => true, 'path' => $tmpFile];
 }
 
 /**

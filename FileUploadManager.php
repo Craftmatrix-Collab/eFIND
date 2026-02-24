@@ -4,15 +4,27 @@ class FileUploadManager {
     private $uploadDir;
     private $metadataFile;
     private $lockFile;
+    private $minioClient;
+    private $storagePrefix;
     
     public function __construct($uploadDir = 'uploads/') {
         $this->uploadDir = rtrim($uploadDir, '/') . '/';
         $this->metadataFile = $this->uploadDir . '.upload_metadata.json';
         $this->lockFile = $this->uploadDir . '.upload.lock';
+        $this->storagePrefix = trim($this->uploadDir, '/');
         
         if (!is_dir($this->uploadDir)) {
             mkdir($this->uploadDir, 0755, true);
         }
+
+        if (!class_exists('MinioS3Client')) {
+            $minioHelperPath = __DIR__ . '/admin/includes/minio_helper.php';
+            if (file_exists($minioHelperPath)) {
+                require_once $minioHelperPath;
+            }
+        }
+
+        $this->minioClient = class_exists('MinioS3Client') ? new MinioS3Client() : null;
     }
     
     /**
@@ -59,15 +71,24 @@ class FileUploadManager {
             
             // Generate unique filename if needed
             $targetFileName = $this->generateUniqueFileName($fileName, $metadata);
-            $targetPath = $this->uploadDir . $targetFileName;
-            
-            // Move uploaded file
-            if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+            if (!$this->minioClient) {
+                $this->releaseLock($lock);
+                return [
+                    'success' => false,
+                    'error' => 'storage_not_available',
+                    'message' => 'MinIO storage is not available.'
+                ];
+            }
+
+            $objectName = ($this->storagePrefix !== '' ? $this->storagePrefix . '/' : '') . $targetFileName;
+            $contentType = MinioS3Client::getMimeType($fileName);
+            $uploadResult = $this->minioClient->uploadFile($file['tmp_name'], $objectName, $contentType);
+            if (empty($uploadResult['success'])) {
                 $this->releaseLock($lock);
                 return [
                     'success' => false,
                     'error' => 'upload_failed',
-                    'message' => 'Failed to save uploaded file.'
+                    'message' => 'Failed to upload file to MinIO: ' . ($uploadResult['error'] ?? 'unknown error')
                 ];
             }
             
@@ -76,6 +97,9 @@ class FileUploadManager {
                 'id' => uniqid('upload_', true),
                 'original_name' => $fileName,
                 'stored_name' => $targetFileName,
+                'storage' => 'minio',
+                'object_name' => $objectName,
+                'file_url' => (string)$uploadResult['url'],
                 'file_hash' => $fileHash,
                 'file_size' => $fileSize,
                 'mime_type' => $file['type'],
@@ -396,9 +420,19 @@ class FileUploadManager {
             
             foreach ($metadata as $key => $record) {
                 if ($record['id'] === $uploadId) {
-                    $filePath = $this->uploadDir . $record['stored_name'];
-                    if (file_exists($filePath)) {
-                        unlink($filePath);
+                    if (($record['storage'] ?? '') === 'minio' && $this->minioClient) {
+                        $objectName = $record['object_name'] ?? null;
+                        if (!$objectName && !empty($record['file_url']) && method_exists($this->minioClient, 'extractObjectNameFromUrl')) {
+                            $objectName = $this->minioClient->extractObjectNameFromUrl((string)$record['file_url']);
+                        }
+                        if ($objectName) {
+                            $this->minioClient->deleteFile($objectName);
+                        }
+                    } else {
+                        $filePath = $this->uploadDir . $record['stored_name'];
+                        if (file_exists($filePath)) {
+                            unlink($filePath);
+                        }
                     }
                     unset($metadata[$key]);
                     $found = true;

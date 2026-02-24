@@ -3,6 +3,7 @@ session_start();
 include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
+require_once __DIR__ . '/includes/minio_helper.php';
 
 // Redirect if already logged in
 if (isset($_SESSION['admin_id'])) {
@@ -49,22 +50,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             // Handle file upload
             $profile_picture = null;
+            $profileMinioClient = null;
             if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-                $upload_dir = __DIR__ . '/uploads/profiles/';
-                if (!is_dir($upload_dir)) {
-                    mkdir($upload_dir, 0755, true);
-                }
-
                 $file_ext = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
                 $allowed_types = ['jpg', 'jpeg', 'png'];
                 
                 if (in_array(strtolower($file_ext), $allowed_types)) {
                     if ($_FILES['profile_picture']['size'] <= 2097152) { // 2MB max
-                        $file_name = 'admin_' . time() . '.' . $file_ext;
-                        $target_file = $upload_dir . $file_name;
+                        $profileMinioClient = new MinioS3Client();
+                        $file_name = 'admin_' . str_replace('.', '', uniqid('', true)) . '.' . strtolower($file_ext);
+                        $object_name = 'profiles/' . date('Y/m/') . $file_name;
+                        $content_type = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
+                        $uploadResult = $profileMinioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $object_name, $content_type);
                         
-                        if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_file)) {
-                            $profile_picture = $file_name;
+                        if (!empty($uploadResult['success'])) {
+                            $profile_picture = (string)$uploadResult['url'];
                         } else {
                             $error = "Error uploading profile picture.";
                         }
@@ -147,9 +147,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     error_log("Registration DB error: " . $stmt->error);
                     $stmt->close();
                     
-                    // Delete uploaded file if registration failed
-                    if ($profile_picture && file_exists($upload_dir . $profile_picture)) {
-                        unlink($upload_dir . $profile_picture);
+                    // Delete uploaded MinIO object if registration failed
+                    if ($profile_picture && $profileMinioClient instanceof MinioS3Client) {
+                        $objectName = $profileMinioClient->extractObjectNameFromUrl((string)$profile_picture);
+                        if (!empty($objectName)) {
+                            $profileMinioClient->deleteFile($objectName);
+                        }
                     }
                 }
             }

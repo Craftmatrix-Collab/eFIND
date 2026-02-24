@@ -340,6 +340,31 @@ class MinioS3Client {
     public function getPublicUrl($objectName) {
         return $this->getEndpointUrl() . '/' . $this->bucket . '/' . ltrim($objectName, '/');
     }
+
+    /**
+     * Extract object name from a public MinIO URL for this configured bucket.
+     * Returns null when the URL doesn't match this bucket path format.
+     */
+    public function extractObjectNameFromUrl($url) {
+        $url = trim((string)$url);
+        if ($url === '') {
+            return null;
+        }
+
+        $parsed = parse_url($url);
+        if (!$parsed || empty($parsed['path'])) {
+            return null;
+        }
+
+        $path = ltrim((string)$parsed['path'], '/');
+        $bucketPrefix = trim((string)$this->bucket, '/') . '/';
+        if (strpos($path, $bucketPrefix) !== 0) {
+            return null;
+        }
+
+        $objectName = rawurldecode(substr($path, strlen($bucketPrefix)));
+        return $objectName !== '' ? $objectName : null;
+    }
     
     /**
      * Generate a presigned PUT URL for direct browser-to-MinIO upload (AWS SigV4)

@@ -17,8 +17,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // Include your database connection
-require_once 'db_connection.php';
+require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
+require_once __DIR__ . '/includes/minio_helper.php';
 
 // Sanitize and validate inputs
 $full_name = htmlspecialchars(trim($_POST['full_name']));
@@ -35,14 +36,9 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 
 // Handle file upload
 $profile_picture = '';
+$profileMinioClient = null;
 if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-    $upload_dir = __DIR__ . '/uploads/profiles/';
-    if (!is_dir($upload_dir)) {
-        mkdir($upload_dir, 0755, true);
-    }
     $file_ext = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
-    $file_name = uniqid() . '.' . $file_ext;
-    $target_file = $upload_dir . $file_name;
 
     // Validate file type
     $allowed_types = ['jpg', 'jpeg', 'png', 'gif'];
@@ -51,9 +47,14 @@ if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] ===
         exit;
     }
 
-    // Move uploaded file
-    if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_file)) {
-        $profile_picture = $file_name;
+    $profileMinioClient = new MinioS3Client();
+    $file_name = 'staff_' . str_replace('.', '', uniqid('', true)) . '.' . strtolower($file_ext);
+    $object_name = 'profiles/' . date('Y/m/') . $file_name;
+    $content_type = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
+    $uploadResult = $profileMinioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $object_name, $content_type);
+
+    if (!empty($uploadResult['success'])) {
+        $profile_picture = (string)$uploadResult['url'];
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to upload profile picture.']);
         exit;
@@ -65,11 +66,26 @@ $hashed_password = password_hash($password, PASSWORD_DEFAULT);
 
 // Insert into database using prepared statement
 try {
-    $stmt = $pdo->prepare("INSERT INTO users (full_name, email, username, password, role, profile_picture) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->execute([$full_name, $email, $username, $hashed_password, $role, $profile_picture]);
+    $stmt = $conn->prepare("INSERT INTO users (full_name, email, username, password, role, profile_picture) VALUES (?, ?, ?, ?, ?, ?)");
+    if (!$stmt) {
+        throw new Exception('Database prepare failed: ' . $conn->error);
+    }
 
-    echo json_encode(['success' => true, 'message' => 'Staff added successfully!']);
-} catch (PDOException $e) {
+    $stmt->bind_param("ssssss", $full_name, $email, $username, $hashed_password, $role, $profile_picture);
+
+    if ($stmt->execute()) {
+        echo json_encode(['success' => true, 'message' => 'Staff added successfully!']);
+    } else {
+        throw new Exception('Database execute failed: ' . $stmt->error);
+    }
+    $stmt->close();
+} catch (Throwable $e) {
+    if ($profile_picture && $profileMinioClient instanceof MinioS3Client) {
+        $objectName = $profileMinioClient->extractObjectNameFromUrl((string)$profile_picture);
+        if (!empty($objectName)) {
+            $profileMinioClient->deleteFile($objectName);
+        }
+    }
     echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }
 ?>

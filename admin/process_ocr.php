@@ -2,6 +2,7 @@
 // Include configuration and authentication
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/auth.php');
+require_once __DIR__ . '/includes/minio_helper.php';
 
 // Check if user is logged in
 if (!isLoggedIn()) {
@@ -35,32 +36,32 @@ if ($file['size'] > $maxFileSize) {
     exit();
 }
 
-// Create upload directory if it doesn't exist
-$uploadDir = __DIR__ . '/uploads/';
-if (!is_dir($uploadDir)) {
-    if (!mkdir($uploadDir, 0755, true)) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'error' => 'Failed to create upload directory.']);
-        exit();
-    }
+// Upload directly to MinIO
+$fileExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+if ($fileExt === '') {
+    $fileExt = ($file['type'] === 'image/png') ? 'png' : (($file['type'] === 'application/pdf') ? 'pdf' : 'jpg');
 }
+$safeBase = preg_replace('/[^a-zA-Z0-9_\-]/', '_', pathinfo($file['name'], PATHINFO_FILENAME));
+$fileName = uniqid() . '_' . $safeBase . '.' . $fileExt;
+$objectName = 'ocr-uploads/' . date('Y/m/') . $fileName;
 
-// Generate unique filename
-$fileExt = pathinfo($file['name'], PATHINFO_EXTENSION);
-$fileName = uniqid() . '_' . preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', basename($file['name'], '.' . $fileExt)) . '.' . $fileExt;
-$targetPath = $uploadDir . $fileName;
+$minioClient = new MinioS3Client();
+$contentType = MinioS3Client::getMimeType($file['name']);
+if ($contentType === 'application/octet-stream' && !empty($file['type'])) {
+    $contentType = $file['type'];
+}
+$uploadResult = $minioClient->uploadFile($file['tmp_name'], $objectName, $contentType);
 
-// Move uploaded file
-if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+if (!empty($uploadResult['success'])) {
     header('Content-Type: application/json');
     echo json_encode([
         'success' => true,
-        'filePath' => 'uploads/' . $fileName,
+        'filePath' => $uploadResult['url'],
         'fileName' => $fileName,
         'fileType' => $file['type']
     ]);
 } else {
     header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'error' => 'Failed to upload file.']);
+    echo json_encode(['success' => false, 'error' => 'Failed to upload file to MinIO: ' . ($uploadResult['error'] ?? 'unknown error')]);
 }
 ?>

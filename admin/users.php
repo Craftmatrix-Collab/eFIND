@@ -8,6 +8,7 @@ include(__DIR__ . '/includes/auth.php');
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
 require_once __DIR__ . '/includes/image_compression_helper.php';
+require_once __DIR__ . '/includes/minio_helper.php';
 
 // Check if user is logged in - redirect to login if not
 if (!isLoggedIn()) {
@@ -188,14 +189,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit();
             } else {
-                $upload_dir = __DIR__ . '/uploads/profiles/';
-                if (!is_dir($upload_dir)) {
-                    mkdir($upload_dir, 0755, true);
+                $file_ext = strtolower(pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION));
+                if ($file_ext === '') {
+                    $file_ext = ($file_type === 'image/png') ? 'png' : 'jpg';
                 }
-                $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
-                $target_path = $upload_dir . $file_name;
-                if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_path)) {
-                    $profile_picture = $file_name;
+                $file_name = 'user_' . str_replace('.', '', uniqid('', true)) . '.' . $file_ext;
+                $object_name = 'profiles/' . date('Y/m/') . $file_name;
+                $content_type = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
+                $minioClient = new MinioS3Client();
+                $uploadResult = $minioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $object_name, $content_type);
+                if (!empty($uploadResult['success'])) {
+                    $profile_picture = (string)$uploadResult['url'];
                 } else {
                     $_SESSION['error'] = "Failed to upload profile picture.";
                     header("Location: " . $_SERVER['PHP_SELF']);
@@ -292,18 +296,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header("Location: " . $_SERVER['PHP_SELF']);
                     exit();
                 } else {
+                    $minioClient = new MinioS3Client();
+
                     // Delete old file if exists
                     if (!empty($profile_picture)) {
-                        @unlink(__DIR__ . '/uploads/profiles/' . basename($profile_picture));
+                        $oldObjectName = $minioClient->extractObjectNameFromUrl((string)$profile_picture);
+                        if (!empty($oldObjectName)) {
+                            $minioClient->deleteFile($oldObjectName);
+                        } else {
+                            @unlink(__DIR__ . '/uploads/profiles/' . basename((string)$profile_picture));
+                        }
                     }
-                    $upload_dir = __DIR__ . '/uploads/profiles/';
-                    if (!is_dir($upload_dir)) {
-                        mkdir($upload_dir, 0755, true);
+
+                    $file_ext = strtolower(pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION));
+                    if ($file_ext === '') {
+                        $file_ext = ($file_type === 'image/png') ? 'png' : 'jpg';
                     }
-                    $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
-                    $target_path = $upload_dir . $file_name;
-                    if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_path)) {
-                        $profile_picture = $file_name;
+                    $file_name = 'user_' . $id . '_' . str_replace('.', '', uniqid('', true)) . '.' . $file_ext;
+                    $object_name = 'profiles/' . date('Y/m/') . $file_name;
+                    $content_type = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
+                    $uploadResult = $minioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $object_name, $content_type);
+                    if (!empty($uploadResult['success'])) {
+                        $profile_picture = (string)$uploadResult['url'];
                     } else {
                         $_SESSION['error'] = "Failed to upload profile picture.";
                         header("Location: " . $_SERVER['PHP_SELF']);
@@ -1219,7 +1233,18 @@ $count_stmt->close();
                                         </td>
                                         <td>
                                             <?php if (!empty($user['profile_picture'])): ?>
-                                                <img src="<?php echo htmlspecialchars(strpos($user['profile_picture'], 'uploads/profiles/') === 0 ? $user['profile_picture'] : 'uploads/profiles/' . ltrim($user['profile_picture'], '/')); ?>?t=<?php echo time(); ?>"
+                                                <?php
+                                                $profilePicturePath = trim((string)$user['profile_picture']);
+                                                if (preg_match('#^(https?:)?//#i', $profilePicturePath) || stripos($profilePicturePath, 'data:image/') === 0) {
+                                                    $profilePictureSrc = $profilePicturePath;
+                                                } else {
+                                                    $profilePictureSrc = 'uploads/profiles/' . basename($profilePicturePath);
+                                                }
+                                                if (strpos($profilePictureSrc, 'data:') !== 0) {
+                                                    $profilePictureSrc .= (strpos($profilePictureSrc, '?') === false ? '?t=' : '&t=') . time();
+                                                }
+                                                ?>
+                                                <img src="<?php echo htmlspecialchars($profilePictureSrc); ?>"
                                                      alt="Profile Picture"
                                                      class="rounded-circle"
                                                      width="40"

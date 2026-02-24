@@ -4,6 +4,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 include 'includes/config.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
+require_once __DIR__ . '/includes/minio_helper.php';
 
 // Check if this is an AJAX request
 $is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
@@ -104,33 +105,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Handle profile picture upload
     $profilePicture = null;
+    $uploadError = null;
     if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = __DIR__ . '/uploads/profiles/';
-        
-        // Create directory if it doesn't exist
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0777, true);
-        }
-        
         $fileExtension = strtolower(pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION));
         $allowedExtensions = ['jpg', 'jpeg', 'png'];
-        
-        if (in_array($fileExtension, $allowedExtensions)) {
-            $newFileName = 'profile_' . $userId . '_' . time() . '.' . $fileExtension;
-            $uploadPath = $uploadDir . $newFileName;
-            
-            if (saveOptimizedUploadedImage($_FILES['profile_picture'], $uploadPath)) {
-                $profilePicture = $newFileName;
-                
+
+        if (in_array($fileExtension, $allowedExtensions, true)) {
+            $minioClient = new MinioS3Client();
+            $newFileName = 'profile_' . $userId . '_' . str_replace('.', '', uniqid('', true)) . '.' . $fileExtension;
+            $objectName = 'profiles/' . date('Y/m/') . $newFileName;
+            $contentType = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
+            $uploadResult = $minioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $objectName, $contentType);
+
+            if (!empty($uploadResult['success'])) {
+                $profilePicture = (string)$uploadResult['url'];
+
                 // Delete old profile picture if it exists and is different
-                if (!empty($oldPicturePath) && $oldPicturePath !== $newFileName) {
-                    $oldFullPath = $uploadDir . basename((string)$oldPicturePath);
-                    if (file_exists($oldFullPath)) {
-                        unlink($oldFullPath);
+                if (!empty($oldPicturePath) && $oldPicturePath !== $profilePicture) {
+                    $oldObjectName = $minioClient->extractObjectNameFromUrl((string)$oldPicturePath);
+                    if (!empty($oldObjectName)) {
+                        $minioClient->deleteFile($oldObjectName);
+                    } else {
+                        $oldFullPath = __DIR__ . '/uploads/profiles/' . basename((string)$oldPicturePath);
+                        if (file_exists($oldFullPath)) {
+                            unlink($oldFullPath);
+                        }
                     }
                 }
+            } else {
+                $uploadError = 'Failed to upload profile picture to storage.';
             }
+        } else {
+            $uploadError = 'Only JPG, JPEG, and PNG files are allowed.';
         }
+    }
+
+    if ($uploadError !== null) {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => $uploadError]);
+            exit;
+        }
+        $_SESSION['error'] = $uploadError;
+        header("Location: edit_profile.php");
+        exit;
     }
 
     // Update user in database
