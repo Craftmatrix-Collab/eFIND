@@ -652,18 +652,20 @@ async function sendMessage() {
 function createMessageAvatar(sender) {
     const avatarDiv = document.createElement('div');
     avatarDiv.className = `message-avatar ${sender}-avatar`;
+    const fallbackIcon = `<i class="fas fa-${sender === 'bot' ? 'robot' : 'user'}"></i>`;
+    avatarDiv.innerHTML = fallbackIcon;
     
     if (sender === 'user' && chatbotUserAvatarUrl) {
         const avatarImg = document.createElement('img');
-        avatarImg.src = chatbotUserAvatarUrl;
         avatarImg.alt = '';
-        avatarImg.onerror = function() {
-            avatarImg.remove();
-            avatarDiv.innerHTML = '<i class="fas fa-user"></i>';
+        avatarImg.onload = function() {
+            avatarDiv.innerHTML = '';
+            avatarDiv.appendChild(avatarImg);
         };
-        avatarDiv.appendChild(avatarImg);
-    } else {
-        avatarDiv.innerHTML = `<i class="fas fa-${sender === 'bot' ? 'robot' : 'user'}"></i>`;
+        avatarImg.onerror = function() {
+            avatarDiv.innerHTML = fallbackIcon;
+        };
+        avatarImg.src = chatbotUserAvatarUrl;
     }
     
     return avatarDiv;
@@ -716,7 +718,7 @@ function addSourcesToChat(sources, persist = true) {
     
     const sourcesDiv = document.createElement('div');
     sourcesDiv.className = 'chatbot-sources-note';
-    sourcesDiv.innerHTML = `<strong>Sources:</strong> ${sources.map((source, index) => `${index + 1}. ${escapeHtml(source)}`).join(' • ')}`;
+    sourcesDiv.innerHTML = `<strong>Sources:</strong> ${sources.map((source, index) => `${index + 1}. ${escapeHtml(source)}`).join(', ')}`;
     messagesContainer.appendChild(sourcesDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
