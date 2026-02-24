@@ -227,11 +227,11 @@ if ($chatbot_profile_picture_raw !== '') {
     }
     
     .bot-message .message-bubble {
-        background: #ffffff;
+        background: transparent;
         color: #0f172a;
-        border: 1px solid #e2e8f0;
+        border: none;
         border-radius: 16px 16px 16px 5px;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+        box-shadow: none;
     }
     
     .user-message {
@@ -247,10 +247,10 @@ if ($chatbot_profile_picture_raw !== '') {
     }
     
     .user-message .message-bubble {
-        background: linear-gradient(135deg, #2563eb, #1d4ed8);
-        color: white;
+        background: transparent;
+        color: #0f172a;
         border-radius: 16px 16px 5px 16px;
-        
+        box-shadow: none;
     }
     
     .message-time {
@@ -269,9 +269,9 @@ if ($chatbot_profile_picture_raw !== '') {
         margin: -2px 0 12px 40px;
         display: inline-block;
         max-width: calc(100% - 40px);
-        background: #e2e8f0;
-        border-radius: 999px;
-        padding: 6px 10px;
+        background: transparent;
+        border-radius: 0;
+        padding: 0;
         font-size: 11px;
         color: #334155;
         line-height: 1.4;
