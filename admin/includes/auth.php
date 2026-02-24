@@ -18,6 +18,20 @@ function isAdmin() {
 }
 
 /**
+ * Check if the logged-in user is a superadmin
+ */
+function isSuperAdmin() {
+    if (!isAdmin()) {
+        return false;
+    }
+
+    $sessionRole = strtolower((string)($_SESSION['role'] ?? ''));
+    $adminUsername = strtolower((string)($_SESSION['admin_username'] ?? ''));
+
+    return $sessionRole === 'superadmin' || $adminUsername === 'superadmin';
+}
+
+/**
  * Check if the logged-in user is a staff member
  */
 function isStaff() {

@@ -88,6 +88,29 @@ if (!function_exists('checkActivityLogsTable')) {
     }
 }
 
+if (!function_exists('checkRecycleBinTable')) {
+    /**
+     * Ensure recycle_bin table exists
+     */
+    function checkRecycleBinTable() {
+        global $conn;
+
+        $createTableQuery = "CREATE TABLE IF NOT EXISTS recycle_bin (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            original_table VARCHAR(100),
+            original_id INT,
+            data JSON,
+            deleted_by VARCHAR(255),
+            deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            restored_at TIMESTAMP NULL
+        )";
+
+        if (!$conn->query($createTableQuery)) {
+            error_log("Failed to create recycle_bin table: " . $conn->error);
+        }
+    }
+}
+
 if (!function_exists('logActivity')) {
     /**
      * Main activity logging function
@@ -251,4 +274,5 @@ if (!function_exists('logSettingsChange')) {
 
 // Initialize tables when this file is included
 checkActivityLogsTable();
+checkRecycleBinTable();
 ?>
