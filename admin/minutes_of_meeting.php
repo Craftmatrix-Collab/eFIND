@@ -176,6 +176,21 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
 if (isset($_GET['print']) && $_GET['print'] === '1') {
     $printStartDate = $_GET['print_start_date'] ?? '';
     $printEndDate = $_GET['print_end_date'] ?? '';
+
+    if (!empty($printStartDate)) {
+        $startDateObj = DateTime::createFromFormat('Y-m-d', $printStartDate);
+        if (!$startDateObj || $startDateObj->format('Y-m-d') !== $printStartDate) {
+            die("Invalid start date format. Please use YYYY-MM-DD.");
+        }
+    }
+
+    if (!empty($printEndDate)) {
+        $endDateObj = DateTime::createFromFormat('Y-m-d', $printEndDate);
+        if (!$endDateObj || $endDateObj->format('Y-m-d') !== $printEndDate) {
+            die("Invalid end date format. Please use YYYY-MM-DD.");
+        }
+    }
+
     if (!empty($printStartDate) && !empty($printEndDate) && strtotime($printStartDate) > strtotime($printEndDate)) {
         die("End date must be after start date.");
     }
@@ -2030,6 +2045,9 @@ $count_stmt->close();
                 <a id="downloadImage" href="#" class="btn btn-primary-custom" download>
                     <i class="fas fa-download me-2"></i> Download
                 </a>
+                <button type="button" id="printImage" class="btn btn-outline-primary">
+                    <i class="fas fa-print me-2"></i> Print
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
@@ -2238,6 +2256,72 @@ $count_stmt->close();
                 }, 5000);
             });
 
+            const printImagePages = (imageSrcs) => {
+                if (!Array.isArray(imageSrcs) || imageSrcs.length === 0) return;
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) {
+                    alert('Please allow pop-ups to print images.');
+                    return;
+                }
+
+                const pagesHtml = imageSrcs.map((src, index) =>
+                    `<div class="print-page"><img src="${String(src).replace(/"/g, '&quot;')}" alt="Image ${index + 1}"></div>`
+                ).join('');
+
+                printWindow.document.open();
+                printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Print Images</title>
+    <style>
+        body { margin: 0; padding: 0; }
+        .print-page {
+            page-break-after: always;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12mm;
+            box-sizing: border-box;
+        }
+        .print-page:last-child { page-break-after: auto; }
+        img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    </style>
+</head>
+<body>${pagesHtml}
+<script>
+(function () {
+    const images = Array.from(document.images);
+    if (!images.length) {
+        window.print();
+        return;
+    }
+    let loaded = 0;
+    const done = () => {
+        loaded += 1;
+        if (loaded >= images.length) {
+            setTimeout(() => {
+                window.focus();
+                window.print();
+            }, 300);
+        }
+    };
+    images.forEach((img) => {
+        if (img.complete) {
+            done();
+        } else {
+            img.onload = done;
+            img.onerror = done;
+        }
+    });
+    window.onafterprint = function () { window.close(); };
+})();
+<\/script>
+</body>
+</html>`);
+                printWindow.document.close();
+            };
+
             // Handle image link clicks
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
@@ -2333,6 +2417,13 @@ $count_stmt->close();
                         this.style.pointerEvents = 'auto';
                     });
 
+                    const printButton = document.getElementById('printImage');
+                    printButton.replaceWith(printButton.cloneNode(true));
+                    const newPrintButton = document.getElementById('printImage');
+                    newPrintButton.addEventListener('click', function() {
+                        printImagePages(imageSrcs);
+                    });
+
                     const imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
                     imageModal.show();
                 });
@@ -2388,8 +2479,8 @@ $count_stmt->close();
                 const startDate = document.getElementById('printStartDate').value;
                 const endDate = document.getElementById('printEndDate').value;
                 let printUrl = window.location.pathname + '?print=1';
-                if (startDate) printUrl += '&print_start_date=' + startDate;
-                if (endDate) printUrl += '&print_end_date=' + endDate;
+                if (startDate) printUrl += '&print_start_date=' + encodeURIComponent(startDate);
+                if (endDate) printUrl += '&print_end_date=' + encodeURIComponent(endDate);
                 window.open(printUrl, '_blank');
                 const printModal = bootstrap.Modal.getInstance(document.getElementById('printDateRangeModal'));
                 printModal.hide();

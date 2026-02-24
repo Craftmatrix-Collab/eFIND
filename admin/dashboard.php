@@ -1600,6 +1600,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     <a id="downloadImage" href="#" class="btn btn-primary" download>
                         <i class="fas fa-download me-2"></i>Download Image
                     </a>
+                    <button type="button" id="printImage" class="btn btn-outline-primary">
+                        <i class="fas fa-print me-2"></i>Print
+                    </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
@@ -1850,20 +1853,94 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
         
         // Handle image modal
         document.addEventListener('DOMContentLoaded', function() {
+            const printImagePages = (imageSrcs) => {
+                if (!Array.isArray(imageSrcs) || imageSrcs.length === 0) return;
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) {
+                    alert('Please allow pop-ups to print images.');
+                    return;
+                }
+
+                const pagesHtml = imageSrcs.map((src, index) =>
+                    `<div class="print-page"><img src="${String(src).replace(/"/g, '&quot;')}" alt="Image ${index + 1}"></div>`
+                ).join('');
+
+                printWindow.document.open();
+                printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Print Images</title>
+    <style>
+        body { margin: 0; padding: 0; }
+        .print-page {
+            page-break-after: always;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12mm;
+            box-sizing: border-box;
+        }
+        .print-page:last-child { page-break-after: auto; }
+        img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    </style>
+</head>
+<body>${pagesHtml}
+<script>
+(function () {
+    const images = Array.from(document.images);
+    if (!images.length) {
+        window.print();
+        return;
+    }
+    let loaded = 0;
+    const done = () => {
+        loaded += 1;
+        if (loaded >= images.length) {
+            setTimeout(() => {
+                window.focus();
+                window.print();
+            }, 300);
+        }
+    };
+    images.forEach((img) => {
+        if (img.complete) {
+            done();
+        } else {
+            img.onload = done;
+            img.onerror = done;
+        }
+    });
+    window.onafterprint = function () { window.close(); };
+})();
+<\/script>
+</body>
+</html>`);
+                printWindow.document.close();
+            };
+
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
-                    const imageSrc = (this.getAttribute('data-image-src') || '')
+                    const imageSrcs = (this.getAttribute('data-image-src') || '')
                         .split(/[|,]/)
                         .map(src => src.trim())
-                        .filter(Boolean)[0] || '';
-                    if (!imageSrc) return;
+                        .filter(Boolean);
+                    if (!imageSrcs.length) return;
+                    const imageSrc = imageSrcs[0];
                     const modalImage = document.getElementById('modalImage');
                     const downloadLink = document.getElementById('downloadImage');
+                    const printButton = document.getElementById('printImage');
                     
                     modalImage.src = imageSrc;
                     downloadLink.href = imageSrc;
                     downloadLink.download = imageSrc.split('/').pop();
+
+                    printButton.replaceWith(printButton.cloneNode(true));
+                    const newPrintButton = document.getElementById('printImage');
+                    newPrintButton.addEventListener('click', function() {
+                        printImagePages(imageSrcs);
+                    });
                     
                     const imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
                     imageModal.show();
