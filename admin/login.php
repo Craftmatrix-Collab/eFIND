@@ -24,6 +24,8 @@ function getSafeRedirect() {
     $redirect = $_POST['redirect'] ?? $_GET['redirect'] ?? '';
     if ($redirect) {
         $decoded = urldecode($redirect);
+        // Strip any CR/LF to prevent HTTP header injection
+        $decoded = str_replace(["\r", "\n"], '', $decoded);
         // Only allow paths that start with exactly one "/" followed by a non-slash character.
         // This blocks: external URLs (https://...), protocol-relative URLs (//evil.com),
         // and bare filenames without a leading slash.
@@ -208,6 +210,7 @@ function logLoginAttempt($username, $ip_address, $status, $details = '', $user_i
 /**
  * Log activity to activity_logs table
  */
+if (!function_exists('logActivity')) {
 function logActivity($user_id, $action, $description, $document_type = 'system', $ip_address = null, $details = null, $known_username = null, $user_role = null) {
     global $conn;
     
@@ -254,6 +257,7 @@ function logActivity($user_id, $action, $description, $document_type = 'system',
         error_log("Activity log error: " . $e->getMessage());
     }
 }
+} // end if (!function_exists('logActivity'))
 
 /**
  * Check if login logs table exists, create if not
@@ -301,11 +305,15 @@ function checkActivityLogsTable() {
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NULL,
             user_name VARCHAR(255) NULL,
+            user_role VARCHAR(50) NULL,
             action VARCHAR(100) NOT NULL,
-            description TEXT NOT NULL,
+            description TEXT NULL,
             document_type VARCHAR(100) NULL,
+            document_id INT NULL,
             details TEXT NULL,
-            ip_address VARCHAR(45) NOT NULL,
+            file_path VARCHAR(500) NULL,
+            ip_address VARCHAR(45) NULL,
+            user_agent TEXT NULL,
             log_time DATETIME DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_user_id (user_id),
             INDEX idx_action (action),

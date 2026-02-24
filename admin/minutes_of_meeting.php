@@ -33,44 +33,11 @@ function isFileDuplicate($uploadDir, $fileName) {
 
 // Function to validate if the file is a minutes document (image only)
 function isValidMinutesDocument($file) {
-    $allowedTypes = [
-        'image/jpeg', 
-        'image/png', 
-        'image/gif', 
-        'image/bmp', 
-        
-        
-        
-    ];
-    return in_array($file['type'], $allowedTypes);
-}
-
-// Function to log document downloads
-function logDocumentDownload($documentId, $documentTitle, $documentType, $filePath, $userId = null) {
-    global $conn;
-    
-    $ipAddress = $_SERVER['REMOTE_ADDR'];
-    $userName = null;
-    
-    if ($userId) {
-        $userStmt = $conn->prepare("SELECT username FROM users WHERE id = ?");
-        $userStmt->bind_param("i", $userId);
-        $userStmt->execute();
-        $userResult = $userStmt->get_result();
-        if ($userRow = $userResult->fetch_assoc()) {
-            $userName = $userRow['username'];
-        }
-        $userStmt->close();
-    }
-    
-    $stmt = $conn->prepare("INSERT INTO document_downloads (user_id, document_title, document_type, file_path, ip_address) VALUES (?, ?, ?, ?, ?)");
-    $stmt->bind_param("issss", $userId, $documentTitle, $documentType, $filePath, $ipAddress);
-    $stmt->execute();
-    $stmt->close();
-    
-    // Also log in activity logs
-    $description = "Downloaded document: " . $documentTitle;
-    logActivity($userId, 'download', $description, $documentType, "File: " . $filePath, $userName);
+    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
+    $mimeType = !empty($file['tmp_name']) && is_readable($file['tmp_name'])
+        ? finfo_file(finfo_open(FILEINFO_MIME_TYPE), $file['tmp_name'])
+        : $file['type'];
+    return in_array($mimeType, $allowedTypes);
 }
 
 // Verify database connection
@@ -108,13 +75,13 @@ $downloadsTableResult = $conn->query($checkDownloadsTableQuery);
 if ($downloadsTableResult->num_rows == 0) {
     $createDownloadsTableQuery = "CREATE TABLE document_downloads (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT,
+        user_id INT NULL,
         document_title VARCHAR(255) NOT NULL,
         document_type VARCHAR(50) NOT NULL,
         file_path VARCHAR(500) NOT NULL,
         ip_address VARCHAR(45),
         downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        INDEX idx_user_id (user_id)
     )";
     if (!$conn->query($createDownloadsTableQuery)) {
         error_log("Failed to create document_downloads table: " . $conn->error);
@@ -179,7 +146,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
     $docId = $id;
 
     $logStmt = $conn->prepare("INSERT INTO activity_logs (user_id, user_name, user_role, action, description, document_type, document_id, details, file_path, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $logStmt->bind_param("isssssssss", $userId, $userName, $userRole, $action, $description, $docType, $docId, $details, $filePath, $ip);
+    $logStmt->bind_param("isssssisss", $userId, $userName, $userRole, $action, $description, $docType, $docId, $details, $filePath, $ip);
     $logStmt->execute();
     $logStmt->close();
 
@@ -387,7 +354,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
 // Handle delete action
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     $id = intval($_GET['id']);
-    $stmt = $conn->prepare("SELECT title FROM minutes_of_meeting WHERE id = ?");
+    $stmt = $conn->prepare("SELECT title, image_path FROM minutes_of_meeting WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -406,6 +373,17 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
         $_SESSION['success'] = "Minute deleted successfully!";
+        // Clean up associated MinIO files
+        if (!empty($minute['image_path'])) {
+            $minio = new MinioS3Client();
+            foreach (explode('|', $minute['image_path']) as $fileUrl) {
+                $fileUrl = trim($fileUrl);
+                if (empty($fileUrl) || strpos($fileUrl, 'http') !== 0) continue;
+                $parsed = parse_url($fileUrl);
+                $pathParts = explode('/', ltrim($parsed['path'] ?? '', '/'), 2);
+                if (count($pathParts) === 2) { $minio->deleteFile($pathParts[1]); }
+            }
+        }
     } else {
         $_SESSION['error'] = "Failed to delete minute: " . $conn->error;
     }
@@ -459,7 +437,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (empty($tmpName)) {
                             continue; // Skip empty uploads
                         }
-                        if (!isValidMinutesDocument(['type' => $_FILES['image_file']['type'][$key]])) {
+                        if (!isValidMinutesDocument(['type' => $_FILES['image_file']['type'][$key], 'tmp_name' => $_FILES['image_file']['tmp_name'][$key]])) {
                             error_log("Invalid file type: " . $_FILES['image_file']['type'][$key]);
                             $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.";
                             header("Location: minutes_of_meeting.php");
@@ -497,10 +475,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Get the logged-in user's username
-            $uploaded_by = isset($_SESSION['username']) ? $_SESSION['username'] : 'admin';
-            error_log("Uploaded by: $uploaded_by");
-
-            error_log("Preparing to insert into database...");
+            $uploaded_by = $_SESSION['username'] ?? $_SESSION['staff_username'] ?? 'admin';
             $stmt = $conn->prepare("INSERT INTO minutes_of_meeting (title, session_number, date_posted, meeting_date, content, image_path, reference_number, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             if (!$stmt) {
                 error_log("Failed to prepare statement: " . $conn->error);
@@ -548,7 +523,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                     continue;
                 }
-                if (!isValidMinutesDocument(['type' => $_FILES['image_file']['type'][$key]])) {
+                if (!isValidMinutesDocument(['type' => $_FILES['image_file']['type'][$key], 'tmp_name' => $_FILES['image_file']['tmp_name'][$key]])) {
                     $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.";
                     header("Location: minutes_of_meeting.php");
                     exit();
@@ -606,6 +581,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_minute' && isset($_GET['i
     $result = $stmt->get_result();
     $minute = $result->fetch_assoc();
     $stmt->close();
+    if ($minute) {
+        logDocumentView('minutes', $minute['title'] ?? 'Minutes of Meeting', $id);
+    }
     header('Content-Type: application/json');
     echo json_encode($minute);
     exit();

@@ -51,7 +51,7 @@ class FileUploadManager {
                 return [
                     'success' => false,
                     'error' => 'duplicate',
-                    'message' => $this->formatDuplicateMessage($duplicate),
+                    'message' => $this->formatDuplicateMessage($duplicate, $fileName),
                     'duplicate_info' => $duplicate,
                     'hint' => 'Use force_upload option to override this restriction.'
                 ];
@@ -212,7 +212,7 @@ class FileUploadManager {
     /**
      * Format duplicate message for user
      */
-    private function formatDuplicateMessage($duplicate) {
+    private function formatDuplicateMessage($duplicate, $newFileName = '') {
         $original = $duplicate['original_upload'];
         
         switch ($duplicate['type']) {
@@ -247,7 +247,7 @@ class FileUploadManager {
                     $original['uploaded_by'],
                     $original['upload_time'],
                     $this->formatFileSize($original['file_size']),
-                    $original['original_name']
+                    $newFileName ?: 'unknown'
                 );
             
             case 'same_name_different_content':

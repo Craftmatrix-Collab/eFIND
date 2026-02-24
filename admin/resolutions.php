@@ -33,13 +33,11 @@ function isFileDuplicate($uploadDir, $fileName) {
 
 // Function to validate if the file is a resolution document (image only)
 function isValidResolutionDocument($file) {
-    $allowedTypes = [
-        'image/jpeg', 
-        'image/png', 
-        'image/gif', 
-        'image/bmp', 
-    ];
-    return in_array($file['type'], $allowedTypes);
+    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
+    $mimeType = !empty($file['tmp_name']) && is_readable($file['tmp_name'])
+        ? finfo_file(finfo_open(FILEINFO_MIME_TYPE), $file['tmp_name'])
+        : $file['type'];
+    return in_array($mimeType, $allowedTypes);
 }
 
 // Verify database connection
@@ -391,7 +389,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
 // Handle delete action
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     $id = intval($_GET['id']);
-    $stmt = $conn->prepare("SELECT title FROM resolutions WHERE id = ?");
+    $stmt = $conn->prepare("SELECT title, image_path FROM resolutions WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -410,6 +408,17 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
         $_SESSION['success'] = "Resolution deleted successfully!";
+        // Clean up associated MinIO files
+        if (!empty($resolution['image_path'])) {
+            $minio = new MinioS3Client();
+            foreach (explode('|', $resolution['image_path']) as $fileUrl) {
+                $fileUrl = trim($fileUrl);
+                if (empty($fileUrl) || strpos($fileUrl, 'http') !== 0) continue;
+                $parsed = parse_url($fileUrl);
+                $pathParts = explode('/', ltrim($parsed['path'] ?? '', '/'), 2);
+                if (count($pathParts) === 2) { $minio->deleteFile($pathParts[1]); }
+            }
+        }
     } else {
         $_SESSION['error'] = "Failed to delete resolution: " . $conn->error;
     }
@@ -462,7 +471,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (empty($tmpName)) {
                             continue; // Skip empty uploads
                         }
-                        if (!isValidResolutionDocument(['type' => $_FILES['image_file']['type'][$key]])) {
+                        if (!isValidResolutionDocument(['type' => $_FILES['image_file']['type'][$key], 'tmp_name' => $_FILES['image_file']['tmp_name'][$key]])) {
                             error_log("Invalid file type: " . $_FILES['image_file']['type'][$key]);
                             $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.";
                             header("Location: resolutions.php");
@@ -507,7 +516,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // Get the logged-in user's username
-            $uploaded_by = isset($_SESSION['username']) ? $_SESSION['username'] : 'admin';
+            $uploaded_by = $_SESSION['username'] ?? $_SESSION['staff_username'] ?? 'admin';
             error_log("Uploaded by: $uploaded_by");
             
             error_log("Preparing to insert into database...");
@@ -556,7 +565,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                     continue;
                 }
-                if (!isValidResolutionDocument(['type' => $_FILES['image_file']['type'][$key]])) {
+                if (!isValidResolutionDocument(['type' => $_FILES['image_file']['type'][$key], 'tmp_name' => $_FILES['image_file']['tmp_name'][$key]])) {
                     $_SESSION['error'] = "Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.";
                     header("Location: resolutions.php");
                     exit();
@@ -617,6 +626,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_resolution' && isset($_GE
     $result = $stmt->get_result();
     $resolution = $result->fetch_assoc();
     $stmt->close();
+    if ($resolution) {
+        logDocumentView('resolution', $resolution['title'] ?? 'Resolution', $id);
+    }
     header('Content-Type: application/json');
     echo json_encode($resolution);
     exit();

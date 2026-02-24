@@ -222,6 +222,20 @@ class BarangayChatbotAPI {
                 }
                 $stmt->close();
             }
+            // Fall back to admin_users if not found in users table
+            if ($userName === 'Guest') {
+                $stmt = $this->db->prepare("SELECT username, full_name FROM admin_users WHERE id = ? LIMIT 1");
+                if ($stmt) {
+                    $stmt->bind_param("i", $userIdInt);
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+                    if ($row = $result->fetch_assoc()) {
+                        $userName = $row['full_name'] ?? $row['username'];
+                        $userRole = 'admin';
+                    }
+                    $stmt->close();
+                }
+            }
         } elseif (isset($_SESSION['user_id'])) {
             $userIdInt = intval($_SESSION['user_id']);
             $userName = $_SESSION['username'] ?? $_SESSION['full_name'] ?? 'User';

@@ -133,9 +133,17 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     
     // Determine which table to delete from
     $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
+    // Fetch username before deleting for the log
+    $delStmt = $conn->prepare("SELECT username FROM $table WHERE id = ?");
+    $delStmt->bind_param("i", $id);
+    $delStmt->execute();
+    $delRow = $delStmt->get_result()->fetch_assoc();
+    $delStmt->close();
+    $deletedUsername = $delRow['username'] ?? "ID:$id";
     $stmt = $conn->prepare("DELETE FROM $table WHERE id = ?");
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
+        logActivity('user_delete', "User deleted: $deletedUsername", "Table: $table | ID: $id");
         $_SESSION['success'] = "User deleted successfully!";
     } else {
         $_SESSION['error'] = "Error deleting user: " . $stmt->error;
@@ -202,6 +210,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare("INSERT INTO users (full_name, contact_number, email, username, password, role, profile_picture, email_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)");
             $stmt->bind_param("ssssssss", $full_name, $contact_number, $email, $username, $hashed_password, $role, $profile_picture, $created_at);
             if ($stmt->execute()) {
+                $newUserId = $conn->insert_id;
+                logActivity('user_create', "New user created: $username", "Role: $role | Email: $email", $newUserId);
                 unset($_SESSION['add_user_verified_email'], $_SESSION['add_user_verify_email']);
                 $_SESSION['success'] = "User added successfully!";
             } else {
@@ -274,13 +284,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 if ($password) {
                     $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, $password_field = ?, role = ?, profile_picture = ? WHERE id = ?");
-                    $stmt->bind_param("sisssssi", $full_name, $contact_number, $email, $username, $password, $role, $profile_picture, $id);
+                    $stmt->bind_param("sssssssi", $full_name, $contact_number, $email, $username, $password, $role, $profile_picture, $id);
                 } else {
                     $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, role = ?, profile_picture = ? WHERE id = ?");
-                    $stmt->bind_param("sissssi", $full_name, $contact_number, $email, $username, $role, $profile_picture, $id);
+                    $stmt->bind_param("ssssssi", $full_name, $contact_number, $email, $username, $role, $profile_picture, $id);
                 }
             }
             if ($stmt->execute()) {
+                $userRoleDisplay = ($user_type === 'admin_users') ? 'admin' : $role;
+                logActivity('user_update', "User updated: $username", "Role: $userRoleDisplay | Email: $email", $id);
                 $_SESSION['success'] = "User updated successfully!";
             } else {
                 $_SESSION['error'] = "Error updating user: " . $stmt->error;

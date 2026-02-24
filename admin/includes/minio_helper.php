@@ -44,6 +44,17 @@ class MinioS3Client {
             if ($fileContent === false) {
                 return ['success' => false, 'error' => 'Failed to read file'];
             }
+
+            if ($contentType === 'application/octet-stream') {
+                $contentType = self::getMimeType($filePath);
+            }
+
+            // Optimize uploaded images before storage when compression is beneficial
+            $optimizedImage = $this->optimizeImageForUpload($filePath, $contentType, $fileContent);
+            if ($optimizedImage !== null) {
+                $fileContent = $optimizedImage['content'];
+                $contentType = $optimizedImage['content_type'];
+            }
             
             // Prepare request
             $url = $this->getEndpointUrl() . '/' . $this->bucket . '/' . ltrim($objectName, '/');
@@ -100,6 +111,77 @@ class MinioS3Client {
             error_log("MinIO upload exception: " . $e->getMessage());
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Compress and resize supported images (JPEG/PNG/WebP) before upload.
+     * Returns null when optimization is unavailable or not beneficial.
+     */
+    private function optimizeImageForUpload($filePath, $contentType, $originalContent) {
+        if (!extension_loaded('gd')) {
+            return null;
+        }
+
+        $mimeType = strtolower((string)$contentType);
+        $supported = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (!in_array($mimeType, $supported, true)) {
+            return null;
+        }
+
+        $image = @imagecreatefromstring($originalContent);
+        if (!$image) {
+            return null;
+        }
+
+        $maxDimension = 1920;
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $optimizedImage = $image;
+
+        if ($width > $maxDimension || $height > $maxDimension) {
+            $ratio = min($maxDimension / $width, $maxDimension / $height);
+            $newWidth = (int)round($width * $ratio);
+            $newHeight = (int)round($height * $ratio);
+            $resizedImage = imagecreatetruecolor($newWidth, $newHeight);
+
+            if ($mimeType === 'image/png' || $mimeType === 'image/webp') {
+                imagealphablending($resizedImage, false);
+                imagesavealpha($resizedImage, true);
+            }
+
+            imagecopyresampled($resizedImage, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+            $optimizedImage = $resizedImage;
+        }
+
+        ob_start();
+        $writeOk = false;
+        if ($mimeType === 'image/jpeg' || $mimeType === 'image/jpg') {
+            $writeOk = imagejpeg($optimizedImage, null, 82);
+            $mimeType = 'image/jpeg';
+        } elseif ($mimeType === 'image/png') {
+            $writeOk = imagepng($optimizedImage, null, 6);
+        } elseif ($mimeType === 'image/webp' && function_exists('imagewebp')) {
+            $writeOk = imagewebp($optimizedImage, null, 82);
+        }
+        $compressedContent = ob_get_clean();
+
+        if ($optimizedImage !== $image) {
+            imagedestroy($optimizedImage);
+        }
+        imagedestroy($image);
+
+        if (!$writeOk || $compressedContent === false || $compressedContent === '') {
+            return null;
+        }
+
+        if (strlen($compressedContent) >= strlen($originalContent)) {
+            return null;
+        }
+
+        return [
+            'content' => $compressedContent,
+            'content_type' => $mimeType,
+        ];
     }
     
     /**

@@ -253,8 +253,8 @@ $error = isset($_SESSION['error']) ? $_SESSION['error'] : '';
 $success = isset($_SESSION['success']) ? $_SESSION['success'] : '';
 unset($_SESSION['error'], $_SESSION['success']);
 
-// Handle clear logs action
-if (isset($_GET['action']) && $_GET['action'] === 'clear' && isset($_GET['csrf_token']) && $_GET['csrf_token'] === $_SESSION['csrf_token']) {
+// Handle clear logs action (POST only to prevent CSRF token leakage in URL)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'clear' && isset($_POST['csrf_token']) && $_POST['csrf_token'] === $_SESSION['csrf_token']) {
     $stmt = $conn->prepare("TRUNCATE TABLE activity_logs");
     if ($stmt->execute()) {
         $_SESSION['success'] = "Activity logs cleared successfully!";
@@ -513,29 +513,6 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
     }
 }
 
-// Modify the download handling section for each document type
-// Add this in the download action handler sections of ordinances.php, resolutions.php, and minutes_of_meeting.php:
-
-// For ordinances:
-if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'])) {
-    $id = intval($_GET['id']);
-    logDocumentDownload($id, 'ordinances', $filePath);
-    // ... rest of download code ...
-}
-
-// For resolutions:
-if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'])) {
-    $id = intval($_GET['id']);
-    logDocumentDownload($id, 'resolutions', $filePath);
-    // ... rest of download code ...
-}
-
-// For minutes of meeting:
-if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'])) {
-    $id = intval($_GET['id']);
-    logDocumentDownload($id, 'minutes', $filePath);
-    // ... rest of download code ...
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1154,9 +1131,13 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                     <button class="btn btn-secondary-custom" id="printButton">
                         <i class="fas fa-print me-1"></i> Print
                     </button>
-                    <a href="?action=clear&csrf_token=<?= $_SESSION['csrf_token'] ?>" class="btn btn-danger-custom" onclick="return confirm('Are you sure you want to clear all activity logs? This action cannot be undone.');">
-                        <i class="fas fa-trash me-1"></i> Clear Logs
-                    </a>
+                    <form method="POST" action="" style="display:inline;" onsubmit="return confirm('Are you sure you want to clear all activity logs? This action cannot be undone.');">
+                        <input type="hidden" name="action" value="clear">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        <button type="submit" class="btn btn-danger-custom">
+                            <i class="fas fa-trash me-1"></i> Clear Logs
+                        </button>
+                    </form>
                 </div>
             </div>
             <!-- Filter Box -->
@@ -1218,7 +1199,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download' && isset($_GET['id'
                 <div>
                     <i class="fas fa-file-alt me-2"></i>
                     Showing <?php echo count($logs); ?> of <?php echo $total_logs; ?> logs
-                    <?php if (!empty($search_query) || !empty($filter_action) || !empty($filter_user) || !empty($filter_date)): ?>
+                    <?php if (!empty($search_query) || !empty($filter_action) || !empty($filter_user) || !empty($filter_date) || !empty($filter_user_role)): ?>
                         <span class="text-muted ms-2">(Filtered results)</span>
                     <?php endif; ?>
                 </div>

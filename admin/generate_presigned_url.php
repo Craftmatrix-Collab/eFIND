@@ -4,8 +4,8 @@
  *
  * POST /admin/generate_presigned_url.php
  * Body (JSON): { "doc_type": "resolutions"|"minutes"|"ordinances",
- *                "file_name": "document.pdf",
- *                "content_type": "application/pdf" }
+ *                "file_name": "image.jpg",
+ *                "content_type": "image/jpeg" }
  *
  * Response (JSON): { "success": true, "presigned_url": "...", "object_key": "..." }
  */
@@ -43,7 +43,7 @@ if (!isLoggedIn() && !$isMobileAuth) {
 
 $docType     = $body['doc_type']     ?? '';
 $fileName    = $body['file_name']    ?? '';
-$contentType = $body['content_type'] ?? 'application/octet-stream';
+$contentType = strtolower(trim($body['content_type'] ?? 'application/octet-stream'));
 
 $allowedTypes = ['resolutions', 'minutes', 'ordinances'];
 if (!in_array($docType, $allowedTypes)) {
@@ -58,8 +58,20 @@ if (empty($fileName)) {
     exit;
 }
 
+if ($contentType !== 'application/octet-stream' && strpos($contentType, 'image/') !== 0) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Only image uploads are allowed']);
+    exit;
+}
+
 // Sanitize and build unique object key  (mirrors existing upload path convention)
 $ext        = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+$allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+if (!in_array($ext, $allowedExtensions)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'File type not allowed. Allowed: ' . implode(', ', $allowedExtensions)]);
+    exit;
+}
 $safeName   = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', pathinfo($fileName, PATHINFO_FILENAME));
 $uniqueName = $safeName . '_' . uniqid() . '.' . $ext;
 $objectKey  = $docType . '/' . date('Y/m/') . $uniqueName;

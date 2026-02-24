@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $reference_number = $_POST['reference_number'] ?? '';
     $date_issued = $_POST['date_issued'];
     $description = $_POST['description'];
-    $updated_by = $_SESSION['username']; // Assuming username is stored in session
+    $updated_by = $_SESSION['username'] ?? $_SESSION['staff_username'] ?? 'admin';
 
     // Validate required fields
     if (empty($title) || empty($date_issued) || empty($_FILES["document_file"]["name"])) {
@@ -40,6 +40,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $allowed_types = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
     if (!in_array($file_type, $allowed_types)) {
         $_SESSION['error'] = "Sorry, only PDF, Word, Excel & PowerPoint files are allowed";
+        header("Location: add_documents.php");
+        exit();
+    }
+
+    // Validate actual MIME type (not just extension)
+    $allowed_mimes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $detected_mime = finfo_file($finfo, $_FILES["document_file"]["tmp_name"]);
+    finfo_close($finfo);
+    if (!in_array($detected_mime, $allowed_mimes)) {
+        $_SESSION['error'] = "Invalid file content detected. Only PDF, Word, Excel & PowerPoint files are allowed.";
+        header("Location: add_documents.php");
+        exit();
+    }
+
+    // Require document number for ordinances and resolutions
+    if (in_array($document_type, ['ordinance', 'resolution']) && empty($reference_number)) {
+        $_SESSION['error'] = "Reference/document number is required for ordinances and resolutions.";
         header("Location: add_documents.php");
         exit();
     }
@@ -77,8 +103,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($document_type === 'resolution') {
                 $stmt->bind_param("ssssssss", $title, $reference_number, $reference_number, $date_issued, $description, $description, $target_file, $updated_by);
             } else {
-                $session_number = ''; // not collected by this form
-                $stmt->bind_param("ssssssss", $title, $session_number, $date_issued, $date_issued, $description, $target_file, $reference_number, $updated_by);
+                $session_number = $_POST['session_number'] ?? '';
+                $meeting_date   = $_POST['meeting_date'] ?? $date_issued;
+                $stmt->bind_param("ssssssss", $title, $session_number, $date_issued, $meeting_date, $description, $target_file, $reference_number, $updated_by);
             }
 
             if ($stmt->execute()) {
@@ -243,8 +270,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             
                             <div class="mb-3" id="reference_number_field">
-                                <label for="reference_number" class="form-label">Reference Number</label>
+                                <label for="reference_number" class="form-label" id="reference_number_label">Reference Number</label>
                                 <input type="text" class="form-control" id="reference_number" name="reference_number">
+                            </div>
+
+                            <div class="mb-3 d-none" id="session_number_field">
+                                <label for="session_number" class="form-label required-field">Session Number</label>
+                                <input type="text" class="form-control" id="session_number" name="session_number">
                             </div>
                             
                             <div class="mb-3">
@@ -252,6 +284,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <?php echo isset($_POST['document_type']) && $_POST['document_type'] == 'meeting_minutes' ? 'Date Posted' : 'Date Issued'; ?>
                                 </label>
                                 <input type="date" class="form-control" id="date_issued" name="date_issued" required>
+                            </div>
+
+                            <div class="mb-3 d-none" id="meeting_date_field">
+                                <label for="meeting_date" class="form-label required-field">Meeting Date</label>
+                                <input type="date" class="form-control" id="meeting_date" name="meeting_date">
                             </div>
                             
                             <div class="mb-3">
@@ -291,12 +328,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $(document).ready(function() {
             // Show/hide reference number field based on document type
             $('#document_type').change(function() {
-                if ($(this).val() === 'meeting_minutes') {
+                const type = $(this).val();
+                if (type === 'meeting_minutes') {
                     $('#reference_number_field').hide();
+                    $('#reference_number').removeAttr('required');
+                    $('#session_number_field').removeClass('d-none');
+                    $('#session_number').attr('required', 'required');
+                    $('#meeting_date_field').removeClass('d-none');
+                    $('#meeting_date').attr('required', 'required');
                     $('label[for="date_issued"]').text('Date Posted');
+                    $('#reference_number_label').text('Reference Number');
                 } else {
                     $('#reference_number_field').show();
+                    $('#reference_number').attr('required', 'required');
+                    $('#session_number_field').addClass('d-none');
+                    $('#session_number').removeAttr('required');
+                    $('#meeting_date_field').addClass('d-none');
+                    $('#meeting_date').removeAttr('required');
                     $('label[for="date_issued"]').text('Date Issued');
+                    if (type === 'ordinance') {
+                        $('#reference_number_label').text('Ordinance Number *');
+                    } else if (type === 'resolution') {
+                        $('#reference_number_label').text('Resolution Number *');
+                    } else {
+                        $('#reference_number_label').text('Reference Number');
+                        $('#reference_number').removeAttr('required');
+                    }
                 }
             });
             

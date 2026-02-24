@@ -43,13 +43,15 @@ if (!function_exists('checkActivityLogsTable')) {
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NULL,
                 user_name VARCHAR(255) NULL,
+                user_role VARCHAR(50) NULL,
                 action VARCHAR(100) NOT NULL,
-                description TEXT NOT NULL,
+                description TEXT NULL,
                 details TEXT NULL,
-                ip_address VARCHAR(45) NOT NULL,
+                ip_address VARCHAR(45) NULL,
                 user_agent TEXT NULL,
                 document_id INT NULL,
                 document_type VARCHAR(100) NULL,
+                file_path VARCHAR(500) NULL,
                 log_time DATETIME DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_user_id (user_id),
                 INDEX idx_action (action),
@@ -57,12 +59,31 @@ if (!function_exists('checkActivityLogsTable')) {
                 INDEX idx_document_type (document_type),
                 INDEX idx_ip_address (ip_address)
             )";
-            
+
             if (!$conn->query($createTableQuery)) {
                 error_log("Failed to create activity_logs table: " . $conn->error);
             } else {
                 error_log("Created activity_logs table successfully");
             }
+        } else {
+            // Migrate existing table: add any missing columns
+            $migrations = [
+                'user_role'   => "ALTER TABLE activity_logs ADD COLUMN user_role VARCHAR(50) NULL AFTER user_name",
+                'file_path'   => "ALTER TABLE activity_logs ADD COLUMN file_path VARCHAR(500) NULL",
+                'document_id' => "ALTER TABLE activity_logs ADD COLUMN document_id INT NULL",
+                'user_agent'  => "ALTER TABLE activity_logs ADD COLUMN user_agent TEXT NULL",
+            ];
+            foreach ($migrations as $col => $sql) {
+                $colResult = $conn->query("SHOW COLUMNS FROM activity_logs LIKE '$col'");
+                if ($colResult && $colResult->num_rows == 0) {
+                    if (!$conn->query($sql)) {
+                        error_log("Failed to add $col to activity_logs: " . $conn->error);
+                    }
+                }
+            }
+            // Ensure description and ip_address allow NULL (in case created with NOT NULL)
+            $conn->query("ALTER TABLE activity_logs MODIFY COLUMN description TEXT NULL");
+            $conn->query("ALTER TABLE activity_logs MODIFY COLUMN ip_address VARCHAR(45) NULL");
         }
     }
 }
@@ -73,42 +94,45 @@ if (!function_exists('logActivity')) {
      */
     function logActivity($action, $description = '', $details = '', $user_id = null, $document_id = null, $document_type = null) {
         global $conn;
-        
-        // If user_id is not provided, get from session
-        if ($user_id === null && isset($_SESSION['user_id'])) {
-            $user_id = $_SESSION['user_id'];
+
+        // If user_id not provided, get from session (prefer admin_id for admins)
+        if ($user_id === null) {
+            $user_id = $_SESSION['admin_id'] ?? $_SESSION['user_id'] ?? null;
         }
-        
-        // Validate user_id exists in users table (foreign key constraint)
+
+        // Validate user_id exists in users OR admin_users (prevents nullifying valid admin IDs)
         if ($user_id !== null) {
-            $check_stmt = $conn->prepare("SELECT id FROM users WHERE id = ?");
-            if ($check_stmt) {
-                $check_stmt->bind_param("i", $user_id);
-                $check_stmt->execute();
-                $check_result = $check_stmt->get_result();
-                if ($check_result->num_rows === 0) {
-                    // User doesn't exist, set to null to avoid foreign key error
-                    error_log("User ID $user_id not found in users table, setting to NULL for activity log");
-                    $user_id = null;
+            $found = false;
+            foreach (['users', 'admin_users'] as $tbl) {
+                $chk = $conn->prepare("SELECT id FROM $tbl WHERE id = ?");
+                if ($chk) {
+                    $chk->bind_param("i", $user_id);
+                    $chk->execute();
+                    if ($chk->get_result()->num_rows > 0) {
+                        $found = true;
+                    }
+                    $chk->close();
+                    if ($found) break;
                 }
-                $check_stmt->close();
+            }
+            if (!$found) {
+                error_log("User ID $user_id not found in users or admin_users, setting to NULL");
+                $user_id = null;
             }
         }
-        
-        // Get user name from session or database
-        $user_name = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Unknown User';
-        
-        // Get IP address
+
+        // Get user name and role from session
+        $user_name = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Unknown User';
+        $user_role = $_SESSION['role'] ?? (isset($_SESSION['admin_id']) ? 'admin' : null);
+
+        // Get IP address and user agent
         $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
-        
-        // Get user agent for additional context
         $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        
-        // Prepare and execute the insert statement
-        $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, user_name, action, description, details, ip_address, user_agent, document_id, document_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, user_agent, document_id, document_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if ($stmt) {
-            $stmt->bind_param("issssssis", $user_id, $user_name, $action, $description, $details, $ip_address, $user_agent, $document_id, $document_type);
-            
+            $stmt->bind_param("isssssssis", $user_id, $user_name, $user_role, $action, $description, $details, $ip_address, $user_agent, $document_id, $document_type);
+
             if ($stmt->execute()) {
                 $stmt->close();
                 return true;

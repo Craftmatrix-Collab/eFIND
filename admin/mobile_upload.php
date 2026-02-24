@@ -201,7 +201,7 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
         <!-- Hidden inputs -->
         <input type="file" id="camera-input" class="d-none" accept="image/*" capture="environment" multiple>
         <input type="file" id="video-input"  class="d-none" accept="video/*" capture="environment">
-        <input type="file" id="file-input"   class="d-none" accept="image/*,.pdf" multiple>
+        <input type="file" id="file-input"   class="d-none" accept="image/*" multiple>
 
         <!-- Live camera viewfinder -->
         <div id="camera-viewfinder" class="d-none mb-3" style="position:relative;">
@@ -256,7 +256,7 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
         <!-- Hidden inputs -->
         <input type="file" id="camera-input" class="d-none" accept="image/*" capture="environment" multiple>
         <input type="file" id="video-input"  class="d-none" accept="video/*" capture="environment">
-        <input type="file" id="file-input"   class="d-none" accept="image/*,.pdf" multiple>
+        <input type="file" id="file-input"   class="d-none" accept="image/*" multiple>
 
         <!-- Live camera viewfinder (shown when getUserMedia is used as fallback) -->
         <div id="camera-viewfinder" class="d-none mb-3" style="position:relative;">
@@ -516,6 +516,10 @@ function requestCameraPermission() {
 function addFiles(files) {
   const MAX = 10 * 1024 * 1024; // 10 MB
   files.forEach(f => {
+    if (!f.type || !f.type.startsWith('image/')) {
+      alert(`${f.name} is not an image. Only image uploads are allowed.`);
+      return;
+    }
     if (f.size > MAX) { alert(`${f.name} exceeds 10 MB limit.`); return; }
     if (selectedFiles.find(x => x.name === f.name && x.size === f.size)) return; // skip duplicate
     selectedFiles.push(f);
@@ -561,6 +565,63 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function compressImageBeforeUpload(file) {
+  return new Promise((resolve) => {
+    if (!file.type || !file.type.startsWith('image/')) {
+      resolve(file);
+      return;
+    }
+
+    const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!supportedTypes.includes(file.type)) {
+      resolve(file);
+      return;
+    }
+
+    const img = new Image();
+    const srcUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      const maxDimension = 1920;
+
+      if (width > maxDimension || height > maxDimension) {
+        const ratio = Math.min(maxDimension / width, maxDimension / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(srcUrl);
+        resolve(file);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(srcUrl);
+        if (blob && blob.size > 0 && blob.size < file.size) {
+          resolve(new File([blob], file.name, { type: file.type, lastModified: file.lastModified }));
+          return;
+        }
+        resolve(file);
+      }, file.type, 0.82);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(srcUrl);
+      resolve(file);
+    };
+
+    img.src = srcUrl;
+  });
+}
+
 // ──────────────────────────────────────────────────────────────
 // Step 3 — Upload
 // ──────────────────────────────────────────────────────────────
@@ -577,6 +638,7 @@ async function startUpload() {
 
   for (let i = 0; i < selectedFiles.length; i++) {
     const file = selectedFiles[i];
+    let fileToUpload = file;
     const rowId = `file-progress-${i}`;
 
     progressList.insertAdjacentHTML('beforeend', `
@@ -589,6 +651,10 @@ async function startUpload() {
         <div class="small text-muted mt-1" id="${rowId}-status">Getting upload URL…</div>
       </div>`);
 
+    document.getElementById(`${rowId}-status`).textContent = 'Optimizing image…';
+    fileToUpload = await compressImageBeforeUpload(file);
+    document.getElementById(`${rowId}-status`).textContent = 'Getting upload URL…';
+
     // 1. Request presigned URL from PHP
     let presignedUrl, objectKey;
     try {
@@ -597,8 +663,8 @@ async function startUpload() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           doc_type:     selectedType,
-          file_name:    file.name,
-          content_type: file.type || 'application/octet-stream',
+          file_name:    fileToUpload.name,
+          content_type: fileToUpload.type || 'application/octet-stream',
           session_id:   mobileSession,
         }),
       });
@@ -614,7 +680,7 @@ async function startUpload() {
 
     // 2. Upload directly to MinIO with XHR (for progress)
     try {
-      await uploadToMinio(file, presignedUrl, rowId);
+      await uploadToMinio(fileToUpload, presignedUrl, rowId);
       objectKeys.push(objectKey);
       setFileStatus(rowId, 'success', 'Uploaded ✓');
     } catch (err) {

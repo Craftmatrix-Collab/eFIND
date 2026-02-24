@@ -159,7 +159,7 @@ try {
              VALUES (?, ?, ?, 'upload', ?, ?, ?, ?)"
         );
         $desc = "Uploaded $docLabel via mobile direct-upload";
-        $logStmt->bind_param('issssss', $userId, $uploadedBy, $userRole, $desc, $docType, $newId, $ip);
+        $logStmt->bind_param('issssis', $userId, $uploadedBy, $userRole, $desc, $docType, $newId, $ip);
         $logStmt->execute();
         $logStmt->close();
     }
