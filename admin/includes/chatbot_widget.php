@@ -169,6 +169,7 @@ if ($chatbot_profile_picture_raw !== '') {
         width: 32px;
         height: 32px;
         border-radius: 50%;
+        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -227,6 +228,17 @@ if ($chatbot_profile_picture_raw !== '') {
         color: #999;
         margin-top: 4px;
         display: block;
+    }
+    
+    .chatbot-sources-note {
+        margin: -8px 0 12px 42px;
+        font-size: 12px;
+        color: #6c757d;
+        line-height: 1.4;
+    }
+    
+    .chatbot-sources-note strong {
+        color: #495057;
     }
     
     .typing-indicator {
@@ -644,9 +656,9 @@ function createMessageAvatar(sender) {
     if (sender === 'user' && chatbotUserAvatarUrl) {
         const avatarImg = document.createElement('img');
         avatarImg.src = chatbotUserAvatarUrl;
-        avatarImg.alt = 'User profile picture';
-        avatarImg.loading = 'lazy';
+        avatarImg.alt = '';
         avatarImg.onerror = function() {
+            avatarImg.remove();
             avatarDiv.innerHTML = '<i class="fas fa-user"></i>';
         };
         avatarDiv.appendChild(avatarImg);
@@ -696,20 +708,15 @@ function addMessageToChat(message, sender, time = null, persist = true) {
 
 // Add sources to chat
 function addSourcesToChat(sources, persist = true) {
+    if (!Array.isArray(sources) || sources.length === 0) {
+        return;
+    }
+    
     const messagesContainer = document.getElementById('chatbotMessages');
     
     const sourcesDiv = document.createElement('div');
-    sourcesDiv.className = 'chatbot-message bot-message';
-    sourcesDiv.style.marginTop = '-8px';
-    
-    let sourcesHtml = '<div class="message-content"><div class="message-bubble">';
-    sourcesHtml += '<strong>Sources:</strong><br>';
-    sources.forEach((source, index) => {
-        sourcesHtml += `${index + 1}. ${escapeHtml(source)}<br>`;
-    });
-    sourcesHtml += '</div></div>';
-    
-    sourcesDiv.innerHTML = sourcesHtml;
+    sourcesDiv.className = 'chatbot-sources-note';
+    sourcesDiv.innerHTML = `<strong>Sources:</strong> ${sources.map((source, index) => `${index + 1}. ${escapeHtml(source)}`).join(' • ')}`;
     messagesContainer.appendChild(sourcesDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
