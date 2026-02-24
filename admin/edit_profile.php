@@ -302,8 +302,9 @@ unset($_SESSION['success'], $_SESSION['error']);
                             <div class="card-body text-center">
                                 <div class="profile-picture-container mb-3">
                                     <?php if (!empty($user['profile_picture'])): ?>
+                                        <?php $profile_picture_file = basename((string)$user['profile_picture']); ?>
                                         <img id="profileImagePreview"
-                                             src="uploads/profiles/<?php echo htmlspecialchars($user['profile_picture']); ?>"
+                                             src="uploads/profiles/<?php echo htmlspecialchars($profile_picture_file); ?>"
                                              class="img-thumbnail rounded-circle profile-picture"
                                              alt="Profile Picture"
                                              onerror="this.onerror=null;this.src='images/eFind_logo.png';">

@@ -64,13 +64,13 @@ $objectKeys  = $body['object_keys'] ?? [];
 $uploadedBy  = $_SESSION['username'] ?? $_SESSION['staff_username'] ?? 'admin';
 $datePosted  = date('Y-m-d H:i:s');
 
-// Build the comma-separated image_path from public URLs
+// Build the pipe-separated image_path from public URLs
 $minio      = new MinioS3Client();
 $imagePaths = [];
 foreach ($objectKeys as $key) {
     $imagePaths[] = $minio->getPublicUrl($key);
 }
-$imagePath = implode(',', $imagePaths);
+$imagePath = implode('|', $imagePaths);
 
 $newId = null;
 

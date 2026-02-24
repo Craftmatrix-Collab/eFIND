@@ -376,7 +376,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
         // Clean up associated MinIO files
         if (!empty($minute['image_path'])) {
             $minio = new MinioS3Client();
-            foreach (explode('|', $minute['image_path']) as $fileUrl) {
+            foreach (preg_split('/[|,]/', (string)$minute['image_path']) as $fileUrl) {
                 $fileUrl = trim($fileUrl);
                 if (empty($fileUrl) || strpos($fileUrl, 'http') !== 0) continue;
                 $parsed = parse_url($fileUrl);
@@ -2203,7 +2203,10 @@ $count_stmt->close();
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
-                    const imageSrcs = this.getAttribute('data-image-src').split('|');
+                    const imageSrcs = this.getAttribute('data-image-src')
+                        .split(/[|,]/)
+                        .map(src => src.trim())
+                        .filter(Boolean);
                     const carouselInner = document.getElementById('carouselInner');
                     const carouselIndicators = document.getElementById('carouselIndicators');
                     const carouselPrev = document.querySelector('.carousel-control-prev');
@@ -2313,7 +2316,10 @@ $count_stmt->close();
 
                             const currentFileInfo = document.getElementById('currentImageInfo');
                             if (minute.image_path) {
-                                const imagePaths = minute.image_path.split('|');
+                                const imagePaths = minute.image_path
+                                    .split(/[|,]/)
+                                    .map(path => path.trim())
+                                    .filter(Boolean);
                                 let imageLinks = '';
                                 imagePaths.forEach(path => {
                                     imageLinks += `<a href="${path}" target="_blank" class="d-block">View Image</a>`;
@@ -2353,7 +2359,10 @@ $count_stmt->close();
             // OCR button functionality
             document.querySelectorAll('.ocr-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
-                    const imageSrcs = btn.getAttribute('data-image-src').split('|');
+                    const imageSrcs = btn.getAttribute('data-image-src')
+                        .split(/[|,]/)
+                        .map(src => src.trim())
+                        .filter(Boolean);
                     const minuteId = btn.closest('tr').getAttribute('data-id');
                     const ocrLoading = document.getElementById('ocrLoading');
                     const ocrResult = document.getElementById('ocrResult');

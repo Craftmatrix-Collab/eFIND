@@ -185,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
                 $target_path = $upload_dir . $file_name;
                 if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_path)) {
-                    $profile_picture = 'uploads/profiles/' . $file_name;
+                    $profile_picture = $file_name;
                 } else {
                     $_SESSION['error'] = "Failed to upload profile picture.";
                     header("Location: " . $_SERVER['PHP_SELF']);
@@ -245,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 // Delete old file if exists
                 if (!empty($existing_profile_picture)) {
-                    @unlink(__DIR__ . '/' . $existing_profile_picture);
+                    @unlink(__DIR__ . '/uploads/profiles/' . basename($existing_profile_picture));
                 }
                 $upload_dir = __DIR__ . '/uploads/profiles/';
                 if (!is_dir($upload_dir)) {
@@ -254,7 +254,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
                 $target_path = $upload_dir . $file_name;
                 if (saveOptimizedUploadedImage($_FILES['profile_picture'], $target_path)) {
-                    $profile_picture = 'uploads/profiles/' . $file_name;
+                    $profile_picture = $file_name;
                 } else {
                     $_SESSION['error'] = "Failed to upload profile picture.";
                     header("Location: " . $_SERVER['PHP_SELF']);
@@ -1175,7 +1175,7 @@ $count_stmt->close();
                                         </td>
                                         <td>
                                             <?php if (!empty($user['profile_picture'])): ?>
-                                                <img src="<?php echo htmlspecialchars($user['profile_picture']); ?>?t=<?php echo time(); ?>"
+                                                <img src="<?php echo htmlspecialchars(strpos($user['profile_picture'], 'uploads/profiles/') === 0 ? $user['profile_picture'] : 'uploads/profiles/' . ltrim($user['profile_picture'], '/')); ?>?t=<?php echo time(); ?>"
                                                      alt="Profile Picture"
                                                      class="rounded-circle"
                                                      width="40"
@@ -1482,6 +1482,11 @@ $count_stmt->close();
             url.searchParams.set('page', 1); // Reset to first page when changing limit
             window.location.href = url.toString();
         }
+        function normalizeProfilePicturePath(path) {
+            if (!path) return '';
+            if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:')) return path;
+            return path.startsWith('uploads/profiles/') ? path : `uploads/profiles/${path.replace(/^\/+/, '')}`;
+        }
         document.addEventListener('DOMContentLoaded', function() {
             // Initialize tooltips
             const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -1543,7 +1548,7 @@ $count_stmt->close();
                             if (user.profile_picture) {
                                 currentProfilePictureInfo.innerHTML = `
                                     <strong>Current Profile Picture:</strong><br>
-                                    <img src="uploads/profiles/${user.profile_picture}?t=${new Date().getTime()}"
+                                    <img src="${normalizeProfilePicturePath(user.profile_picture)}?t=${new Date().getTime()}"
                                          alt="Profile Picture"
                                          class="rounded-circle mt-2"
                                          width="60"

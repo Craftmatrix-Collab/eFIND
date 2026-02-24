@@ -1853,7 +1853,11 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
-                    const imageSrc = this.getAttribute('data-image-src');
+                    const imageSrc = (this.getAttribute('data-image-src') || '')
+                        .split(/[|,]/)
+                        .map(src => src.trim())
+                        .filter(Boolean)[0] || '';
+                    if (!imageSrc) return;
                     const modalImage = document.getElementById('modalImage');
                     const downloadLink = document.getElementById('downloadImage');
                     

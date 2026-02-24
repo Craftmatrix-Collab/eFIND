@@ -43,7 +43,9 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
             $profile_picture = $_SESSION['profile_picture'] ?? '';
             $full_name = $_SESSION['full_name'] ?? 'Admin';
             if (!empty($profile_picture)) {
-                $profile_path = "uploads/profiles/" . $profile_picture;
+                $profile_path = (strpos($profile_picture, 'uploads/profiles/') === 0)
+                    ? $profile_picture
+                    : 'uploads/profiles/' . ltrim($profile_picture, '/');
                 if (file_exists($profile_path)) {
                     echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">';
                 } else {
@@ -95,8 +97,11 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                         <div class="card mb-4">
                             <div class="card-body text-center">
                                 <div class="mb-3">
-                                    <?php if (!empty($_np['profile_picture']) && file_exists(__DIR__ . '/../uploads/profiles/' . $_np['profile_picture'])): ?>
-                                        <img src="uploads/profiles/<?php echo htmlspecialchars($_np['profile_picture']); ?>"
+                                    <?php
+                                    $_np_profile_file = !empty($_np['profile_picture']) ? basename((string)$_np['profile_picture']) : '';
+                                    ?>
+                                    <?php if (!empty($_np_profile_file) && file_exists(__DIR__ . '/../uploads/profiles/' . $_np_profile_file)): ?>
+                                        <img src="uploads/profiles/<?php echo htmlspecialchars($_np_profile_file); ?>"
                                              class="img-thumbnail rounded-circle"
                                              style="width:150px;height:150px;object-fit:cover;border:3px solid #4361ee;"
                                              alt="Profile Picture">

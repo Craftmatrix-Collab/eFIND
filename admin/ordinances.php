@@ -445,7 +445,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
         // Clean up associated MinIO files
         if (!empty($ordinance['image_path'])) {
             $minio = new MinioS3Client();
-            foreach (explode('|', $ordinance['image_path']) as $fileUrl) {
+            foreach (preg_split('/[|,]/', (string)$ordinance['image_path']) as $fileUrl) {
                 $fileUrl = trim($fileUrl);
                 if (empty($fileUrl) || strpos($fileUrl, 'http') !== 0) continue;
                 $parsed = parse_url($fileUrl);
@@ -2316,7 +2316,11 @@ $count_stmt->close();
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
-                    const imageSrc = this.getAttribute('data-image-src');
+                    const imageSrc = (this.getAttribute('data-image-src') || '')
+                        .split(/[|,]/)
+                        .map(src => src.trim())
+                        .filter(Boolean)[0] || '';
+                    if (!imageSrc) return;
                     const modalImage = document.getElementById('modalImage');
                     const downloadLink = document.getElementById('downloadImage');
                     modalImage.src = imageSrc;
@@ -2371,9 +2375,14 @@ $count_stmt->close();
                             document.getElementById('editExistingImagePath').value = ordinance.image_path || '';
                             const currentFileInfo = document.getElementById('currentImageInfo');
                             if (ordinance.image_path) {
+                                const imagePaths = ordinance.image_path
+                                    .split(/[|,]/)
+                                    .map(path => path.trim())
+                                    .filter(Boolean);
+                                const imageLinks = imagePaths.map(path => `<a href="${path}" target="_blank" class="d-block">View Image</a>`).join('');
                                 currentFileInfo.innerHTML = `
-                                    <strong>Current Image:</strong>
-                                    <a href="${ordinance.image_path}" target="_blank">View Image</a>
+                                    <strong>Current Image(s):</strong>
+                                    ${imageLinks}
                                 `;
                             } else {
                                 currentFileInfo.innerHTML = '<strong>No image uploaded</strong>';
@@ -2411,7 +2420,10 @@ $count_stmt->close();
             // OCR button functionality
             document.querySelectorAll('.ocr-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
-                    var imageSrc = btn.getAttribute('data-image-src');
+                    var imageSrc = (btn.getAttribute('data-image-src') || '')
+                        .split(/[|,]/)
+                        .map(src => src.trim())
+                        .filter(Boolean)[0] || '';
                     var ordinanceId = btn.closest('tr').getAttribute('data-id');
                     var ocrLoading = document.getElementById('ocrLoading');
                     var ocrResult = document.getElementById('ocrResult');
