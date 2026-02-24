@@ -36,7 +36,10 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 // Handle file upload
 $profile_picture = '';
 if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-    $upload_dir = 'uploads/profiles/';
+    $upload_dir = __DIR__ . '/uploads/profiles/';
+    if (!is_dir($upload_dir)) {
+        mkdir($upload_dir, 0755, true);
+    }
     $file_ext = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
     $file_name = uniqid() . '.' . $file_ext;
     $target_file = $upload_dir . $file_name;

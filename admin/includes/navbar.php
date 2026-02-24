@@ -438,7 +438,7 @@ $(document).ready(function() {
     // Load edit form when edit profile modal is shown
     $('#editProfileModal').on('show.bs.modal', function () {
         $.ajax({
-            url: 'edit_profile_content',
+            url: 'edit_profile_content.php',
             type: 'GET',
             success: function(response) {
                 $('#editProfileModalBody').html(response);
