@@ -20,6 +20,7 @@ if (!isAdmin()) {
     header('Location: dashboard.php');
     exit();
 }
+$is_superadmin_users_page = function_exists('isSuperAdmin') && isSuperAdmin();
 
 // ── AJAX: Send email verification OTP ────────────────────────────────────────
 if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
@@ -320,12 +321,37 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     
     // Determine which table to delete from
     $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
-    // Fetch username before deleting for the log
-    $delStmt = $conn->prepare("SELECT username FROM $table WHERE id = ?");
+
+    $targetLookupSql = $table === 'admin_users'
+        ? "SELECT username, CASE WHEN LOWER(username) = 'superadmin' THEN 'superadmin' ELSE 'admin' END AS role FROM $table WHERE id = ?"
+        : "SELECT username, role FROM $table WHERE id = ?";
+    $delStmt = $conn->prepare($targetLookupSql);
+    if (!$delStmt) {
+        $_SESSION['error'] = "Error checking delete permission: " . $conn->error;
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
     $delStmt->bind_param("i", $id);
     $delStmt->execute();
     $delRow = $delStmt->get_result()->fetch_assoc();
     $delStmt->close();
+
+    if (!$delRow) {
+        $_SESSION['error'] = "User not found.";
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
+
+    $targetRole = strtolower((string)($delRow['role'] ?? ''));
+    $canDeleteTarget = $is_superadmin_users_page
+        ? in_array($targetRole, ['admin', 'staff'], true)
+        : ($user_type === 'users' && $targetRole === 'staff');
+    if (!$canDeleteTarget) {
+        $_SESSION['error'] = "You do not have permission to delete this user.";
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
+
     $deletedUsername = $delRow['username'] ?? "ID:$id";
     $stmt = $conn->prepare("DELETE FROM $table WHERE id = ?");
     $stmt->bind_param("i", $id);
@@ -1453,6 +1479,15 @@ $count_stmt->close();
                                             <?php endif; ?>
                                         </td>
                                         <td>
+                                            <?php
+                                            $targetRole = strtolower((string)($user['role'] ?? ''));
+                                            if ($user['user_type'] === 'admin_users' && strtolower((string)($user['username'] ?? '')) === 'superadmin') {
+                                                $targetRole = 'superadmin';
+                                            }
+                                            $canDeleteRow = $is_superadmin_users_page
+                                                ? in_array($targetRole, ['admin', 'staff'], true)
+                                                : ($user['user_type'] === 'users' && $targetRole === 'staff');
+                                            ?>
                                             <div class="d-flex gap-1 justify-content-center">
                                                 <button class="btn btn-sm btn-outline-primary p-1 edit-btn"
                                                         data-id="<?php echo $user['id']; ?>"
@@ -1462,14 +1497,16 @@ $count_stmt->close();
                                                         title="Edit">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
-                                                <a href="?action=delete&id=<?php echo $user['id']; ?>&user_type=<?php echo $user['user_type']; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>"
-                                                   class="btn btn-sm btn-outline-danger p-1"
-                                                   onclick="return confirm('Are you sure you want to delete this user?');"
-                                                   data-bs-toggle="tooltip"
-                                                   data-bs-placement="top"
-                                                   title="Delete">
-                                                    <i class="fas fa-trash"></i>
-                                                </a>
+                                                <?php if ($canDeleteRow): ?>
+                                                    <a href="?action=delete&id=<?php echo $user['id']; ?>&user_type=<?php echo $user['user_type']; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>"
+                                                       class="btn btn-sm btn-outline-danger p-1"
+                                                       onclick="return confirm('Are you sure you want to delete this user?');"
+                                                       data-bs-toggle="tooltip"
+                                                       data-bs-placement="top"
+                                                       title="Delete">
+                                                        <i class="fas fa-trash"></i>
+                                                    </a>
+                                                <?php endif; ?>
                                             </div>
                                         </td>
                                     </tr>
