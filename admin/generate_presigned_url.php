@@ -23,16 +23,25 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $body = json_decode(file_get_contents('php://input'), true);
+if (!is_array($body)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Invalid request payload']);
+    exit;
+}
 
 // Allow mobile session token as alternative to login
 $mobileSession = preg_replace('/[^a-f0-9]/', '', $body['session_id'] ?? '');
 $isMobileAuth  = false;
+$mobileSessionDocType = '';
 if ($mobileSession) {
     $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (session_id VARCHAR(64) PRIMARY KEY, doc_type VARCHAR(50) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'waiting', result_id INT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    $st = $conn->prepare("SELECT session_id FROM mobile_upload_sessions WHERE session_id = ? AND status = 'waiting'");
+    $st = $conn->prepare("SELECT session_id, doc_type FROM mobile_upload_sessions WHERE session_id = ? AND status = 'waiting'");
     $st->bind_param('s', $mobileSession);
     $st->execute();
-    $isMobileAuth = $st->get_result()->num_rows > 0;
+    $sessionRow = $st->get_result()->fetch_assoc();
+    $isMobileAuth = $sessionRow !== null;
+    $mobileSessionDocType = (string)($sessionRow['doc_type'] ?? '');
+    $st->close();
 }
 
 if (!isLoggedIn() && !$isMobileAuth) {
@@ -52,6 +61,12 @@ if (!in_array($docType, $allowedTypes)) {
     exit;
 }
 
+if ($isMobileAuth && $mobileSessionDocType !== '' && $mobileSessionDocType !== $docType) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Session document type mismatch']);
+    exit;
+}
+
 if (empty($fileName)) {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'file_name is required']);
@@ -64,15 +79,36 @@ if ($contentType !== 'application/octet-stream' && strpos($contentType, 'image/'
     exit;
 }
 
-// Sanitize and build unique object key  (mirrors existing upload path convention)
-$ext        = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+// Sanitize and build unique object key (mirrors existing upload path convention)
 $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
-if (!in_array($ext, $allowedExtensions)) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'File type not allowed. Allowed: ' . implode(', ', $allowedExtensions)]);
-    exit;
+$mimeToExtension = [
+    'image/jpeg' => 'jpg',
+    'image/jpg'  => 'jpg',
+    'image/png'  => 'png',
+    'image/gif'  => 'gif',
+    'image/bmp'  => 'bmp',
+    'image/webp' => 'webp',
+];
+
+$ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+if ($ext === '' || !in_array($ext, $allowedExtensions, true)) {
+    $fallbackExt = $mimeToExtension[$contentType] ?? null;
+    if ($fallbackExt === null) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Unsupported image format. Please use JPG, PNG, GIF, BMP, or WEBP.']);
+        exit;
+    }
+    $ext = $fallbackExt;
 }
-$safeName   = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', pathinfo($fileName, PATHINFO_FILENAME));
+
+$baseName = trim((string)pathinfo($fileName, PATHINFO_FILENAME));
+if ($baseName === '') {
+    $baseName = 'image';
+}
+$safeName   = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', $baseName);
+if ($safeName === '') {
+    $safeName = 'image';
+}
 $uniqueName = $safeName . '_' . uniqid() . '.' . $ext;
 $objectKey  = $docType . '/' . date('Y/m/') . $uniqueName;
 

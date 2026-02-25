@@ -23,6 +23,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/minio_helper.php';
 require_once __DIR__ . '/includes/activity_logger.php';
+const MAX_MOBILE_UPLOAD_FILES = 8;
 
 header('Content-Type: application/json');
 
@@ -32,17 +33,26 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$body    = json_decode(file_get_contents('php://input'), true);
+$body = json_decode(file_get_contents('php://input'), true);
+if (!is_array($body)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Invalid request payload']);
+    exit;
+}
 
 // Allow mobile session token as alternative to login
 $mobileSession = preg_replace('/[^a-f0-9]/', '', $body['session_id'] ?? '');
 $isMobileAuth  = false;
+$mobileSessionDocType = '';
 if ($mobileSession) {
     $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (session_id VARCHAR(64) PRIMARY KEY, doc_type VARCHAR(50) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'waiting', result_id INT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    $st = $conn->prepare("SELECT session_id FROM mobile_upload_sessions WHERE session_id = ? AND status = 'waiting'");
+    $st = $conn->prepare("SELECT session_id, doc_type FROM mobile_upload_sessions WHERE session_id = ? AND status = 'waiting'");
     $st->bind_param('s', $mobileSession);
     $st->execute();
-    $isMobileAuth = $st->get_result()->num_rows > 0;
+    $sessionRow = $st->get_result()->fetch_assoc();
+    $isMobileAuth = $sessionRow !== null;
+    $mobileSessionDocType = (string)($sessionRow['doc_type'] ?? '');
+    $st->close();
 }
 
 if (!isLoggedIn() && !$isMobileAuth) {
@@ -60,17 +70,8 @@ if (!in_array($docType, $allowedTypes)) {
     exit;
 }
 
-$objectKeys  = $body['object_keys'] ?? [];
-$uploadedBy  = $_SESSION['username'] ?? $_SESSION['staff_username'] ?? 'admin';
+$uploadedBy  = $_SESSION['username'] ?? $_SESSION['staff_username'] ?? $_SESSION['admin_username'] ?? ($isMobileAuth ? 'mobile' : 'admin');
 $datePosted  = date('Y-m-d H:i:s');
-
-// Build the pipe-separated image_path from public URLs
-$minio      = new MinioS3Client();
-$imagePaths = [];
-foreach ($objectKeys as $key) {
-    $imagePaths[] = $minio->getPublicUrl($key);
-}
-$imagePath = implode('|', $imagePaths);
 
 $newId = null;
 
@@ -159,16 +160,92 @@ function resolveActivityLogUserId(mysqli $conn): ?int
     return null;
 }
 
+/**
+ * Normalize optional date values to YYYY-MM-DD or null.
+ */
+function normalizeOptionalDate($value, string $fieldName): ?string
+{
+    $date = trim((string)($value ?? ''));
+    if ($date === '') {
+        return null;
+    }
+
+    $dt = DateTime::createFromFormat('Y-m-d', $date);
+    if (!$dt || $dt->format('Y-m-d') !== $date) {
+        throw new Exception("Invalid {$fieldName}. Expected YYYY-MM-DD.");
+    }
+
+    return $date;
+}
+
+/**
+ * Keep only valid image object keys for the selected document type.
+ */
+function sanitizeObjectKeys($rawObjectKeys, string $docType): array
+{
+    if (!is_array($rawObjectKeys)) {
+        return [];
+    }
+
+    $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+    $cleanKeys = [];
+    foreach ($rawObjectKeys as $key) {
+        if (!is_string($key)) {
+            continue;
+        }
+
+        $normalizedKey = ltrim(trim($key), '/');
+        if ($normalizedKey === '' || strpos($normalizedKey, $docType . '/') !== 0) {
+            continue;
+        }
+
+        $ext = strtolower(pathinfo($normalizedKey, PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowedExtensions, true)) {
+            continue;
+        }
+
+        $cleanKeys[$normalizedKey] = true;
+    }
+
+    return array_keys($cleanKeys);
+}
+
 try {
+    if ($isMobileAuth && $mobileSessionDocType !== '' && $mobileSessionDocType !== $docType) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Session document type mismatch']);
+        exit;
+    }
+
+    $objectKeys = sanitizeObjectKeys($body['object_keys'] ?? [], $docType);
+    if (count($objectKeys) === 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'No valid uploaded images were provided']);
+        exit;
+    }
+    if ($isMobileAuth && count($objectKeys) > MAX_MOBILE_UPLOAD_FILES) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Too many images in one upload. Maximum is ' . MAX_MOBILE_UPLOAD_FILES]);
+        exit;
+    }
+
+    // Build the pipe-separated image_path from public URLs
+    $minio = new MinioS3Client();
+    $imagePaths = [];
+    foreach ($objectKeys as $key) {
+        $imagePaths[] = $minio->getPublicUrl($key);
+    }
+    $imagePath = implode('|', $imagePaths);
+
     ensureImagePathColumns($conn, $docType);
 
     if ($docType === 'resolutions') {
         $title            = $body['title']             ?? '';
         $description      = $body['description']       ?? '';
         $resolutionNumber = $body['resolution_number'] ?? '';
-        $resolutionDate   = $body['resolution_date']   ?? null;
+        $resolutionDate   = normalizeOptionalDate($body['resolution_date'] ?? null, 'resolution_date');
         $referenceNumber  = $body['reference_number']  ?? '';
-        $dateIssued       = $body['date_issued']       ?? null;
+        $dateIssued       = normalizeOptionalDate($body['date_issued'] ?? null, 'date_issued');
         $content          = $body['content']           ?? '';
 
         $stmt = $conn->prepare(
@@ -188,7 +265,7 @@ try {
     } elseif ($docType === 'minutes') {
         $title           = $body['title']           ?? '';
         $sessionNumber   = $body['session_number']  ?? '';
-        $meetingDate     = $body['meeting_date']    ?? null;
+        $meetingDate     = normalizeOptionalDate($body['meeting_date'] ?? null, 'meeting_date');
         $referenceNumber = $body['reference_number'] ?? '';
         $content         = $body['content']         ?? '';
 
@@ -210,10 +287,13 @@ try {
         $title            = $body['title']             ?? '';
         $description      = $body['description']       ?? '';
         $ordinanceNumber  = $body['ordinance_number']  ?? '';
-        $ordinanceDate    = $body['ordinance_date']    ?? null;
-        $status           = $body['status']            ?? 'Active';
+        $ordinanceDate    = normalizeOptionalDate($body['ordinance_date'] ?? null, 'ordinance_date');
+        $status           = trim((string)($body['status'] ?? 'Active'));
+        if ($status === '') {
+            $status = 'Active';
+        }
         $referenceNumber  = $body['reference_number']  ?? '';
-        $dateIssued       = $body['date_issued']       ?? null;
+        $dateIssued       = normalizeOptionalDate($body['date_issued'] ?? null, 'date_issued');
         $content          = $body['content']           ?? '';
         $filePath         = $imagePath; // ordinances also stores as file_path
 

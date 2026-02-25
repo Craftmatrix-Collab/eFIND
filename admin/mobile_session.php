@@ -27,6 +27,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $body    = json_decode(file_get_contents('php://input'), true) ?? [];
     $docType = preg_replace('/[^a-z_]/', '', $body['doc_type'] ?? '');
+    $allowedTypes = ['resolutions', 'minutes', 'ordinances'];
+    if (!in_array($docType, $allowedTypes, true)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Invalid doc_type']);
+        exit;
+    }
     $sid     = bin2hex(random_bytes(16));
     $stmt    = $conn->prepare("INSERT INTO mobile_upload_sessions (session_id, doc_type) VALUES (?,?)");
     $stmt->bind_param('ss', $sid, $docType);

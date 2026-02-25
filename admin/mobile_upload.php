@@ -186,11 +186,6 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
             <i class="fas fa-camera fa-lg"></i>
             <span class="small">Take Photo</span>
           </button>
-          <button class="btn btn-outline-primary flex-fill py-3 d-flex flex-column align-items-center gap-1"
-                  onclick="openCameraVideo()">
-            <i class="fas fa-video fa-lg"></i>
-            <span class="small">Record Video</span>
-          </button>
           <button class="btn btn-outline-secondary flex-fill py-3 d-flex flex-column align-items-center gap-1"
                   onclick="document.getElementById('file-input').click()">
             <i class="fas fa-folder-open fa-lg"></i>
@@ -200,7 +195,6 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
 
         <!-- Hidden inputs -->
         <input type="file" id="camera-input" class="d-none" accept="image/*" capture="environment" multiple>
-        <input type="file" id="video-input"  class="d-none" accept="video/*" capture="environment">
         <input type="file" id="file-input"   class="d-none" accept="image/*" multiple>
 
         <!-- Live camera viewfinder -->
@@ -241,11 +235,6 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
             <i class="fas fa-camera fa-lg"></i>
             <span class="small">Take Photo</span>
           </button>
-          <button class="btn btn-outline-primary flex-fill py-3 d-flex flex-column align-items-center gap-1"
-                  onclick="openCameraVideo()">
-            <i class="fas fa-video fa-lg"></i>
-            <span class="small">Record Video</span>
-          </button>
           <button class="btn btn-outline-secondary flex-fill py-3 d-flex flex-column align-items-center gap-1"
                   onclick="document.getElementById('file-input').click()">
             <i class="fas fa-folder-open fa-lg"></i>
@@ -255,7 +244,6 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
 
         <!-- Hidden inputs -->
         <input type="file" id="camera-input" class="d-none" accept="image/*" capture="environment" multiple>
-        <input type="file" id="video-input"  class="d-none" accept="video/*" capture="environment">
         <input type="file" id="file-input"   class="d-none" accept="image/*" multiple>
 
         <!-- Live camera viewfinder (shown when getUserMedia is used as fallback) -->
@@ -307,6 +295,8 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
 let selectedType    = '<?= $preselectedType ?>';
 let selectedFiles   = [];
 let currentStep     = 1;
+let uploadInProgress = false;
+const MAX_MOBILE_FILES = 8;
 const mobileSession = '<?= $mobileSession ?>';
 const autoCameraMode = <?= $autoCameraMode ? 'true' : 'false' ?>;
 
@@ -377,11 +367,16 @@ async function notifyDesktopUploadComplete(payload) {
 // ──────────────────────────────────────────────────────────────
 function goToStep(n) {
   [1, 2, 3].forEach(i => {
-    document.getElementById(`step-${i}`).classList.toggle('d-none', i !== n);
+    const stepEl = document.getElementById(`step-${i}`);
+    if (stepEl) {
+      stepEl.classList.toggle('d-none', i !== n);
+    }
     const dot = document.getElementById(`dot-${i}`);
-    dot.classList.remove('active', 'complete');
-    if (i < n)  dot.classList.add('complete');
-    if (i === n) dot.classList.add('active');
+    if (dot) {
+      dot.classList.remove('active', 'complete');
+      if (i < n)  dot.classList.add('complete');
+      if (i === n) dot.classList.add('active');
+    }
   });
   currentStep = n;
   if (n !== 2) stopCamera();
@@ -490,7 +485,7 @@ function validateDirectMode() {
   if (!btn) return;
   const req = document.querySelectorAll('#meta-fields-direct [required]');
   const metaOk = [...req].every(el => el.value.trim() !== '');
-  btn.disabled = !(metaOk && selectedFiles.length > 0);
+  btn.disabled = uploadInProgress || !(metaOk && selectedFiles.length > 0);
 }
 
 function goToStep2() {
@@ -503,11 +498,9 @@ function goToStep2() {
 // ──────────────────────────────────────────────────────────────
 const fileInput   = document.getElementById('file-input');
 const cameraInput = document.getElementById('camera-input');
-const videoInput  = document.getElementById('video-input');
 
 fileInput.addEventListener('change',   e => addFiles([...e.target.files]));
 cameraInput.addEventListener('change', e => addFiles([...e.target.files]));
-videoInput.addEventListener('change',  e => addFiles([...e.target.files]));
 
 // ── Camera helpers ──
 let cameraStream = null;
@@ -535,10 +528,6 @@ function openCamera() {
   }
   // Native capture sheet fallback
   cameraInput.click();
-}
-
-function openCameraVideo() {
-  videoInput.click();
 }
 
 function ensureLiveStreamSocket() {
@@ -697,7 +686,12 @@ function requestCameraPermission() {
 
 function addFiles(files) {
   const MAX = 10 * 1024 * 1024; // 10 MB
+  let maxFilesReached = false;
   files.forEach(f => {
+    if (selectedFiles.length >= MAX_MOBILE_FILES) {
+      maxFilesReached = true;
+      return;
+    }
     if (!f.type || !f.type.startsWith('image/')) {
       alert(`${f.name} is not an image. Only image uploads are allowed.`);
       return;
@@ -706,21 +700,24 @@ function addFiles(files) {
     if (selectedFiles.find(x => x.name === f.name && x.size === f.size)) return; // skip duplicate
     selectedFiles.push(f);
   });
+  if (maxFilesReached) {
+    alert(`You can upload up to ${MAX_MOBILE_FILES} images per document.`);
+  }
   renderFileList();
   const n2 = document.getElementById('btn-next-2');
-  if (n2) n2.disabled = selectedFiles.length === 0;
+  if (n2) n2.disabled = uploadInProgress || selectedFiles.length === 0;
   validateDirectMode();
   // reset input so same file can be re-added if removed
   fileInput.value = '';
   cameraInput.value = '';
-  videoInput.value = '';
 }
 
 function removeFile(idx) {
+  if (uploadInProgress) return;
   selectedFiles.splice(idx, 1);
   renderFileList();
   const n2 = document.getElementById('btn-next-2');
-  if (n2) n2.disabled = selectedFiles.length === 0;
+  if (n2) n2.disabled = uploadInProgress || selectedFiles.length === 0;
   validateDirectMode();
 }
 
@@ -810,15 +807,37 @@ function compressImageBeforeUpload(file) {
 // Step 3 — Upload
 // ──────────────────────────────────────────────────────────────
 async function startUpload() {
+  if (uploadInProgress) return;
+  if (selectedFiles.length === 0) {
+    showResult(false, 'Please capture at least one image before uploading.');
+    return;
+  }
+
+  uploadInProgress = true;
+  validateDirectMode();
+  const stepUploadBtn = document.getElementById('btn-next-2');
+  if (stepUploadBtn) stepUploadBtn.disabled = true;
+
   // In direct mode, hide the combined form and show step-3
   const dm = document.getElementById('direct-mode');
-  if (dm) dm.classList.add('d-none');
-  document.getElementById('step-3').classList.remove('d-none');
+  if (dm) {
+    dm.classList.add('d-none');
+    document.getElementById('step-3').classList.remove('d-none');
+  } else {
+    goToStep(3);
+  }
+  const stepHeader = document.querySelector('#step-3 .card-header');
+  if (stepHeader) {
+    stepHeader.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading…';
+  }
+  const resultEl = document.getElementById('upload-result');
+  if (resultEl) resultEl.innerHTML = '';
+
   const progressList = document.getElementById('upload-progress-list');
   progressList.innerHTML = '';
 
   const objectKeys = [];
-  let allOk = true;
+  const failedFiles = [];
 
   for (let i = 0; i < selectedFiles.length; i++) {
     const file = selectedFiles[i];
@@ -842,39 +861,28 @@ async function startUpload() {
     // 1. Request presigned URL from PHP
     let presignedUrl, objectKey;
     try {
-      const res = await fetch('generate_presigned_url.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          doc_type:     selectedType,
-          file_name:    fileToUpload.name,
-          content_type: fileToUpload.type || 'application/octet-stream',
-          session_id:   mobileSession,
-        }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Failed to get presigned URL');
-      presignedUrl = data.presigned_url;
-      objectKey    = data.object_key;
+      ({ presignedUrl, objectKey } = await requestPresignedUrlWithRetry(fileToUpload, rowId));
     } catch (err) {
       setFileStatus(rowId, 'danger', `Error: ${err.message}`);
-      allOk = false;
+      failedFiles.push(file.name);
       continue;
     }
 
     // 2. Upload directly to MinIO with XHR (for progress)
     try {
-      await uploadToMinio(fileToUpload, presignedUrl, rowId);
+      await uploadToMinioWithRetry(fileToUpload, presignedUrl, rowId);
       objectKeys.push(objectKey);
       setFileStatus(rowId, 'success', 'Uploaded ✓');
     } catch (err) {
       setFileStatus(rowId, 'danger', `Upload failed: ${err.message}`);
-      allOk = false;
+      failedFiles.push(file.name);
     }
   }
 
-  if (!allOk || objectKeys.length === 0) {
-    showResult(false, 'Some files failed to upload. Please try again.');
+  if (failedFiles.length > 0 || objectKeys.length === 0) {
+    uploadInProgress = false;
+    const failedCount = failedFiles.length || selectedFiles.length;
+    showResult(false, `${failedCount} of ${selectedFiles.length} image(s) failed to upload. Check the red rows and tap Go Back to retry.`);
     return;
   }
 
@@ -887,16 +895,96 @@ async function startUpload() {
       body: JSON.stringify({ doc_type: selectedType, object_keys: objectKeys, session_id: mobileSession, ...meta }),
     });
     const data = await res.json();
-    if (!data.success) throw new Error(data.error || 'DB save failed');
+    if (!res.ok || !data.success) throw new Error(data.error || `DB save failed (HTTP ${res.status})`);
     await notifyDesktopUploadComplete({
       title: meta.title || 'Document',
       uploaded_by: 'mobile',
       result_id: data.id || null,
     });
+    uploadInProgress = false;
     showResult(true, data);
   } catch (err) {
+    uploadInProgress = false;
     showResult(false, err.message);
   }
+}
+
+async function requestPresignedUrlWithRetry(fileToUpload, rowId, maxAttempts = 3) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) {
+      const statusEl = document.getElementById(`${rowId}-status`);
+      if (statusEl) statusEl.textContent = `Retrying URL request (${attempt}/${maxAttempts})…`;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await fetch('generate_presigned_url.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          doc_type:     selectedType,
+          file_name:    fileToUpload.name,
+          content_type: fileToUpload.type || 'application/octet-stream',
+          session_id:   mobileSession,
+        }),
+      });
+
+      const raw = await res.text();
+      let data = {};
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch (parseErr) {
+          throw new Error(`Server returned invalid JSON (HTTP ${res.status})`);
+        }
+      }
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Failed to get presigned URL (HTTP ${res.status})`);
+      }
+
+      return {
+        presignedUrl: data.presigned_url,
+        objectKey: data.object_key,
+      };
+    } catch (err) {
+      lastError = err.name === 'AbortError' ? new Error('Request timed out') : err;
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 350 * attempt));
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  throw lastError || new Error('Failed to get presigned URL');
+}
+
+async function uploadToMinioWithRetry(file, presignedUrl, rowId, maxAttempts = 2) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) {
+      const statusEl = document.getElementById(`${rowId}-status`);
+      if (statusEl) statusEl.textContent = `Retrying upload (${attempt}/${maxAttempts})…`;
+    }
+
+    try {
+      await uploadToMinio(file, presignedUrl, rowId);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+      }
+    }
+  }
+
+  throw lastError || new Error('Upload failed');
 }
 
 function uploadToMinio(file, presignedUrl, rowId) {
@@ -904,6 +992,7 @@ function uploadToMinio(file, presignedUrl, rowId) {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', presignedUrl);
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.timeout = 120000;
 
     xhr.upload.onprogress = e => {
       if (e.lengthComputable) {
@@ -918,6 +1007,8 @@ function uploadToMinio(file, presignedUrl, rowId) {
       else reject(new Error(`HTTP ${xhr.status}`));
     };
     xhr.onerror = () => reject(new Error('Network error'));
+    xhr.ontimeout = () => reject(new Error('Upload timed out'));
+    xhr.onabort = () => reject(new Error('Upload canceled'));
     xhr.send(file);
   });
 }
@@ -933,6 +1024,23 @@ function setFileStatus(rowId, type, msg) {
     status.textContent = msg;
     status.className = `small mt-1 text-${type === 'success' ? 'success' : 'danger'}`;
   }
+}
+
+function goBackAfterUploadFailure() {
+  uploadInProgress = false;
+  const step3 = document.getElementById('step-3');
+  if (step3) step3.classList.add('d-none');
+
+  const directMode = document.getElementById('direct-mode');
+  if (directMode) {
+    directMode.classList.remove('d-none');
+    validateDirectMode();
+    return;
+  }
+
+  goToStep(2);
+  const stepUploadBtn = document.getElementById('btn-next-2');
+  if (stepUploadBtn) stepUploadBtn.disabled = selectedFiles.length === 0;
 }
 
 function collectMeta() {
@@ -983,7 +1091,7 @@ function showResult(success, data) {
       <div class="alert alert-danger mt-3">
         <strong>Error:</strong> ${escHtml(typeof data === 'string' ? data : JSON.stringify(data))}
       </div>
-      <button class="btn btn-outline-secondary w-100" onclick="goToStep(2)">
+      <button class="btn btn-outline-secondary w-100" onclick="goBackAfterUploadFailure()">
         <i class="fas fa-arrow-left me-1"></i> Go Back
       </button>`;
   }
