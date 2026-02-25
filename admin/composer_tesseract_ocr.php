@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 session_start();
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/env_loader.php';
 
 header('Content-Type: application/json');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -33,6 +34,53 @@ if (!class_exists(\thiagoalessio\TesseractOCR\TesseractOCR::class)) {
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Composer Tesseract package is not installed.']);
     exit;
+}
+
+$resolveTesseractExecutable = static function (): string {
+    $envCandidates = [
+        trim((string)(getenv('TESSERACT_BINARY') ?: '')),
+        trim((string)(getenv('TESSERACT_PATH') ?: '')),
+        trim((string)(getenv('TESSERACT_EXECUTABLE') ?: '')),
+    ];
+
+    foreach ($envCandidates as $candidate) {
+        if ($candidate !== '' && is_executable($candidate)) {
+            return $candidate;
+        }
+    }
+
+    $defaultCandidates = [
+        '/usr/bin/tesseract',
+        '/usr/local/bin/tesseract',
+        '/bin/tesseract',
+    ];
+    foreach ($defaultCandidates as $candidate) {
+        if (is_executable($candidate)) {
+            return $candidate;
+        }
+    }
+
+    $resolvedFromPath = trim((string)@shell_exec('command -v tesseract 2>/dev/null'));
+    if ($resolvedFromPath !== '' && is_executable($resolvedFromPath)) {
+        return $resolvedFromPath;
+    }
+
+    return '';
+};
+
+$tesseractExecutable = $resolveTesseractExecutable();
+if ($tesseractExecutable === '') {
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Tesseract OCR binary is not installed on the server. Install tesseract-ocr and tesseract-ocr-eng, or set TESSERACT_BINARY to the executable path.',
+    ]);
+    exit;
+}
+
+$ocrLanguage = trim((string)(getenv('TESSERACT_LANG') ?: 'eng'));
+if ($ocrLanguage === '' || !preg_match('/^[A-Za-z_+]+$/', $ocrLanguage)) {
+    $ocrLanguage = 'eng';
 }
 
 $maxBytes = 12 * 1024 * 1024;
@@ -179,7 +227,7 @@ if (!in_array($mime, $allowedMimeTypes, true)) {
 
 try {
     $ocr = new \thiagoalessio\TesseractOCR\TesseractOCR($tmpPath);
-    $text = trim((string)$ocr->lang('eng')->run());
+    $text = trim((string)$ocr->executable($tesseractExecutable)->lang($ocrLanguage)->run());
 
     if ($text === '') {
         http_response_code(422);
