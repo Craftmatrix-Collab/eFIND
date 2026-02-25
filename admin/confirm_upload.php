@@ -74,7 +74,55 @@ $imagePath = implode('|', $imagePaths);
 
 $newId = null;
 
+/**
+ * Ensure image path columns can hold multi-image URL payloads.
+ */
+function ensureImagePathColumns(mysqli $conn, string $docType): void
+{
+    $targetsByDocType = [
+        'resolutions' => [['resolutions', 'image_path']],
+        'minutes' => [['minutes_of_meeting', 'image_path']],
+        'ordinances' => [['ordinances', 'image_path'], ['ordinances', 'file_path']],
+    ];
+
+    if (!isset($targetsByDocType[$docType])) {
+        return;
+    }
+
+    foreach ($targetsByDocType[$docType] as [$table, $column]) {
+        $columnCheck = $conn->query("SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+        if (!$columnCheck) {
+            throw new Exception("Failed to inspect {$table}.{$column}: " . $conn->error);
+        }
+
+        $columnMeta = $columnCheck->fetch_assoc();
+        if (!$columnMeta) {
+            throw new Exception("Column {$table}.{$column} does not exist.");
+        }
+
+        $type = strtolower((string)($columnMeta['Type'] ?? ''));
+        $shouldWiden = false;
+        if (preg_match('/^varchar\((\d+)\)$/', $type, $matches)) {
+            $shouldWiden = (int)$matches[1] < 2048;
+        } elseif ($type === 'tinytext') {
+            $shouldWiden = true;
+        }
+
+        if (!$shouldWiden) {
+            continue;
+        }
+
+        $nullSql = strtoupper((string)($columnMeta['Null'] ?? 'YES')) === 'NO' ? 'NOT NULL' : 'NULL';
+        $alterSql = "ALTER TABLE `{$table}` MODIFY COLUMN `{$column}` TEXT {$nullSql}";
+        if (!$conn->query($alterSql)) {
+            throw new Exception("Failed to widen {$table}.{$column}: " . $conn->error);
+        }
+    }
+}
+
 try {
+    ensureImagePathColumns($conn, $docType);
+
     if ($docType === 'resolutions') {
         $title            = $body['title']             ?? '';
         $description      = $body['description']       ?? '';
