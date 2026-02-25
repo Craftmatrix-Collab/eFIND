@@ -308,6 +308,7 @@ let selectedType    = '<?= $preselectedType ?>';
 let selectedFiles   = [];
 let currentStep     = 1;
 const mobileSession = '<?= $mobileSession ?>';
+const autoCameraMode = <?= $autoCameraMode ? 'true' : 'false' ?>;
 
 function getMobileUploadWsUrl() {
   if (window.EFIND_MOBILE_WS_URL) {
@@ -518,6 +519,11 @@ function dismissCameraSplash() {
 }
 
 function openCamera() {
+  if (autoCameraMode) {
+    // QR flow should launch native camera capture directly.
+    cameraInput.click();
+    return;
+  }
   if (mobileSession && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     openLiveCamera();
     return;
