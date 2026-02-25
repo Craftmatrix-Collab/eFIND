@@ -6,7 +6,9 @@
  */
 require_once __DIR__ . '/includes/config.php';
 header('Content-Type: application/json');
-header('Cache-Control: no-store');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 // Auto-create table if it doesn't exist
 $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (

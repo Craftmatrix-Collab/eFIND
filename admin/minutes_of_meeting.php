@@ -2339,9 +2339,16 @@ $count_stmt->close();
             if (!momMobileSession) return;
             momPollTimer = setInterval(async function () {
                 try {
-                    const response = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(momMobileSession)}`, { cache: 'no-store' });
+                    const response = await fetch(`mobile_session?action=check&session=${encodeURIComponent(momMobileSession)}&_=${Date.now()}`, {
+                        cache: 'no-store',
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                        },
+                    });
                     const data = await response.json();
-                    if (data.status === 'complete') {
+                    const status = String(data.status || '').trim().toLowerCase();
+                    if (status === 'complete') {
                         momHandleComplete({
                             title: 'Minutes of Meeting',
                             uploaded_by: 'mobile',

@@ -2334,9 +2334,16 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
     udPollTimer = setInterval(async () => {
       if (!udMobileSession || udHandledComplete) return;
       try {
-        const r = await fetch(`mobile_session.php?action=check&session=${udMobileSession}`);
+        const r = await fetch(`mobile_session?action=check&session=${encodeURIComponent(udMobileSession)}&_=${Date.now()}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+        });
         const d = await r.json();
-        if (d.status === 'complete') {
+        const status = String(d.status || '').trim().toLowerCase();
+        if (status === 'complete') {
           udHandleMobileComplete({ result_id: d.result_id || null });
         }
       } catch (e) {}

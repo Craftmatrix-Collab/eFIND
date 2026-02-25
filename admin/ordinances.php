@@ -2337,9 +2337,16 @@ $count_stmt->close();
             if (!ordMobileSession) return;
             ordPollTimer = setInterval(async function () {
                 try {
-                    const response = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(ordMobileSession)}`, { cache: 'no-store' });
+                    const response = await fetch(`mobile_session?action=check&session=${encodeURIComponent(ordMobileSession)}&_=${Date.now()}`, {
+                        cache: 'no-store',
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                        },
+                    });
                     const data = await response.json();
-                    if (data.status === 'complete') {
+                    const status = String(data.status || '').trim().toLowerCase();
+                    if (status === 'complete') {
                         ordHandleComplete({
                             title: 'Ordinance',
                             uploaded_by: 'mobile',
