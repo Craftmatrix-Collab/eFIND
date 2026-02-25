@@ -58,6 +58,7 @@ try {
 <form id="editProfileForm" enctype="multipart/form-data">
     <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
     <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+    <input type="hidden" id="original_email" value="<?php echo htmlspecialchars($user['email']); ?>">
     <div class="row">
         <div class="col-lg-4">
             <div class="card mb-4">
@@ -125,14 +126,34 @@ try {
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
-                            <input type="email" class="form-control" id="email" name="email"
-                                   value="<?php echo htmlspecialchars($user['email']); ?>" required>
+                            <div class="input-group">
+                                <input type="email" class="form-control" id="email" name="email"
+                                       value="<?php echo htmlspecialchars($user['email']); ?>" required>
+                                <button class="btn btn-outline-primary" type="button" id="profileSendOtpBtn">
+                                    <i class="fas fa-paper-plane me-1"></i> Send OTP
+                                </button>
+                            </div>
+                            <div id="profileEmailVerifiedBadge" class="mt-1 d-none">
+                                <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Email Verified</span>
+                            </div>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="contact_number" class="form-label">Contact Number</label>
                             <input type="tel" class="form-control" id="contact_number" name="contact_number"
                                    value="<?php echo htmlspecialchars($user['contact_number'] ?? ''); ?>">
                             <small class="text-muted">Format: +639XXXXXXXXX or 09XXXXXXXXX</small>
+                        </div>
+                    </div>
+                    <div class="row" id="profileEmailOtpSection" style="display:none !important">
+                        <div class="col-12 mb-3">
+                            <label class="form-label">Enter OTP <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="profileEmailOtpInput" maxlength="6" placeholder="6-digit OTP code" inputmode="numeric">
+                                <button class="btn btn-outline-success" type="button" id="profileVerifyEmailOtpBtn">
+                                    <i class="fas fa-check me-1"></i> Verify
+                                </button>
+                            </div>
+                            <small class="text-muted" id="profileEmailOtpTimer"></small>
                         </div>
                     </div>
                     <div class="alert alert-info mt-4">
@@ -200,6 +221,223 @@ document.getElementById('profile_picture').addEventListener('change', function(e
         reader.readAsDataURL(file);
     }
 });
+// Email verification OTP for changed email
+(function () {
+    const csrfToken = '<?php echo $_SESSION['csrf_token']; ?>';
+    const emailInput = document.getElementById('email');
+    const originalEmailInput = document.getElementById('original_email');
+    const sendOtpBtn = document.getElementById('profileSendOtpBtn');
+    const otpSection = document.getElementById('profileEmailOtpSection');
+    const otpInput = document.getElementById('profileEmailOtpInput');
+    const verifyOtpBtn = document.getElementById('profileVerifyEmailOtpBtn');
+    const verifiedBadge = document.getElementById('profileEmailVerifiedBadge');
+    const otpTimerEl = document.getElementById('profileEmailOtpTimer');
+    const saveBtn = document.getElementById('saveProfileChanges') || document.querySelector('#editProfileForm button[type="submit"]');
+    let otpTimer = null;
+    let verifiedEmail = '';
+
+    if (!emailInput || !originalEmailInput || !sendOtpBtn || !otpSection || !otpInput || !verifyOtpBtn || !otpTimerEl) {
+        return;
+    }
+
+    function normalizedEmail(value) {
+        return (value || '').trim().toLowerCase();
+    }
+
+    function emailChanged() {
+        return normalizedEmail(emailInput.value) !== normalizedEmail(originalEmailInput.value);
+    }
+
+    function clearOtpTimer() {
+        if (otpTimer) {
+            clearInterval(otpTimer);
+            otpTimer = null;
+        }
+        otpTimerEl.textContent = '';
+        otpTimerEl.style.color = '';
+    }
+
+    function hideOtpSection() {
+        otpSection.style.setProperty('display', 'none', 'important');
+        otpInput.value = '';
+        clearOtpTimer();
+    }
+
+    function startOtpTimer(seconds) {
+        clearOtpTimer();
+        let remaining = seconds;
+        otpTimerEl.textContent = `OTP expires in ${remaining}s`;
+        otpTimer = setInterval(function () {
+            remaining--;
+            if (remaining <= 0) {
+                clearOtpTimer();
+                otpTimerEl.textContent = 'OTP expired. Please request a new one.';
+                otpTimerEl.style.color = '#dc3545';
+            } else {
+                otpTimerEl.textContent = `OTP expires in ${remaining}s`;
+            }
+        }, 1000);
+    }
+
+    function notify(message, type) {
+        if (typeof showToast === 'function') {
+            showToast(message, type === 'success' ? 'success' : 'error');
+        } else {
+            alert(message);
+        }
+    }
+
+    function parseJsonResponse(response) {
+        return response.text().then(function (responseText) {
+            if (!response.ok) {
+                throw new Error('Request failed. Please refresh and try again.');
+            }
+            try {
+                return JSON.parse(responseText);
+            } catch (e) {
+                throw new Error('Unexpected server response. Please refresh and try again.');
+            }
+        });
+    }
+
+    function syncSaveState() {
+        if (!saveBtn) {
+            return;
+        }
+        if (!emailChanged()) {
+            saveBtn.disabled = false;
+            return;
+        }
+        saveBtn.disabled = normalizedEmail(verifiedEmail) !== normalizedEmail(emailInput.value);
+    }
+
+    emailInput.addEventListener('input', function () {
+        if (!emailChanged()) {
+            verifiedEmail = '';
+            if (verifiedBadge) {
+                verifiedBadge.classList.add('d-none');
+            }
+            sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+            hideOtpSection();
+        } else if (normalizedEmail(verifiedEmail) !== normalizedEmail(emailInput.value)) {
+            if (verifiedBadge) {
+                verifiedBadge.classList.add('d-none');
+            }
+            sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+            hideOtpSection();
+        }
+        syncSaveState();
+    });
+
+    sendOtpBtn.addEventListener('click', function () {
+        const email = emailInput.value.trim();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            notify('Please enter a valid email address first.', 'danger');
+            return;
+        }
+        if (!emailChanged()) {
+            notify('Email is unchanged. OTP is not required.', 'danger');
+            syncSaveState();
+            return;
+        }
+
+        sendOtpBtn.disabled = true;
+        sendOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending...';
+        verifiedEmail = '';
+        syncSaveState();
+
+        fetch('update_profile.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: new URLSearchParams({
+                action: 'send_profile_verify_otp',
+                email: email,
+                csrf_token: csrfToken
+            })
+        })
+        .then(parseJsonResponse)
+        .then(data => {
+            sendOtpBtn.disabled = false;
+            sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Resend OTP';
+            if (data.success) {
+                otpSection.style.removeProperty('display');
+                otpInput.value = '';
+                otpInput.focus();
+                startOtpTimer(600);
+                notify(data.message, 'success');
+            } else {
+                notify(data.message, 'danger');
+            }
+            syncSaveState();
+        })
+        .catch(err => {
+            sendOtpBtn.disabled = false;
+            sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+            notify(err.message || 'Network error. Please try again.', 'danger');
+            syncSaveState();
+        });
+    });
+
+    verifyOtpBtn.addEventListener('click', function () {
+        const email = emailInput.value.trim();
+        const otp = otpInput.value.trim();
+        if (!emailChanged()) {
+            notify('Email is unchanged. OTP verification is not required.', 'danger');
+            syncSaveState();
+            return;
+        }
+        if (!otp || !/^\d{6}$/.test(otp)) {
+            notify('Please enter the 6-digit OTP.', 'danger');
+            return;
+        }
+
+        verifyOtpBtn.disabled = true;
+        verifyOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+
+        fetch('update_profile.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: new URLSearchParams({
+                action: 'check_profile_verify_otp',
+                email: email,
+                otp: otp,
+                csrf_token: csrfToken
+            })
+        })
+        .then(parseJsonResponse)
+        .then(data => {
+            verifyOtpBtn.disabled = false;
+            verifyOtpBtn.innerHTML = '<i class="fas fa-check me-1"></i> Verify';
+            if (data.success) {
+                verifiedEmail = email;
+                otpSection.style.setProperty('display', 'none', 'important');
+                if (verifiedBadge) {
+                    verifiedBadge.classList.remove('d-none');
+                }
+                clearOtpTimer();
+                notify('Email verified! You can now save your profile.', 'success');
+            } else {
+                notify(data.message, 'danger');
+            }
+            syncSaveState();
+        })
+        .catch(err => {
+            verifyOtpBtn.disabled = false;
+            verifyOtpBtn.innerHTML = '<i class="fas fa-check me-1"></i> Verify';
+            notify(err.message || 'Network error. Please try again.', 'danger');
+            syncSaveState();
+        });
+    });
+
+    hideOtpSection();
+    syncSaveState();
+})();
 // Phone number formatting
 document.getElementById('contact_number').addEventListener('input', function(e) {
     // Remove all non-digit characters
