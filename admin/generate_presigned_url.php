@@ -34,7 +34,7 @@ $mobileSession = preg_replace('/[^a-f0-9]/', '', $body['session_id'] ?? '');
 $isMobileAuth  = false;
 $mobileSessionDocType = '';
 if ($mobileSession) {
-    $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (session_id VARCHAR(64) PRIMARY KEY, doc_type VARCHAR(50) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'waiting', result_id INT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (session_id VARCHAR(64) PRIMARY KEY, doc_type VARCHAR(50) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'waiting', result_id INT DEFAULT NULL, object_keys_json LONGTEXT DEFAULT NULL, image_urls_json LONGTEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $st = $conn->prepare("SELECT session_id, doc_type FROM mobile_upload_sessions WHERE session_id = ? AND status = 'waiting'");
     $st->bind_param('s', $mobileSession);
     $st->execute();

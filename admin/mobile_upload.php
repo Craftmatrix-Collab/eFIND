@@ -18,6 +18,7 @@ $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ord
 
 $autoCameraMode = ($preselectedType !== '' && ($_GET['camera'] ?? '') === '1');
 $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
+$deferToDesktop = (($_GET['flow'] ?? '') === 'modal_ocr');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -299,6 +300,7 @@ let uploadInProgress = false;
 const MAX_MOBILE_FILES = 8;
 const mobileSession = '<?= $mobileSession ?>';
 const autoCameraMode = <?= $autoCameraMode ? 'true' : 'false' ?>;
+const deferToDesktop = <?= $deferToDesktop ? 'true' : 'false' ?>;
 
 function getMobileUploadWsUrl() {
   if (window.EFIND_MOBILE_WS_URL) {
@@ -342,6 +344,9 @@ async function notifyDesktopUploadComplete(payload) {
         title: payload.title || 'Document',
         uploaded_by: payload.uploaded_by || 'mobile',
         result_id: payload.result_id || null,
+        object_keys: Array.isArray(payload.object_keys) ? payload.object_keys : [],
+        image_urls: Array.isArray(payload.image_urls) ? payload.image_urls : [],
+        deferred_to_desktop: !!payload.deferred_to_desktop,
       }));
       setTimeout(() => {
         clearTimeout(timeout);
@@ -886,13 +891,19 @@ async function startUpload() {
     return;
   }
 
-  // 3. Confirm upload to PHP (saves DB record)
+  // 3. Confirm upload with PHP (save now or defer to desktop modal flow)
   const meta = collectMeta();
   try {
     const res = await fetch('confirm_upload.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ doc_type: selectedType, object_keys: objectKeys, session_id: mobileSession, ...meta }),
+      body: JSON.stringify({
+        doc_type: selectedType,
+        object_keys: objectKeys,
+        session_id: mobileSession,
+        defer_to_desktop: deferToDesktop,
+        ...meta
+      }),
     });
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || `DB save failed (HTTP ${res.status})`);
@@ -900,6 +911,9 @@ async function startUpload() {
       title: meta.title || 'Document',
       uploaded_by: 'mobile',
       result_id: data.id || null,
+      object_keys: Array.isArray(data.object_keys) ? data.object_keys : objectKeys,
+      image_urls: Array.isArray(data.image_urls) ? data.image_urls : [],
+      deferred_to_desktop: !!data.deferred_to_desktop,
     });
     uploadInProgress = false;
     showResult(true, data);
@@ -1072,7 +1086,20 @@ function showResult(success, data) {
   };
 
   if (success) {
-    resultEl.innerHTML = `
+    const deferred = !!(data && data.deferred_to_desktop);
+    resultEl.innerHTML = deferred
+      ? `
+      <div class="card">
+        <div class="card-body success-card">
+          <div class="check"><i class="fas fa-check-circle"></i></div>
+          <h4 class="fw-bold">Images Sent to Desktop!</h4>
+          <p class="text-muted">Return to your computer. The add-document form will auto-load these images and run OCR.</p>
+          <button class="btn btn-outline-secondary w-100 py-2" onclick="location.reload()">
+            <i class="fas fa-camera me-2"></i>Capture Another Set
+          </button>
+        </div>
+      </div>`
+      : `
       <div class="card">
         <div class="card-body success-card">
           <div class="check"><i class="fas fa-check-circle"></i></div>

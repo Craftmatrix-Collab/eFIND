@@ -45,7 +45,7 @@ $mobileSession = preg_replace('/[^a-f0-9]/', '', $body['session_id'] ?? '');
 $isMobileAuth  = false;
 $mobileSessionDocType = '';
 if ($mobileSession) {
-    $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (session_id VARCHAR(64) PRIMARY KEY, doc_type VARCHAR(50) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'waiting', result_id INT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (session_id VARCHAR(64) PRIMARY KEY, doc_type VARCHAR(50) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'waiting', result_id INT DEFAULT NULL, object_keys_json LONGTEXT DEFAULT NULL, image_urls_json LONGTEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $st = $conn->prepare("SELECT session_id, doc_type FROM mobile_upload_sessions WHERE session_id = ? AND status = 'waiting'");
     $st->bind_param('s', $mobileSession);
     $st->execute();
@@ -71,6 +71,7 @@ if (!in_array($docType, $allowedTypes)) {
 }
 
 $uploadedBy  = $_SESSION['username'] ?? $_SESSION['staff_username'] ?? $_SESSION['admin_username'] ?? ($isMobileAuth ? 'mobile' : 'admin');
+$shouldDeferToDesktop = $isMobileAuth && !empty($body['defer_to_desktop']);
 $datePosted  = date('Y-m-d H:i:s');
 
 $newId = null;
@@ -117,6 +118,26 @@ function ensureImagePathColumns(mysqli $conn, string $docType): void
         $alterSql = "ALTER TABLE `{$table}` MODIFY COLUMN `{$column}` TEXT {$nullSql}";
         if (!$conn->query($alterSql)) {
             throw new Exception("Failed to widen {$table}.{$column}: " . $conn->error);
+        }
+    }
+}
+
+/**
+ * Ensure mobile session payload columns exist for deferred desktop workflows.
+ */
+function ensureMobileSessionPayloadColumns(mysqli $conn): void
+{
+    $requiredColumns = [
+        'object_keys_json' => "ALTER TABLE mobile_upload_sessions ADD COLUMN object_keys_json LONGTEXT DEFAULT NULL AFTER result_id",
+        'image_urls_json'  => "ALTER TABLE mobile_upload_sessions ADD COLUMN image_urls_json LONGTEXT DEFAULT NULL AFTER object_keys_json",
+    ];
+
+    foreach ($requiredColumns as $column => $alterSql) {
+        $check = $conn->query("SHOW COLUMNS FROM mobile_upload_sessions LIKE '{$column}'");
+        if ($check && $check->num_rows === 0) {
+            if (!$conn->query($alterSql)) {
+                throw new Exception('Failed to update mobile session schema: ' . $conn->error);
+            }
         }
     }
 }
@@ -237,6 +258,38 @@ try {
     }
     $imagePath = implode('|', $imagePaths);
 
+    if ($shouldDeferToDesktop) {
+        ensureMobileSessionPayloadColumns($conn);
+
+        $objectKeysJson = json_encode($objectKeys, JSON_UNESCAPED_SLASHES);
+        $imageUrlsJson = json_encode($imagePaths, JSON_UNESCAPED_SLASHES);
+        if ($objectKeysJson === false || $imageUrlsJson === false) {
+            throw new Exception('Failed to encode uploaded image payload');
+        }
+
+        $stDeferred = $conn->prepare("UPDATE mobile_upload_sessions SET status='complete', result_id=NULL, object_keys_json=?, image_urls_json=? WHERE session_id=?");
+        if (!$stDeferred) {
+            throw new Exception('Failed to prepare mobile session update: ' . $conn->error);
+        }
+        $stDeferred->bind_param('sss', $objectKeysJson, $imageUrlsJson, $mobileSession);
+        $stDeferred->execute();
+        if ($stDeferred->affected_rows < 1) {
+            $stDeferred->close();
+            throw new Exception('Mobile session is no longer active');
+        }
+        $stDeferred->close();
+
+        echo json_encode([
+            'success' => true,
+            'id' => null,
+            'doc_type' => $docType,
+            'deferred_to_desktop' => true,
+            'object_keys' => $objectKeys,
+            'image_urls' => $imagePaths,
+        ]);
+        exit;
+    }
+
     ensureImagePathColumns($conn, $docType);
 
     if ($docType === 'resolutions') {
@@ -331,7 +384,14 @@ try {
         $logStmt->close();
     }
 
-    echo json_encode(['success' => true, 'id' => $newId, 'doc_type' => $docType]);
+    echo json_encode([
+        'success' => true,
+        'id' => $newId,
+        'doc_type' => $docType,
+        'deferred_to_desktop' => false,
+        'object_keys' => $objectKeys,
+        'image_urls' => $imagePaths,
+    ]);
 
     // Notify desktop that mobile upload is complete
     if ($mobileSession && $isMobileAuth) {

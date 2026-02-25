@@ -10,7 +10,7 @@
  *    {"action":"subscribe","session_id":"<hex-session-id>","doc_type":"resolutions|minutes|ordinances"}
  *
  * 2) Notify completion from mobile client
- *    {"action":"upload_complete","session_id":"<hex-session-id>","doc_type":"...","title":"...","uploaded_by":"...","result_id":123}
+ *    {"action":"upload_complete","session_id":"<hex-session-id>","doc_type":"...","title":"...","uploaded_by":"...","result_id":123,"object_keys":[...],"image_urls":[...]}
  *
  * 3) Push live camera frames from mobile client
  *    {"action":"camera_frame","session_id":"<hex-session-id>","doc_type":"...","frame_data":"data:image/jpeg;base64,...","width":640,"height":360,"ts":1730000000000}
@@ -109,6 +109,13 @@ final class MobileUploadWebSocket implements MessageComponentInterface
                 'title' => (string)($data['title'] ?? 'Document'),
                 'uploaded_by' => (string)($data['uploaded_by'] ?? 'mobile'),
                 'result_id' => isset($data['result_id']) ? (int)$data['result_id'] : null,
+                'object_keys' => is_array($data['object_keys'] ?? null)
+                    ? array_values(array_filter($data['object_keys'], 'is_string'))
+                    : [],
+                'image_urls' => is_array($data['image_urls'] ?? null)
+                    ? array_values(array_filter($data['image_urls'], 'is_string'))
+                    : [],
+                'deferred_to_desktop' => !empty($data['deferred_to_desktop']),
             ];
             $delivered = $this->broadcastToSession($sessionId, $message);
             $this->sendJson($from, ['type' => 'ack', 'delivered' => $delivered, 'session_id' => $sessionId]);

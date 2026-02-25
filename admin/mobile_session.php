@@ -14,8 +14,26 @@ $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (
     doc_type    VARCHAR(50)  NOT NULL DEFAULT '',
     status      VARCHAR(20)  NOT NULL DEFAULT 'waiting',
     result_id   INT          DEFAULT NULL,
+    object_keys_json LONGTEXT DEFAULT NULL,
+    image_urls_json  LONGTEXT DEFAULT NULL,
     created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+function ensureMobileSessionPayloadColumns(mysqli $conn): void {
+    $requiredColumns = [
+        'object_keys_json' => "ALTER TABLE mobile_upload_sessions ADD COLUMN object_keys_json LONGTEXT DEFAULT NULL AFTER result_id",
+        'image_urls_json'  => "ALTER TABLE mobile_upload_sessions ADD COLUMN image_urls_json LONGTEXT DEFAULT NULL AFTER object_keys_json",
+    ];
+
+    foreach ($requiredColumns as $column => $alterSql) {
+        $check = $conn->query("SHOW COLUMNS FROM mobile_upload_sessions LIKE '{$column}'");
+        if ($check && $check->num_rows === 0) {
+            $conn->query($alterSql);
+        }
+    }
+}
+
+ensureMobileSessionPayloadColumns($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Create session — only logged-in desktop users
@@ -43,9 +61,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Check status — desktop polls this
     $sid = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
     if (!$sid) { echo json_encode(['status' => 'invalid']); exit; }
-    $stmt = $conn->prepare("SELECT status, result_id, doc_type FROM mobile_upload_sessions WHERE session_id = ?");
+    $stmt = $conn->prepare("SELECT status, result_id, doc_type, object_keys_json, image_urls_json FROM mobile_upload_sessions WHERE session_id = ?");
     $stmt->bind_param('s', $sid);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
+    if ($row) {
+        $objectKeys = json_decode((string)($row['object_keys_json'] ?? ''), true);
+        $imageUrls = json_decode((string)($row['image_urls_json'] ?? ''), true);
+        $row['object_keys'] = is_array($objectKeys)
+            ? array_values(array_filter($objectKeys, 'is_string'))
+            : [];
+        $row['image_urls'] = is_array($imageUrls)
+            ? array_values(array_filter($imageUrls, 'is_string'))
+            : [];
+        unset($row['object_keys_json'], $row['image_urls_json']);
+    }
     echo json_encode($row ?: ['status' => 'invalid']);
 }

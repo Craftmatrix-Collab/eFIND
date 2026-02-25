@@ -1969,7 +1969,7 @@ $count_stmt->close();
                                     <div id="mom-mobile-status" class="mt-3 d-none">
                                         <div class="d-flex align-items-center justify-content-center gap-2 text-success">
                                             <i class="fas fa-check-circle"></i>
-                                            <span id="mom-mobile-status-text">Upload detected! Refreshing…</span>
+                                            <span id="mom-mobile-status-text">Upload detected! Preparing OCR…</span>
                                         </div>
                                     </div>
                                     <div id="mom-mobile-live" class="mt-3 d-none">
@@ -1979,7 +1979,7 @@ $count_stmt->close();
                                     </div>
                                     <div class="mt-2">
                                         <span class="badge bg-secondary"><i class="fas fa-circle-notch fa-spin me-1"></i>Waiting for mobile upload…</span>
-                                        <div class="text-muted small mt-1">After uploading on mobile, this page will automatically refresh.</div>
+                                        <div class="text-muted small mt-1">After mobile upload, images will be loaded here automatically and OCR will fill this form.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2229,6 +2229,7 @@ $count_stmt->close();
             const mobileUploadUrl = new URL('mobile_upload', window.location.href);
             mobileUploadUrl.searchParams.set('type', 'minutes');
             mobileUploadUrl.searchParams.set('camera', '1');
+            mobileUploadUrl.searchParams.set('flow', 'modal_ocr');
             mobileUploadUrl.searchParams.set('session', sessionId);
             const url = mobileUploadUrl.toString();
             const qrLink = document.getElementById('mom-qr-link');
@@ -2345,6 +2346,9 @@ $count_stmt->close();
                             title: 'Minutes of Meeting',
                             uploaded_by: 'mobile',
                             result_id: data.result_id || null,
+                            object_keys: Array.isArray(data.object_keys) ? data.object_keys : [],
+                            image_urls: Array.isArray(data.image_urls) ? data.image_urls : [],
+                            deferred_to_desktop: true,
                         });
                     }
                 } catch (error) {
@@ -2353,22 +2357,113 @@ $count_stmt->close();
             }, 3000);
         }
 
-        function momHandleComplete(data) {
+        function momSetMobileStatus(message, type = 'info') {
+            const statusEl = document.getElementById('mom-mobile-status');
+            const textEl = document.getElementById('mom-mobile-status-text');
+            if (!statusEl || !textEl) return;
+
+            const row = statusEl.querySelector('.d-flex');
+            const icon = statusEl.querySelector('i');
+            if (row) {
+                row.classList.remove('text-success', 'text-danger', 'text-primary');
+                row.classList.add(type === 'error' ? 'text-danger' : (type === 'success' ? 'text-success' : 'text-primary'));
+            }
+            if (icon) {
+                icon.className = type === 'error'
+                    ? 'fas fa-exclamation-circle'
+                    : (type === 'success' ? 'fas fa-check-circle' : 'fas fa-circle-notch fa-spin');
+            }
+
+            textEl.textContent = message;
+            statusEl.classList.remove('d-none');
+        }
+
+        function momGuessFileExtension(mimeType, fallbackUrl) {
+            const byMime = {
+                'image/jpeg': 'jpg',
+                'image/jpg': 'jpg',
+                'image/png': 'png',
+                'image/gif': 'gif',
+                'image/bmp': 'bmp',
+                'image/webp': 'webp',
+            };
+            const normalizedMime = String(mimeType || '').toLowerCase();
+            if (byMime[normalizedMime]) return byMime[normalizedMime];
+
+            const cleanUrl = String(fallbackUrl || '').split('?')[0];
+            const ext = cleanUrl.includes('.') ? cleanUrl.split('.').pop().toLowerCase() : '';
+            return ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext) ? ext : 'jpg';
+        }
+
+        async function momApplyMobileImagesToForm(data) {
+            const imageUrls = (data && Array.isArray(data.image_urls))
+                ? data.image_urls.filter(url => typeof url === 'string' && url !== '')
+                : [];
+            if (!imageUrls.length) {
+                throw new Error('Upload completed, but no mobile images were received.');
+            }
+
+            const modalEl = document.getElementById('addMinuteModal');
+            if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            }
+
+            await momSwitchMethod('desktop');
+            momSetMobileStatus(`Syncing ${imageUrls.length} mobile image(s) to this form…`, 'info');
+
+            const fileInput = document.getElementById('image_file');
+            if (!fileInput) {
+                throw new Error('Minutes image input field not found.');
+            }
+            if (typeof DataTransfer === 'undefined') {
+                throw new Error('Automatic transfer is not supported in this browser.');
+            }
+
+            const dt = new DataTransfer();
+            let transferred = 0;
+            for (let i = 0; i < imageUrls.length; i++) {
+                const imageUrl = imageUrls[i];
+                try {
+                    const response = await fetch(imageUrl, { cache: 'no-store' });
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    const blob = await response.blob();
+                    const ext = momGuessFileExtension(blob.type, imageUrl);
+                    const file = new File([blob], `mobile_minutes_${i + 1}.${ext}`, {
+                        type: blob.type || 'image/jpeg',
+                        lastModified: Date.now(),
+                    });
+                    dt.items.add(file);
+                    transferred++;
+                } catch (error) {
+                    console.error('Failed to transfer mobile image:', imageUrl, error);
+                }
+            }
+
+            if (!transferred) {
+                throw new Error('Could not transfer uploaded mobile images to the form.');
+            }
+
+            fileInput.files = dt.files;
+            await processFilesWithAutoFill(fileInput);
+            momSetMobileStatus('Mobile images loaded. OCR auto-fill completed.', 'success');
+            momMobileSession = null;
+            momQrCreated = false;
+        }
+
+        async function momHandleComplete(data) {
             if (momHandledComplete) return;
             momHandledComplete = true;
             momStopRealtime();
             momResetLivePreview();
-            const statusEl = document.getElementById('mom-mobile-status');
-            const textEl = document.getElementById('mom-mobile-status-text');
-            if (textEl) {
-                if (data && data.title && data.uploaded_by) {
-                    textEl.textContent = `"${data.title}" uploaded by ${data.uploaded_by}. Refreshing…`;
-                } else {
-                    textEl.textContent = 'Upload detected! Refreshing…';
-                }
+            try {
+                await momApplyMobileImagesToForm(data || {});
+            } catch (error) {
+                console.error('Unable to apply mobile upload to minutes form:', error);
+                const message = error instanceof Error ? error.message : 'Unable to apply mobile upload to this form.';
+                momSetMobileStatus(message, 'error');
             }
-            if (statusEl) statusEl.classList.remove('d-none');
-            setTimeout(() => location.reload(), 2000);
         }
 
         function momStopRealtime() {
