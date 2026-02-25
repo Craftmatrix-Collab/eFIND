@@ -80,17 +80,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
 
                     // Store OTP in correct table
                     $update_stmt = $conn->prepare("UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE id = ?");
-                    $update_stmt->bind_param("ssi", $reset_token, $expires, $user['id']);
-                    $update_stmt->execute();
-                    $update_stmt->close();
+                    if (!$update_stmt) {
+                        $error = "Database error. Please try again later.";
+                        error_log("Forgot password update prepare failed: " . $conn->error);
+                    } else {
+                        $update_stmt->bind_param("ssi", $reset_token, $expires, $user['id']);
+                        if (!$update_stmt->execute()) {
+                            $error = "Database error. Please try again later.";
+                            error_log("Forgot password update execute failed: " . $update_stmt->error);
+                        }
+                        $update_stmt->close();
+                    }
 
-                    // Store email and table in session so verify-otp.php can use them
-                    $_SESSION['reset_email'] = $email;
-                    $_SESSION['user_table'] = $user_table;
+                    if (empty($error)) {
+                        // Store email and table in session so verify-otp.php can use them
+                        $_SESSION['reset_email'] = $email;
+                        $_SESSION['user_table'] = $user_table;
+                        unset($_SESSION['otp_attempts'], $_SESSION['otp_verified'], $_SESSION['reset_user_id']);
 
-                    // Send OTP via Resend
-                    try {
-                        $resend = \Resend::client(RESEND_API_KEY);
+                        // Send OTP via Resend
+                        try {
+                            if (trim((string)RESEND_API_KEY) === '') {
+                                throw new RuntimeException('RESEND_API_KEY is not configured.');
+                            }
+                            $resend = \Resend::client(RESEND_API_KEY);
 
                         $html_content = "
                         <!DOCTYPE html>
@@ -140,11 +153,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
                         header("Location: verify-otp.php");
                         exit();
 
-                    } catch (Exception $e) {
-                        $error = "Failed to send reset email. Please contact the system administrator.";
-                        error_log("Resend Error in forgot-password: " . $e->getMessage());
-                        // Clean up session on failure
-                        unset($_SESSION['reset_email'], $_SESSION['user_table']);
+                        } catch (Throwable $e) {
+                            $error = "Failed to send reset email. Please contact the system administrator.";
+                            error_log("Resend Error in forgot-password: " . $e->getMessage());
+                            // Clean up session on failure
+                            unset($_SESSION['reset_email'], $_SESSION['user_table'], $_SESSION['otp_attempts'], $_SESSION['otp_verified'], $_SESSION['reset_user_id']);
+                        }
                     }
                     } // end is_verified check else
                 } else {

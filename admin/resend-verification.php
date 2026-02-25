@@ -24,6 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend'])) {
             $error = "Please enter a valid email address.";
         } else {
             // Look up unverified admin account
+            $user = null;
             $stmt = $conn->prepare("SELECT id, full_name, is_verified FROM admin_users WHERE email = ?");
             if ($stmt) {
                 $stmt->bind_param("s", $email);
@@ -31,61 +32,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend'])) {
                 $result = $stmt->get_result();
                 $user   = $result->num_rows === 1 ? $result->fetch_assoc() : null;
                 $stmt->close();
+            } else {
+                $error = "Database error. Please try again later.";
+                error_log("Resend verification select prepare failed: " . $conn->error);
             }
 
-            if ($user && !$user['is_verified']) {
+            if (empty($error) && $user && !$user['is_verified']) {
                 // Generate a fresh token valid for 24 hours
                 $new_token  = bin2hex(random_bytes(32));
                 $new_expiry = date("Y-m-d H:i:s", strtotime('+24 hours'));
 
                 $upd = $conn->prepare("UPDATE admin_users SET verification_token = ?, token_expiry = ? WHERE id = ?");
-                $upd->bind_param("ssi", $new_token, $new_expiry, $user['id']);
-                $upd->execute();
-                $upd->close();
+                if ($upd) {
+                    $upd->bind_param("ssi", $new_token, $new_expiry, $user['id']);
+                    if (!$upd->execute()) {
+                        $error = "Database error. Please try again later.";
+                        error_log("Resend verification update execute failed: " . $upd->error);
+                    }
+                    $upd->close();
+                } else {
+                    $error = "Database error. Please try again later.";
+                    error_log("Resend verification update prepare failed: " . $conn->error);
+                }
 
                 $app_url     = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
                 $verify_link = $app_url . '/verify-email.php?token=' . $new_token;
 
-                try {
-                    $resend = \Resend::client(RESEND_API_KEY);
+                if (empty($error)) {
+                    try {
+                        if (trim((string)RESEND_API_KEY) === '') {
+                            throw new RuntimeException('RESEND_API_KEY is not configured.');
+                        }
+                        $resend = \Resend::client(RESEND_API_KEY);
 
-                    $html = "
-                    <!DOCTYPE html><html><head><style>
-                        body{font-family:Arial,sans-serif;line-height:1.6;color:#333;}
-                        .container{max-width:600px;margin:0 auto;padding:20px;}
-                        .header{background:linear-gradient(135deg,#4361ee,#3a0ca3);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0;}
-                        .content{background:#f8f9fa;padding:30px;border-radius:0 0 10px 10px;}
-                        .btn{display:inline-block;background:#4361ee;color:white;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:bold;margin:20px 0;}
-                        .link{color:#666;font-size:13px;word-break:break-all;}
-                        .footer{text-align:center;margin-top:20px;color:#666;font-size:12px;}
-                    </style></head><body>
-                    <div class='container'>
-                        <div class='header'><h1>Verify Your Email</h1></div>
-                        <div class='content'>
-                            <p>Hello " . htmlspecialchars($user['full_name']) . ",</p>
-                            <p>Here is your new email verification link for the eFIND System.</p>
-                            <div style='text-align:center;'>
-                                <a href='" . $verify_link . "' class='btn'>Verify Email Address</a>
+                        $html = "
+                        <!DOCTYPE html><html><head><style>
+                            body{font-family:Arial,sans-serif;line-height:1.6;color:#333;}
+                            .container{max-width:600px;margin:0 auto;padding:20px;}
+                            .header{background:linear-gradient(135deg,#4361ee,#3a0ca3);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0;}
+                            .content{background:#f8f9fa;padding:30px;border-radius:0 0 10px 10px;}
+                            .btn{display:inline-block;background:#4361ee;color:white;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:bold;margin:20px 0;}
+                            .link{color:#666;font-size:13px;word-break:break-all;}
+                            .footer{text-align:center;margin-top:20px;color:#666;font-size:12px;}
+                        </style></head><body>
+                        <div class='container'>
+                            <div class='header'><h1>Verify Your Email</h1></div>
+                            <div class='content'>
+                                <p>Hello " . htmlspecialchars($user['full_name']) . ",</p>
+                                <p>Here is your new email verification link for the eFIND System.</p>
+                                <div style='text-align:center;'>
+                                    <a href='" . $verify_link . "' class='btn'>Verify Email Address</a>
+                                </div>
+                                <p class='link'>Or copy and paste this link:<br>" . $verify_link . "</p>
+                                <p><strong>This link will expire in 24 hours.</strong></p>
+                                <div class='footer'><p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p></div>
                             </div>
-                            <p class='link'>Or copy and paste this link:<br>" . $verify_link . "</p>
-                            <p><strong>This link will expire in 24 hours.</strong></p>
-                            <div class='footer'><p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p></div>
-                        </div>
-                    </div></body></html>";
+                        </div></body></html>";
 
-                    $resend->emails->send([
-                        'from'    => FROM_EMAIL,
-                        'to'      => [$email],
-                        'subject' => 'Email Verification (Resent) - eFIND System',
-                        'html'    => $html,
-                    ]);
+                        $resend->emails->send([
+                            'from'    => FROM_EMAIL,
+                            'to'      => [$email],
+                            'subject' => 'Email Verification (Resent) - eFIND System',
+                            'html'    => $html,
+                        ]);
 
-                    $message = "A new verification link has been sent to <strong>" . htmlspecialchars($email) . "</strong>. Please check your inbox.";
-                } catch (Exception $e) {
-                    error_log("Resend Error in resend-verification: " . $e->getMessage());
-                    $error = "Failed to send the email. Please contact the system administrator.";
+                        $message = "A new verification link has been sent to <strong>" . htmlspecialchars($email) . "</strong>. Please check your inbox.";
+                    } catch (Throwable $e) {
+                        error_log("Resend Error in resend-verification: " . $e->getMessage());
+                        $error = "Failed to send the email. Please contact the system administrator.";
+                    }
                 }
-            } else {
+            } elseif (empty($error)) {
                 // Prevent enumeration — same message whether email not found or already verified
                 $message = "If this email belongs to an unverified account, a new verification link has been sent.";
             }

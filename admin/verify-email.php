@@ -27,19 +27,27 @@ if (!empty($token) && preg_match('/^[a-f0-9]{64}$/', $token)) {
             } else {
                 // Mark as verified and clear the token
                 $upd = $conn->prepare("UPDATE admin_users SET is_verified = 1, verification_token = NULL, token_expiry = NULL WHERE id = ?");
-                $upd->bind_param("i", $user['id']);
-                if ($upd->execute()) {
-                    $status = 'success';
-                    $message = 'Your email address has been verified successfully! You can now log in.';
+                if ($upd) {
+                    $upd->bind_param("i", $user['id']);
+                    if ($upd->execute()) {
+                        $status = 'success';
+                        $message = 'Your email address has been verified successfully! You can now log in.';
+                    } else {
+                        $message = 'Verification failed due to a database error. Please try again.';
+                    }
+                    $upd->close();
                 } else {
                     $message = 'Verification failed due to a database error. Please try again.';
+                    error_log("Verify email update prepare failed: " . $conn->error);
                 }
-                $upd->close();
             }
         } else {
             $message = 'Invalid verification link. It may have already been used.';
         }
         $stmt->close();
+    } else {
+        $message = 'Verification failed due to a database error. Please try again.';
+        error_log("Verify email select prepare failed: " . $conn->error);
     }
 }
 ?>

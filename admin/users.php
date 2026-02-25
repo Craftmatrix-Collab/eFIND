@@ -35,8 +35,18 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
     }
     // Check email not already taken
     $chk = $conn->prepare("SELECT id FROM users WHERE email = ? UNION SELECT id FROM admin_users WHERE email = ?");
+    if (!$chk) {
+        error_log('Send OTP email-check prepare failed: ' . $conn->error);
+        echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
+        exit();
+    }
     $chk->bind_param("ss", $email, $email);
-    $chk->execute();
+    if (!$chk->execute()) {
+        error_log('Send OTP email-check execute failed: ' . $chk->error);
+        $chk->close();
+        echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
+        exit();
+    }
     $chk->store_result();
     if ($chk->num_rows > 0) {
         $chk->close();
@@ -51,7 +61,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
     unset($_SESSION['add_user_verified_email']);
     require_once __DIR__ . '/vendor/autoload.php';
     try {
-        $resend = \Resend\Resend::client(RESEND_API_KEY);
+        if (trim((string)RESEND_API_KEY) === '') {
+            throw new RuntimeException('RESEND_API_KEY is not configured.');
+        }
+        $resend = \Resend::client(RESEND_API_KEY);
         $resend->emails->send([
             'from'    => FROM_EMAIL,
             'to'      => [$email],
@@ -73,7 +86,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
                 </div>"
         ]);
         echo json_encode(['success' => true, 'message' => 'OTP sent to ' . htmlspecialchars($email)]);
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         error_log('Resend Error (add user verify): ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to send OTP email. Please contact the system administrator.']);
     }
@@ -1720,7 +1733,17 @@ $count_stmt->close();
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ action: 'send_verify_otp', email: email, csrf_token: csrfToken })
             })
-            .then(r => r.json())
+            .then(async r => {
+                const responseText = await r.text();
+                if (!r.ok) {
+                    throw new Error('Request failed. Please refresh and try again.');
+                }
+                try {
+                    return JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error('Unexpected server response. Please refresh and try again.');
+                }
+            })
             .then(data => {
                 sendOtpBtn.disabled = false;
                 sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Resend OTP';
@@ -1734,10 +1757,10 @@ $count_stmt->close();
                     showToast(data.message, 'danger');
                 }
             })
-            .catch(() => {
+            .catch((err) => {
                 sendOtpBtn.disabled = false;
                 sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
-                showToast('Network error. Please try again.', 'danger');
+                showToast(err.message || 'Network error. Please try again.', 'danger');
             });
         });
 
@@ -1756,7 +1779,17 @@ $count_stmt->close();
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ action: 'check_verify_otp', email: email, otp: otp, csrf_token: csrfToken })
             })
-            .then(r => r.json())
+            .then(async r => {
+                const responseText = await r.text();
+                if (!r.ok) {
+                    throw new Error('Request failed. Please refresh and try again.');
+                }
+                try {
+                    return JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error('Unexpected server response. Please refresh and try again.');
+                }
+            })
             .then(data => {
                 verifyOtpBtn.disabled = false;
                 verifyOtpBtn.innerHTML = '<i class="fas fa-check me-1"></i> Verify';
@@ -1771,10 +1804,10 @@ $count_stmt->close();
                     showToast(data.message, 'danger');
                 }
             })
-            .catch(() => {
+            .catch((err) => {
                 verifyOtpBtn.disabled = false;
                 verifyOtpBtn.innerHTML = '<i class="fas fa-check me-1"></i> Verify';
-                showToast('Network error. Please try again.', 'danger');
+                showToast(err.message || 'Network error. Please try again.', 'danger');
             });
         });
 

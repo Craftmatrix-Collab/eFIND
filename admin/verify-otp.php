@@ -108,24 +108,47 @@ if (isset($_POST['resend_otp'])) {
     }
     $update_query = "UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE email = ?";
     $update_stmt = $conn->prepare($update_query);
-    $update_stmt->bind_param("sss", $otp, $expires, $email);
-    $update_stmt->execute();
-    $update_stmt->close();
+    if (!$update_stmt) {
+        $error = "Database error. Please try again later.";
+        error_log("Verify OTP resend update prepare failed: " . $conn->error);
+    } else {
+        $update_stmt->bind_param("sss", $otp, $expires, $email);
+        if (!$update_stmt->execute()) {
+            $error = "Database error. Please try again later.";
+            error_log("Verify OTP resend update execute failed: " . $update_stmt->error);
+        }
+        $update_stmt->close();
+    }
     
     // Get user details for email
-    $query = "SELECT full_name FROM $user_table WHERE email = ?";
-    $stmt = $conn->prepare($query);
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $user = $result->fetch_assoc();
-    $stmt->close();
+    $user = null;
+    if (empty($error)) {
+        $query = "SELECT full_name FROM $user_table WHERE email = ?";
+        $stmt = $conn->prepare($query);
+        if (!$stmt) {
+            $error = "Database error. Please try again later.";
+            error_log("Verify OTP resend select prepare failed: " . $conn->error);
+        } else {
+            $stmt->bind_param("s", $email);
+            if (!$stmt->execute()) {
+                $error = "Database error. Please try again later.";
+                error_log("Verify OTP resend select execute failed: " . $stmt->error);
+            } else {
+                $result = $stmt->get_result();
+                $user = $result->fetch_assoc();
+            }
+            $stmt->close();
+        }
+    }
 
-    if (!$user) {
+    if (empty($error) && !$user) {
         $error = "Account not found. Please restart the password reset process.";
-    } else
+    } elseif (empty($error)) {
     // Send OTP via Resend
     try {
+        if (trim((string)RESEND_API_KEY) === '') {
+            throw new RuntimeException('RESEND_API_KEY is not configured.');
+        }
         $resend = \Resend::client(RESEND_API_KEY);
         
         $html_content = "
@@ -175,9 +198,10 @@ if (isset($_POST['resend_otp'])) {
         $message = "A new OTP has been sent to your email.";
         $_SESSION['otp_attempts'] = 0;
         
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         $error = "Failed to resend OTP email. Please contact the system administrator.";
         error_log("Resend Error in verify-otp resend: " . $e->getMessage());
+    }
     }
     } // end csrf-valid else
 }
