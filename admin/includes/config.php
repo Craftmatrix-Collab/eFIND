@@ -75,12 +75,29 @@ if (!defined('GEMINI_API_KEY')) {
     define('GEMINI_API_KEY', getenv('GEMINI_API_KEY') ?: (getenv('GOOGLE_API_KEY') ?: ''));
 }
 
-// Resend API Configuration
+// Email Configuration
 // NOTE: 'onboarding@resend.dev' is a Resend sandbox sender that can ONLY deliver to
 // the verified owner email of your Resend account. For production use, replace it with
 // a sender address from a custom domain you have verified in Resend (e.g. 'noreply@yourdomain.com').
-define('RESEND_API_KEY', getenv('RESEND_API_KEY') ?: '');
-define('FROM_EMAIL', getenv('FROM_EMAIL') ?: 'eFIND System <youremail@craftmatrix.org>');
+$resendApiKey = getenv('RESEND_API_KEY');
+if ($resendApiKey === false || $resendApiKey === '') {
+    // Backward-compatible fallback for SMTP-style deployment variables.
+    $resendApiKey = getenv('SMTP_PASSWORD') ?: '';
+}
+
+$fromEmail = getenv('FROM_EMAIL');
+if ($fromEmail === false || trim((string)$fromEmail) === '') {
+    $smtpFrom = getenv('SMTP_FROM') ?: (getenv('SMTP_USER') ?: (getenv('SMTP_USERNAME') ?: ''));
+    if ($smtpFrom !== '') {
+        $fromEmail = 'eFIND System <' . trim((string)$smtpFrom) . '>';
+    }
+}
+if ($fromEmail === false || trim((string)$fromEmail) === '') {
+    $fromEmail = 'eFIND System <youremail@craftmatrix.org>';
+}
+
+define('RESEND_API_KEY', $resendApiKey);
+define('FROM_EMAIL', $fromEmail);
 
 // MariaDB Configuration for PDO
 define('DB_HOST', $activeHost ?? $servername);
