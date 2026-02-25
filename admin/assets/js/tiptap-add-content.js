@@ -18,6 +18,11 @@ function ensureEditorStyles() {
     .efind-tiptap-wrapper { border: 1px solid #ced4da; border-radius: .375rem; background: #fff; }
     .efind-tiptap-toolbar { padding: .5rem; border-bottom: 1px solid #e9ecef; background: #f8f9fa; border-radius: .375rem .375rem 0 0; }
     .efind-tiptap-toolbar .btn.active { background: #0d6efd; border-color: #0d6efd; color: #fff; }
+    .efind-tiptap-editor {
+      max-height: 420px;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
     .efind-tiptap-editor .ProseMirror {
       min-height: 180px;
       padding: .75rem;
