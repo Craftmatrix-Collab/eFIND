@@ -125,6 +125,34 @@ function exportEditorToDocx(editor, form) {
   downloadBlob(blob, `${getFileBaseName(form)}.docx`);
 }
 
+window.efindFinalizeOcrMarkdown = async function (text, documentType = 'document') {
+  const rawText = String(text || '').trim();
+  if (!rawText) return null;
+
+  try {
+    const response = await fetch('finalize_ocr_markdown.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: rawText,
+        document_type: documentType,
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.success || typeof result.markdown !== 'string') {
+      const message = (result && result.error) ? result.error : `HTTP ${response.status}`;
+      console.warn('Gemini OCR finalization skipped:', message);
+      return null;
+    }
+
+    return result.markdown.trim() || null;
+  } catch (error) {
+    console.warn('Gemini OCR finalization failed:', error);
+    return null;
+  }
+};
+
 function createToolbarButton(config) {
   const btn = document.createElement('button');
   btn.type = 'button';

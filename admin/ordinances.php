@@ -3333,6 +3333,18 @@ $count_stmt->close();
                 }
                 if (combinedText.trim().length > 0) {
                     const detectedFields = analyzeDocumentContent(combinedText);
+                    processingElement.innerHTML = `
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                            <span>Finalizing OCR text to Markdown...</span>
+                        </div>
+                    `;
+                    if (typeof window.efindFinalizeOcrMarkdown === 'function') {
+                        const finalizedMarkdown = await window.efindFinalizeOcrMarkdown(detectedFields.content, 'ordinance');
+                        if (finalizedMarkdown) {
+                            detectedFields.content = finalizedMarkdown;
+                        }
+                    }
                     updateFormWithDetectedData(detectedFields);
                     showAutoFillResults(detectedFields);
                     processingElement.innerHTML = `
@@ -3428,6 +3440,18 @@ $count_stmt->close();
                         const cleanedText = cleanOcrText(text);
                         // Analyze and auto-fill form fields
                         const detectedFields = analyzeDocumentContent(cleanedText);
+                        processingElement.innerHTML = `
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                <span>Finalizing OCR text to Markdown...</span>
+                            </div>
+                        `;
+                        if (typeof window.efindFinalizeOcrMarkdown === 'function') {
+                            const finalizedMarkdown = await window.efindFinalizeOcrMarkdown(detectedFields.content, 'ordinance');
+                            if (finalizedMarkdown) {
+                                detectedFields.content = finalizedMarkdown;
+                            }
+                        }
                         // Update form fields with detected data
                         updateFormWithDetectedData(detectedFields);
                         // Show detection results
@@ -3481,6 +3505,18 @@ $count_stmt->close();
                                 const cleanedText = cleanOcrText(extractedText);
                                 // Analyze and auto-fill form fields
                                 const detectedFields = analyzeDocumentContent(cleanedText);
+                                processingElement.innerHTML = `
+                                    <div class="d-flex align-items-center">
+                                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                        <span>Finalizing OCR text to Markdown...</span>
+                                    </div>
+                                `;
+                                if (typeof window.efindFinalizeOcrMarkdown === 'function') {
+                                    const finalizedMarkdown = await window.efindFinalizeOcrMarkdown(detectedFields.content, 'ordinance');
+                                    if (finalizedMarkdown) {
+                                        detectedFields.content = finalizedMarkdown;
+                                    }
+                                }
                                 // Update form fields with detected data
                                 updateFormWithDetectedData(detectedFields);
                                 // Show detection results

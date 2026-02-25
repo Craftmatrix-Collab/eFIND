@@ -70,6 +70,9 @@ try {
 
 // OpenAI API Configuration
 define('OPENAI_API_KEY', 'your-openai-api-key-here');
+if (!defined('GEMINI_API_KEY')) {
+    define('GEMINI_API_KEY', getenv('GEMINI_API_KEY') ?: (getenv('GOOGLE_API_KEY') ?: ''));
+}
 
 // Resend API Configuration
 // NOTE: 'onboarding@resend.dev' is a Resend sandbox sender that can ONLY deliver to
