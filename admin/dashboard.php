@@ -53,6 +53,9 @@ $base_query = "
             o.title,
             o.date_posted as date,
             o.reference_number,
+            o.ordinance_number as document_number,
+            o.status as document_status,
+            o.description as document_description,
             o.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
             o.date_posted as date_posted,
@@ -67,6 +70,9 @@ $base_query = "
             r.title,
             r.date_posted as date,
             r.reference_number,
+            r.resolution_number as document_number,
+            NULL as document_status,
+            r.description as document_description,
             r.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
             r.date_posted as date_posted,
@@ -81,6 +87,9 @@ $base_query = "
             m.title,
             m.date_posted as date,
             m.reference_number,
+            m.session_number as document_number,
+            NULL as document_status,
+            NULL as document_description,
             m.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
             m.date_posted as date_posted,
@@ -96,9 +105,21 @@ $params = [];
 $types = '';
 if (!empty($search_query)) {
     $search_terms = "%" . $search_query . "%";
-    $where_conditions[] = "(title LIKE ? OR reference_number LIKE ? OR content LIKE ?)";
-    $types .= 'sss';
-    $params = array_merge($params, [$search_terms, $search_terms, $search_terms]);
+    $where_conditions[] = "(CAST(id AS CHAR) LIKE ? OR doc_type LIKE ? OR title LIKE ? OR COALESCE(reference_number, '') LIKE ? OR COALESCE(document_number, '') LIKE ? OR COALESCE(document_status, '') LIKE ? OR COALESCE(document_description, '') LIKE ? OR COALESCE(content, '') LIKE ? OR COALESCE(uploaded_by, '') LIKE ? OR COALESCE(date_posted, '') LIKE ? OR COALESCE(image_path, '') LIKE ?)";
+    $types .= 'sssssssssss';
+    $params = array_merge($params, [
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms
+    ]);
 }
 if (!empty($year)) {
     $where_conditions[] = "YEAR(date_posted) = ?";
@@ -142,8 +163,20 @@ $count_params = [];
 $count_types = '';
 if (!empty($search_query)) {
     $search_terms = "%" . $search_query . "%";
-    $count_types .= 'sss';
-    $count_params = array_merge($count_params, [$search_terms, $search_terms, $search_terms]);
+    $count_types .= 'sssssssssss';
+    $count_params = array_merge($count_params, [
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms,
+        $search_terms
+    ]);
 }
 if (!empty($year)) {
     $count_types .= 's';
@@ -1277,7 +1310,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     <div class="col-md-9">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
-                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search documents..." value="<?php echo htmlspecialchars($search_query); ?>">
+                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any document field (title, number, reference, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-md-1">
