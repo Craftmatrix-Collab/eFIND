@@ -1,10 +1,11 @@
 <?php
+require_once __DIR__ . '/env_loader.php';
 // MariaDB Configuration - Use environment variables with fallback
 $servername = getenv('DB_HOST') ?: '72.60.233.70';
 $username = getenv('DB_USER') ?: (getenv('DB_USERNAME') ?: 'root');
 $password = getenv('DB_PASS');
 if ($password === false || $password === '') {
-    $password = getenv('DB_PASSWORD') ?: '3xQ7fuQVu7SyYCnu15Hj44U0wf0ozulOH2U3Ggt8shqZ1K27MuvC3tHqY9dyOZd6';
+    $password = getenv('DB_PASSWORD') ?: '';
 }
 $dbname = getenv('DB_NAME') ?: (getenv('DB_DATABASE') ?: 'barangay_poblacion_south');
 $port = (int)(getenv('DB_PORT') ?: 9008);
@@ -69,7 +70,7 @@ try {
 }
 
 // OpenAI API Configuration
-define('OPENAI_API_KEY', 'your-openai-api-key-here');
+define('OPENAI_API_KEY', getenv('OPENAI_API_KEY') ?: '');
 if (!defined('GEMINI_API_KEY')) {
     define('GEMINI_API_KEY', getenv('GEMINI_API_KEY') ?: (getenv('GOOGLE_API_KEY') ?: ''));
 }
@@ -78,8 +79,8 @@ if (!defined('GEMINI_API_KEY')) {
 // NOTE: 'onboarding@resend.dev' is a Resend sandbox sender that can ONLY deliver to
 // the verified owner email of your Resend account. For production use, replace it with
 // a sender address from a custom domain you have verified in Resend (e.g. 'noreply@yourdomain.com').
-define('RESEND_API_KEY', 're_deTt6GnC_7a4nJ7x2nJePTNoNzZUkcu3e');
-define('FROM_EMAIL', 'eFIND System <youremail@craftmatrix.org>');
+define('RESEND_API_KEY', getenv('RESEND_API_KEY') ?: '');
+define('FROM_EMAIL', getenv('FROM_EMAIL') ?: 'eFIND System <youremail@craftmatrix.org>');
 
 // MariaDB Configuration for PDO
 define('DB_HOST', $activeHost ?? $servername);

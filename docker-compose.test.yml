@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: efind-app-test
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       db:
         condition: service_healthy
@@ -15,6 +17,22 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 3306
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-barangay_poblacion_south}
+      DB_DATABASE: ${DB_NAME:-barangay_poblacion_south}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: efind-documents
+      MINIO_REGION: us-east-1
+      MINIO_USE_SSL: false
+      MINIO_PORT: 9000
+      MINIO_CONSOLE_URL: http://minio:9001
+      MINIO_API_URL: http://minio:9000
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "7070:80"
     volumes:
@@ -27,9 +45,11 @@ services:
     image: mariadb:10.11
     container_name: efind-db-test
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      MYSQL_ROOT_PASSWORD: 3xQ7fuQVu7SyYCnu15Hj44U0wf0ozulOH2U3Ggt8shqZ1K27MuvC3tHqY9dyOZd6
-      MYSQL_DATABASE: barangay_poblacion_south
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-barangay_poblacion_south}
       TZ: Asia/Manila
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
@@ -47,10 +67,12 @@ services:
     image: minio/minio:latest
     container_name: efind-minio-test
     restart: unless-stopped
+    env_file:
+      - .env
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: Mq3UbZJnPo9noPnN
-      MINIO_ROOT_PASSWORD: ASrDcE00C6I8mwn4Be8uhM91FQ0rEH6K
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio_data_test:/data
     networks:
@@ -60,12 +82,14 @@ services:
     image: minio/mc:latest
     container_name: efind-minio-init-test
     restart: "no"
+    env_file:
+      - .env
     depends_on:
       - minio
     entrypoint: /bin/sh
     command: >
       -c "
-      until mc alias set local http://minio:9000 Mq3UbZJnPo9noPnN ASrDcE00C6I8mwn4Be8uhM91FQ0rEH6K; do
+      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; do
         sleep 2;
       done;
       mc mb -p local/efind-documents || true;

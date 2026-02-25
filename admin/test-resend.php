@@ -29,9 +29,9 @@ echo "=================================\n";
 echo "Testing email delivery to: $testEmail\n\n";
 
 // Check if API key is configured
-if (RESEND_API_KEY === 'your-resend-api-key-here') {
+if (trim((string)RESEND_API_KEY) === '' || RESEND_API_KEY === 'your-resend-api-key-here') {
     echo "❌ ERROR: Resend API key not configured!\n";
-    echo "Please update RESEND_API_KEY in includes/config.php\n";
+    echo "Please set RESEND_API_KEY in your environment (.env or process env)\n";
     exit(1);
 }
 
