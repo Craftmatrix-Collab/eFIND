@@ -1,6 +1,6 @@
 <?php
 /**
- * Mobile upload WebSocket server for per-session desktop/mobile signaling.
+ * Mobile upload WebSocket server powered by Ratchet.
  *
  * Run:
  *   php admin/mobile_upload_websocket_server.php 0.0.0.0 8090
@@ -12,349 +12,292 @@
  * 2) Notify completion from mobile client
  *    {"action":"upload_complete","session_id":"<hex-session-id>","doc_type":"...","title":"...","uploaded_by":"...","result_id":123}
  *
+ * 3) Push live camera frames from mobile client
+ *    {"action":"camera_frame","session_id":"<hex-session-id>","doc_type":"...","frame_data":"data:image/jpeg;base64,...","width":640,"height":360,"ts":1730000000000}
+ *
  * Server pushes to subscribed desktop clients:
- *    {"type":"upload_complete","session_id":"...","doc_type":"...","title":"...","uploaded_by":"...","result_id":123}
+ *    {"type":"upload_complete",...}
+ *    {"type":"camera_frame",...}
+ *    {"type":"camera_status",...}
  */
 
 declare(strict_types=1);
 
-$host = $argv[1] ?? '0.0.0.0';
-$port = isset($argv[2]) ? (int)$argv[2] : 8090;
-
-$server = @stream_socket_server("tcp://{$host}:{$port}", $errno, $errstr);
-if (!$server) {
-    fwrite(STDERR, "Failed to start server on {$host}:{$port} ({$errno}) {$errstr}\n");
+$autoloadPath = __DIR__ . '/vendor/autoload.php';
+if (!file_exists($autoloadPath)) {
+    fwrite(STDERR, "Composer autoload not found at {$autoloadPath}. Run 'composer install' in admin/ first.\n");
     exit(1);
 }
+require_once $autoloadPath;
 
-stream_set_blocking($server, false);
+use Ratchet\ConnectionInterface;
+use Ratchet\Http\HttpServer;
+use Ratchet\MessageComponentInterface;
+use Ratchet\Server\IoServer;
+use Ratchet\WebSocket\WsServer;
 
-echo "[mobile-ws] Listening on {$host}:{$port}\n";
-
-/**
- * @var array<int, array{
- *   socket: resource,
- *   handshake: bool,
- *   buffer: string,
- *   session_id: ?string
- * }>
- */
-$clients = [];
-
-/** @var array<string, array<int, bool>> */
-$subscriptions = [];
-
-while (true) {
-    $read = [$server];
-    foreach ($clients as $client) {
-        $read[] = $client['socket'];
-    }
-
-    $write = null;
-    $except = null;
-
-    $ready = @stream_select($read, $write, $except, 1);
-    if ($ready === false || $ready === 0) {
-        continue;
-    }
-
-    foreach ($read as $socket) {
-        if ($socket === $server) {
-            $conn = @stream_socket_accept($server, 0);
-            if ($conn === false) {
-                continue;
-            }
-            stream_set_blocking($conn, false);
-            $id = (int)$conn;
-            $clients[$id] = [
-                'socket' => $conn,
-                'handshake' => false,
-                'buffer' => '',
-                'session_id' => null,
-            ];
-            continue;
-        }
-
-        $id = (int)$socket;
-        if (!isset($clients[$id])) {
-            continue;
-        }
-
-        $chunk = @fread($socket, 8192);
-        if ($chunk === '' || $chunk === false) {
-            if (feof($socket)) {
-                closeClient($id, $clients, $subscriptions);
-            }
-            continue;
-        }
-
-        $clients[$id]['buffer'] .= $chunk;
-
-        if (!$clients[$id]['handshake']) {
-            if (strpos($clients[$id]['buffer'], "\r\n\r\n") === false) {
-                continue;
-            }
-
-            $request = $clients[$id]['buffer'];
-            $clients[$id]['buffer'] = '';
-
-            $reqMeta = parseWebSocketRequest($request);
-            if ($reqMeta === null) {
-                closeClient($id, $clients, $subscriptions);
-                continue;
-            }
-
-            $response = buildHandshakeResponse($reqMeta['key']);
-            @fwrite($socket, $response);
-            $clients[$id]['handshake'] = true;
-
-            if ($reqMeta['session_id'] !== null) {
-                subscribeClient($id, $reqMeta['session_id'], $clients, $subscriptions);
-            }
-
-            sendJson($socket, [
-                'type' => 'connected',
-                'session_id' => $clients[$id]['session_id'],
-            ]);
-            continue;
-        }
-
-        while (true) {
-            $frame = decodeFrame($clients[$id]['buffer']);
-            if ($frame === null) {
-                break;
-            }
-
-            $opcode = $frame['opcode'];
-            $payload = $frame['payload'];
-
-            if ($opcode === 0x8) {
-                closeClient($id, $clients, $subscriptions);
-                break;
-            }
-
-            if ($opcode === 0x9) {
-                @fwrite($socket, encodeFrame($payload, 0xA));
-                continue;
-            }
-
-            if ($opcode !== 0x1) {
-                continue;
-            }
-
-            $data = json_decode($payload, true);
-            if (!is_array($data)) {
-                continue;
-            }
-
-            handleClientMessage($id, $data, $clients, $subscriptions);
-        }
-    }
-}
-
-function handleClientMessage(int $clientId, array $data, array &$clients, array &$subscriptions): void
+final class MobileUploadWebSocket implements MessageComponentInterface
 {
-    $socket = $clients[$clientId]['socket'];
-    $action = (string)($data['action'] ?? '');
+    private const WEBSOCKET_PATH = '/mobile-upload';
 
-    if ($action === 'subscribe') {
-        $sessionId = sanitizeSessionId((string)($data['session_id'] ?? ''));
-        if ($sessionId === null) {
-            sendJson($socket, ['type' => 'error', 'message' => 'Invalid session_id']);
-            return;
-        }
-        subscribeClient($clientId, $sessionId, $clients, $subscriptions);
-        sendJson($socket, ['type' => 'subscribed', 'session_id' => $sessionId]);
-        return;
+    /** @var \SplObjectStorage<ConnectionInterface, array{session_id: ?string}> */
+    private \SplObjectStorage $clients;
+
+    /** @var array<string, \SplObjectStorage<ConnectionInterface, null>> */
+    private array $subscriptions = [];
+
+    public function __construct()
+    {
+        $this->clients = new \SplObjectStorage();
     }
 
-    if ($action === 'upload_complete') {
-        $sessionId = sanitizeSessionId((string)($data['session_id'] ?? ''));
-        if ($sessionId === null) {
-            sendJson($socket, ['type' => 'error', 'message' => 'Invalid session_id']);
+    public function onOpen(ConnectionInterface $conn): void
+    {
+        if (!$this->isExpectedRoute($conn)) {
+            $this->sendJson($conn, [
+                'type' => 'error',
+                'message' => 'Invalid websocket route',
+                'expected_path' => self::WEBSOCKET_PATH,
+            ]);
+            $conn->close();
             return;
         }
 
-        $message = [
-            'type' => 'upload_complete',
-            'session_id' => $sessionId,
-            'doc_type' => (string)($data['doc_type'] ?? ''),
-            'title' => (string)($data['title'] ?? 'Document'),
-            'uploaded_by' => (string)($data['uploaded_by'] ?? 'mobile'),
-            'result_id' => isset($data['result_id']) ? (int)$data['result_id'] : null,
-        ];
+        $this->clients->attach($conn, ['session_id' => null]);
 
-        if (!isset($subscriptions[$sessionId])) {
-            sendJson($socket, ['type' => 'ack', 'delivered' => 0, 'session_id' => $sessionId]);
+        $sessionId = $this->sessionIdFromQuery($conn);
+        if ($sessionId !== null) {
+            $this->subscribeConnection($conn, $sessionId);
+        }
+
+        $this->sendJson($conn, [
+            'type' => 'connected',
+            'session_id' => $this->getSessionId($conn),
+        ]);
+    }
+
+    public function onMessage(ConnectionInterface $from, $msg): void
+    {
+        $data = json_decode((string)$msg, true);
+        if (!is_array($data)) {
             return;
+        }
+
+        $action = (string)($data['action'] ?? '');
+        if ($action === 'subscribe') {
+            $sessionId = sanitizeSessionId((string)($data['session_id'] ?? ''));
+            if ($sessionId === null) {
+                $this->sendJson($from, ['type' => 'error', 'message' => 'Invalid session_id']);
+                return;
+            }
+            $this->subscribeConnection($from, $sessionId);
+            $this->sendJson($from, ['type' => 'subscribed', 'session_id' => $sessionId]);
+            return;
+        }
+
+        if ($action === 'upload_complete') {
+            $sessionId = sanitizeSessionId((string)($data['session_id'] ?? ''));
+            if ($sessionId === null) {
+                $this->sendJson($from, ['type' => 'error', 'message' => 'Invalid session_id']);
+                return;
+            }
+
+            $message = [
+                'type' => 'upload_complete',
+                'session_id' => $sessionId,
+                'doc_type' => (string)($data['doc_type'] ?? ''),
+                'title' => (string)($data['title'] ?? 'Document'),
+                'uploaded_by' => (string)($data['uploaded_by'] ?? 'mobile'),
+                'result_id' => isset($data['result_id']) ? (int)$data['result_id'] : null,
+            ];
+            $delivered = $this->broadcastToSession($sessionId, $message);
+            $this->sendJson($from, ['type' => 'ack', 'delivered' => $delivered, 'session_id' => $sessionId]);
+            return;
+        }
+
+        if ($action === 'camera_frame') {
+            $sessionId = sanitizeSessionId((string)($data['session_id'] ?? ''));
+            $frameData = (string)($data['frame_data'] ?? '');
+            if ($sessionId === null || $frameData === '') {
+                return;
+            }
+
+            if (strlen($frameData) > 1200000) {
+                return;
+            }
+
+            $this->broadcastToSession($sessionId, [
+                'type' => 'camera_frame',
+                'session_id' => $sessionId,
+                'doc_type' => (string)($data['doc_type'] ?? ''),
+                'frame_data' => $frameData,
+                'width' => isset($data['width']) ? (int)$data['width'] : null,
+                'height' => isset($data['height']) ? (int)$data['height'] : null,
+                'ts' => isset($data['ts']) ? (int)$data['ts'] : null,
+            ]);
+            return;
+        }
+
+        if ($action === 'camera_status') {
+            $sessionId = sanitizeSessionId((string)($data['session_id'] ?? ''));
+            if ($sessionId === null) {
+                return;
+            }
+            $status = (string)($data['status'] ?? 'idle');
+            $this->broadcastToSession($sessionId, [
+                'type' => 'camera_status',
+                'session_id' => $sessionId,
+                'doc_type' => (string)($data['doc_type'] ?? ''),
+                'status' => $status,
+            ]);
+            return;
+        }
+
+        if ($action === 'ping') {
+            $this->sendJson($from, ['type' => 'pong']);
+        }
+    }
+
+    public function onClose(ConnectionInterface $conn): void
+    {
+        $sessionId = $this->getSessionId($conn);
+        if ($sessionId !== null) {
+            $this->unsubscribeConnection($conn, $sessionId);
+        }
+
+        if ($this->clients->contains($conn)) {
+            $this->clients->detach($conn);
+        }
+    }
+
+    public function onError(ConnectionInterface $conn, \Exception $e): void
+    {
+        $this->onClose($conn);
+        $conn->close();
+    }
+
+    private function sessionIdFromQuery(ConnectionInterface $conn): ?string
+    {
+        if (!isset($conn->httpRequest)) {
+            return null;
+        }
+
+        $query = (string)$conn->httpRequest->getUri()->getQuery();
+        if ($query === '') {
+            return null;
+        }
+
+        parse_str($query, $params);
+        if (!isset($params['session'])) {
+            return null;
+        }
+
+        return sanitizeSessionId((string)$params['session']);
+    }
+
+    private function isExpectedRoute(ConnectionInterface $conn): bool
+    {
+        if (!isset($conn->httpRequest)) {
+            return false;
+        }
+
+        $path = (string)$conn->httpRequest->getUri()->getPath();
+        return $path === self::WEBSOCKET_PATH;
+    }
+
+    private function getSessionId(ConnectionInterface $conn): ?string
+    {
+        if (!$this->clients->contains($conn)) {
+            return null;
+        }
+
+        $meta = $this->clients[$conn];
+        if (!is_array($meta)) {
+            return null;
+        }
+
+        $sessionId = $meta['session_id'] ?? null;
+        return is_string($sessionId) ? $sessionId : null;
+    }
+
+    private function setSessionId(ConnectionInterface $conn, ?string $sessionId): void
+    {
+        if (!$this->clients->contains($conn)) {
+            return;
+        }
+
+        $meta = $this->clients[$conn];
+        if (!is_array($meta)) {
+            $meta = ['session_id' => null];
+        }
+        $meta['session_id'] = $sessionId;
+        $this->clients[$conn] = $meta;
+    }
+
+    private function subscribeConnection(ConnectionInterface $conn, string $sessionId): void
+    {
+        $currentSessionId = $this->getSessionId($conn);
+        if ($currentSessionId !== null) {
+            $this->unsubscribeConnection($conn, $currentSessionId);
+        }
+
+        if (!isset($this->subscriptions[$sessionId])) {
+            $this->subscriptions[$sessionId] = new \SplObjectStorage();
+        }
+
+        $this->subscriptions[$sessionId]->attach($conn);
+        $this->setSessionId($conn, $sessionId);
+    }
+
+    private function unsubscribeConnection(ConnectionInterface $conn, string $sessionId): void
+    {
+        if (!isset($this->subscriptions[$sessionId])) {
+            return;
+        }
+
+        $sessionSubs = $this->subscriptions[$sessionId];
+        if ($sessionSubs->contains($conn)) {
+            $sessionSubs->detach($conn);
+        }
+
+        if (count($sessionSubs) === 0) {
+            unset($this->subscriptions[$sessionId]);
+        }
+
+        $this->setSessionId($conn, null);
+    }
+
+    private function broadcastToSession(string $sessionId, array $message): int
+    {
+        if (!isset($this->subscriptions[$sessionId])) {
+            return 0;
         }
 
         $delivered = 0;
-        foreach (array_keys($subscriptions[$sessionId]) as $subscriberId) {
-            if (!isset($clients[$subscriberId])) {
+        foreach ($this->subscriptions[$sessionId] as $client) {
+            if (!$this->clients->contains($client)) {
                 continue;
             }
-            sendJson($clients[$subscriberId]['socket'], $message);
+            $this->sendJson($client, $message);
             $delivered++;
         }
 
-        sendJson($socket, ['type' => 'ack', 'delivered' => $delivered, 'session_id' => $sessionId]);
-        return;
+        return $delivered;
     }
 
-    if ($action === 'ping') {
-        sendJson($socket, ['type' => 'pong']);
-    }
-}
+    private function sendJson(ConnectionInterface $conn, array $data): void
+    {
+        $json = json_encode($data, JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            return;
+        }
 
-function parseWebSocketRequest(string $request): ?array
-{
-    if (!preg_match('/Sec-WebSocket-Key:\s*(.+)\r\n/i', $request, $keyMatch)) {
-        return null;
-    }
-
-    $rawKey = trim($keyMatch[1]);
-    if ($rawKey === '') {
-        return null;
-    }
-
-    $sessionId = null;
-    if (preg_match('/GET\s+([^\s]+)\s+HTTP\/1\.[01]/i', $request, $pathMatch)) {
-        $path = $pathMatch[1];
-        $parts = parse_url($path);
-        if (!empty($parts['query'])) {
-            parse_str($parts['query'], $query);
-            if (isset($query['session'])) {
-                $sessionId = sanitizeSessionId((string)$query['session']);
-            }
+        try {
+            $conn->send($json);
+        } catch (\Throwable $e) {
+            // Ignore send failures; dead sockets are cleaned up on close.
         }
     }
-
-    return [
-        'key' => $rawKey,
-        'session_id' => $sessionId,
-    ];
-}
-
-function buildHandshakeResponse(string $clientKey): string
-{
-    $accept = base64_encode(sha1($clientKey . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
-    return "HTTP/1.1 101 Switching Protocols\r\n"
-        . "Upgrade: websocket\r\n"
-        . "Connection: Upgrade\r\n"
-        . "Sec-WebSocket-Accept: {$accept}\r\n\r\n";
-}
-
-function decodeFrame(string &$buffer): ?array
-{
-    if (strlen($buffer) < 2) {
-        return null;
-    }
-
-    $byte1 = ord($buffer[0]);
-    $byte2 = ord($buffer[1]);
-    $opcode = $byte1 & 0x0F;
-    $masked = ($byte2 >> 7) & 1;
-    $length = $byte2 & 0x7F;
-    $offset = 2;
-
-    if ($length === 126) {
-        if (strlen($buffer) < 4) {
-            return null;
-        }
-        $length = unpack('n', substr($buffer, 2, 2))[1];
-        $offset = 4;
-    } elseif ($length === 127) {
-        if (strlen($buffer) < 10) {
-            return null;
-        }
-        $parts = unpack('N2', substr($buffer, 2, 8));
-        $length = ((int)$parts[1] << 32) + (int)$parts[2];
-        $offset = 10;
-    }
-
-    $mask = '';
-    if ($masked) {
-        if (strlen($buffer) < $offset + 4) {
-            return null;
-        }
-        $mask = substr($buffer, $offset, 4);
-        $offset += 4;
-    }
-
-    if (strlen($buffer) < $offset + $length) {
-        return null;
-    }
-
-    $payload = substr($buffer, $offset, $length);
-    $buffer = (string)substr($buffer, $offset + $length);
-
-    if ($masked) {
-        $unmasked = '';
-        for ($i = 0; $i < $length; $i++) {
-            $unmasked .= $payload[$i] ^ $mask[$i % 4];
-        }
-        $payload = $unmasked;
-    }
-
-    return ['opcode' => $opcode, 'payload' => $payload];
-}
-
-function encodeFrame(string $payload, int $opcode = 0x1): string
-{
-    $length = strlen($payload);
-    $header = chr(0x80 | ($opcode & 0x0F));
-
-    if ($length <= 125) {
-        $header .= chr($length);
-    } elseif ($length <= 65535) {
-        $header .= chr(126) . pack('n', $length);
-    } else {
-        $header .= chr(127) . pack('N2', intdiv($length, 4294967296), $length % 4294967296);
-    }
-
-    return $header . $payload;
-}
-
-function sendJson($socket, array $data): void
-{
-    $json = json_encode($data, JSON_UNESCAPED_SLASHES);
-    if ($json === false) {
-        return;
-    }
-    @fwrite($socket, encodeFrame($json, 0x1));
-}
-
-function subscribeClient(int $clientId, string $sessionId, array &$clients, array &$subscriptions): void
-{
-    $current = $clients[$clientId]['session_id'];
-    if (is_string($current) && isset($subscriptions[$current][$clientId])) {
-        unset($subscriptions[$current][$clientId]);
-        if (empty($subscriptions[$current])) {
-            unset($subscriptions[$current]);
-        }
-    }
-
-    $clients[$clientId]['session_id'] = $sessionId;
-    $subscriptions[$sessionId][$clientId] = true;
-}
-
-function closeClient(int $clientId, array &$clients, array &$subscriptions): void
-{
-    if (!isset($clients[$clientId])) {
-        return;
-    }
-
-    $sessionId = $clients[$clientId]['session_id'];
-    if (is_string($sessionId) && isset($subscriptions[$sessionId][$clientId])) {
-        unset($subscriptions[$sessionId][$clientId]);
-        if (empty($subscriptions[$sessionId])) {
-            unset($subscriptions[$sessionId]);
-        }
-    }
-
-    @fclose($clients[$clientId]['socket']);
-    unset($clients[$clientId]);
 }
 
 function sanitizeSessionId(string $sessionId): ?string
@@ -365,3 +308,19 @@ function sanitizeSessionId(string $sessionId): ?string
     }
     return $sanitized;
 }
+
+$host = $argv[1] ?? '0.0.0.0';
+$port = isset($argv[2]) ? (int)$argv[2] : 8090;
+if ($port < 1 || $port > 65535) {
+    fwrite(STDERR, "Invalid port: {$port}\n");
+    exit(1);
+}
+
+echo "[mobile-ws] Listening on {$host}:{$port}\n";
+
+$server = IoServer::factory(
+    new HttpServer(new WsServer(new MobileUploadWebSocket())),
+    $port,
+    $host
+);
+$server->run();

@@ -3,6 +3,7 @@
     "description": "eFIND Admin Panel",
     "require": {
         "php": ">=7.4",
+        "cboden/ratchet": "^0.4.4",
         "resend/resend-php": "^0.13.0"
     },
     "autoload": {

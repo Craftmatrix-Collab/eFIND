@@ -2027,6 +2027,11 @@ $count_stmt->close();
                                             <span id="res-mobile-status-text">Upload detected! Refreshing…</span>
                                         </div>
                                     </div>
+                                    <div id="res-mobile-live" class="mt-3 d-none">
+                                        <div id="res-mobile-live-text" class="small text-muted mb-2">Waiting for live camera preview…</div>
+                                        <img id="res-mobile-live-image" src="" alt="Live mobile camera preview"
+                                             class="img-fluid rounded border" style="max-height:240px;object-fit:cover;">
+                                    </div>
                                     <div class="mt-2">
                                         <span class="badge bg-secondary"><i class="fas fa-circle-notch fa-spin me-1"></i>Waiting for mobile upload…</span>
                                         <div class="text-muted small mt-1">After uploading on mobile, this page will automatically refresh.</div>
@@ -2252,6 +2257,7 @@ $count_stmt->close();
                 desktopPane.classList.add('d-none');
                 mobilePane.classList.remove('d-none');
                 resHandledComplete = false;
+                resResetLivePreview();
                 try {
                     await resGenerateQR();
                     resStartRealtime();
@@ -2268,6 +2274,7 @@ $count_stmt->close();
                 mobilePane.classList.add('d-none');
                 desktopPane.classList.remove('d-none');
                 resStopRealtime();
+                resResetLivePreview();
             }
         };
 
@@ -2288,6 +2295,35 @@ $count_stmt->close();
                 colorLight: '#ffffff',
             });
             resQrCreated = true;
+        }
+
+        function resResetLivePreview() {
+            const wrap = document.getElementById('res-mobile-live');
+            const img = document.getElementById('res-mobile-live-image');
+            const text = document.getElementById('res-mobile-live-text');
+            if (img) img.removeAttribute('src');
+            if (text) text.textContent = 'Waiting for live camera preview…';
+            if (wrap) wrap.classList.add('d-none');
+        }
+
+        function resRenderLivePreview(frameData) {
+            const wrap = document.getElementById('res-mobile-live');
+            const img = document.getElementById('res-mobile-live-image');
+            const text = document.getElementById('res-mobile-live-text');
+            if (!wrap || !img) return;
+            img.src = frameData;
+            if (text) text.textContent = 'Live camera preview from mobile.';
+            wrap.classList.remove('d-none');
+        }
+
+        function resUpdateLiveStatus(status) {
+            const text = document.getElementById('res-mobile-live-text');
+            if (!text) return;
+            if (status === 'live') {
+                text.textContent = 'Live camera preview from mobile.';
+            } else if (status === 'stopped') {
+                text.textContent = 'Camera paused on mobile.';
+            }
         }
 
         function resStartRealtime() {
@@ -2320,6 +2356,14 @@ $count_stmt->close();
                 try {
                     data = JSON.parse(event.data);
                 } catch (error) {
+                    return;
+                }
+                if (data.type === 'camera_frame' && data.session_id === resMobileSession && data.frame_data) {
+                    resRenderLivePreview(data.frame_data);
+                    return;
+                }
+                if (data.type === 'camera_status' && data.session_id === resMobileSession) {
+                    resUpdateLiveStatus(data.status);
                     return;
                 }
                 if (data.type === 'upload_complete' && data.session_id === resMobileSession) {
@@ -2364,6 +2408,7 @@ $count_stmt->close();
             if (resHandledComplete) return;
             resHandledComplete = true;
             resStopRealtime();
+            resResetLivePreview();
             const statusEl = document.getElementById('res-mobile-status');
             const textEl = document.getElementById('res-mobile-status-text');
             if (textEl) {
@@ -2389,6 +2434,7 @@ $count_stmt->close();
                 clearInterval(resPollTimer);
                 resPollTimer = null;
             }
+            resResetLivePreview();
         }
 
         document.addEventListener('DOMContentLoaded', function () {

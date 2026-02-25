@@ -1972,6 +1972,11 @@ $count_stmt->close();
                                             <span id="mom-mobile-status-text">Upload detected! Refreshing…</span>
                                         </div>
                                     </div>
+                                    <div id="mom-mobile-live" class="mt-3 d-none">
+                                        <div id="mom-mobile-live-text" class="small text-muted mb-2">Waiting for live camera preview…</div>
+                                        <img id="mom-mobile-live-image" src="" alt="Live mobile camera preview"
+                                             class="img-fluid rounded border" style="max-height:240px;object-fit:cover;">
+                                    </div>
                                     <div class="mt-2">
                                         <span class="badge bg-secondary"><i class="fas fa-circle-notch fa-spin me-1"></i>Waiting for mobile upload…</span>
                                         <div class="text-muted small mt-1">After uploading on mobile, this page will automatically refresh.</div>
@@ -2197,6 +2202,7 @@ $count_stmt->close();
                 desktopPane.classList.add('d-none');
                 mobilePane.classList.remove('d-none');
                 momHandledComplete = false;
+                momResetLivePreview();
                 try {
                     await momGenerateQR();
                     momStartRealtime();
@@ -2213,6 +2219,7 @@ $count_stmt->close();
                 mobilePane.classList.add('d-none');
                 desktopPane.classList.remove('d-none');
                 momStopRealtime();
+                momResetLivePreview();
             }
         };
 
@@ -2233,6 +2240,35 @@ $count_stmt->close();
                 colorLight: '#ffffff',
             });
             momQrCreated = true;
+        }
+
+        function momResetLivePreview() {
+            const wrap = document.getElementById('mom-mobile-live');
+            const img = document.getElementById('mom-mobile-live-image');
+            const text = document.getElementById('mom-mobile-live-text');
+            if (img) img.removeAttribute('src');
+            if (text) text.textContent = 'Waiting for live camera preview…';
+            if (wrap) wrap.classList.add('d-none');
+        }
+
+        function momRenderLivePreview(frameData) {
+            const wrap = document.getElementById('mom-mobile-live');
+            const img = document.getElementById('mom-mobile-live-image');
+            const text = document.getElementById('mom-mobile-live-text');
+            if (!wrap || !img) return;
+            img.src = frameData;
+            if (text) text.textContent = 'Live camera preview from mobile.';
+            wrap.classList.remove('d-none');
+        }
+
+        function momUpdateLiveStatus(status) {
+            const text = document.getElementById('mom-mobile-live-text');
+            if (!text) return;
+            if (status === 'live') {
+                text.textContent = 'Live camera preview from mobile.';
+            } else if (status === 'stopped') {
+                text.textContent = 'Camera paused on mobile.';
+            }
         }
 
         function momStartRealtime() {
@@ -2265,6 +2301,14 @@ $count_stmt->close();
                 try {
                     data = JSON.parse(event.data);
                 } catch (error) {
+                    return;
+                }
+                if (data.type === 'camera_frame' && data.session_id === momMobileSession && data.frame_data) {
+                    momRenderLivePreview(data.frame_data);
+                    return;
+                }
+                if (data.type === 'camera_status' && data.session_id === momMobileSession) {
+                    momUpdateLiveStatus(data.status);
                     return;
                 }
                 if (data.type === 'upload_complete' && data.session_id === momMobileSession) {
@@ -2309,6 +2353,7 @@ $count_stmt->close();
             if (momHandledComplete) return;
             momHandledComplete = true;
             momStopRealtime();
+            momResetLivePreview();
             const statusEl = document.getElementById('mom-mobile-status');
             const textEl = document.getElementById('mom-mobile-status-text');
             if (textEl) {
@@ -2334,6 +2379,7 @@ $count_stmt->close();
                 clearInterval(momPollTimer);
                 momPollTimer = null;
             }
+            momResetLivePreview();
         }
 
         document.addEventListener('DOMContentLoaded', function () {

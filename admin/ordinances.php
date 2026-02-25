@@ -1977,6 +1977,11 @@ $count_stmt->close();
                                             <span id="ord-mobile-status-text">Upload detected! Refreshing…</span>
                                         </div>
                                     </div>
+                                    <div id="ord-mobile-live" class="mt-3 d-none">
+                                        <div id="ord-mobile-live-text" class="small text-muted mb-2">Waiting for live camera preview…</div>
+                                        <img id="ord-mobile-live-image" src="" alt="Live mobile camera preview"
+                                             class="img-fluid rounded border" style="max-height:240px;object-fit:cover;">
+                                    </div>
                                     <div class="mt-2">
                                         <span class="badge bg-secondary"><i class="fas fa-circle-notch fa-spin me-1"></i>Waiting for mobile upload…</span>
                                         <div class="text-muted small mt-1">After uploading on mobile, this page will automatically refresh.</div>
@@ -2195,6 +2200,7 @@ $count_stmt->close();
                 desktopPane.classList.add('d-none');
                 mobilePane.classList.remove('d-none');
                 ordHandledComplete = false;
+                ordResetLivePreview();
                 try {
                     await ordGenerateQR();
                     ordStartRealtime();
@@ -2211,6 +2217,7 @@ $count_stmt->close();
                 mobilePane.classList.add('d-none');
                 desktopPane.classList.remove('d-none');
                 ordStopRealtime();
+                ordResetLivePreview();
             }
         };
 
@@ -2231,6 +2238,35 @@ $count_stmt->close();
                 colorLight: '#ffffff',
             });
             ordQrCreated = true;
+        }
+
+        function ordResetLivePreview() {
+            const wrap = document.getElementById('ord-mobile-live');
+            const img = document.getElementById('ord-mobile-live-image');
+            const text = document.getElementById('ord-mobile-live-text');
+            if (img) img.removeAttribute('src');
+            if (text) text.textContent = 'Waiting for live camera preview…';
+            if (wrap) wrap.classList.add('d-none');
+        }
+
+        function ordRenderLivePreview(frameData) {
+            const wrap = document.getElementById('ord-mobile-live');
+            const img = document.getElementById('ord-mobile-live-image');
+            const text = document.getElementById('ord-mobile-live-text');
+            if (!wrap || !img) return;
+            img.src = frameData;
+            if (text) text.textContent = 'Live camera preview from mobile.';
+            wrap.classList.remove('d-none');
+        }
+
+        function ordUpdateLiveStatus(status) {
+            const text = document.getElementById('ord-mobile-live-text');
+            if (!text) return;
+            if (status === 'live') {
+                text.textContent = 'Live camera preview from mobile.';
+            } else if (status === 'stopped') {
+                text.textContent = 'Camera paused on mobile.';
+            }
         }
 
         function ordStartRealtime() {
@@ -2263,6 +2299,14 @@ $count_stmt->close();
                 try {
                     data = JSON.parse(event.data);
                 } catch (error) {
+                    return;
+                }
+                if (data.type === 'camera_frame' && data.session_id === ordMobileSession && data.frame_data) {
+                    ordRenderLivePreview(data.frame_data);
+                    return;
+                }
+                if (data.type === 'camera_status' && data.session_id === ordMobileSession) {
+                    ordUpdateLiveStatus(data.status);
                     return;
                 }
                 if (data.type === 'upload_complete' && data.session_id === ordMobileSession) {
@@ -2307,6 +2351,7 @@ $count_stmt->close();
             if (ordHandledComplete) return;
             ordHandledComplete = true;
             ordStopRealtime();
+            ordResetLivePreview();
             const statusEl = document.getElementById('ord-mobile-status');
             const textEl = document.getElementById('ord-mobile-status-text');
             if (textEl) {
@@ -2332,6 +2377,7 @@ $count_stmt->close();
                 clearInterval(ordPollTimer);
                 ordPollTimer = null;
             }
+            ordResetLivePreview();
         }
 
         document.addEventListener('DOMContentLoaded', function () {

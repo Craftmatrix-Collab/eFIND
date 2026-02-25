@@ -2054,6 +2054,11 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                 </div>
               </div>
             </div>
+            <div id="ud-mobile-live" class="mt-3 d-none">
+              <div id="ud-mobile-live-text" class="small text-muted mb-2">Waiting for live camera preview…</div>
+              <img id="ud-mobile-live-image" src="" alt="Live mobile camera preview"
+                   class="img-fluid rounded border" style="max-height:240px;object-fit:cover;">
+            </div>
           </div>
           <div class="mt-4 d-flex justify-content-between">
             <button class="btn btn-outline-secondary" onclick="udGoToStep(1)">
@@ -2116,6 +2121,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
   let udQrCreated      = false;
   let udMobileSession  = null;
   let udPollTimer      = null;
+  let udWs             = null;
+  let udWsReconnectTimer = null;
+  let udHandledComplete = false;
 
   /* ── step dots ── */
   function udSetDots(active) {
@@ -2200,12 +2208,152 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
       </div>`
   };
 
-  /* ── show QR panel (async: creates mobile session, then polls for completion) ── */
+  function udResolveWsUrl() {
+    if (window.EFIND_MOBILE_WS_URL) {
+      return window.EFIND_MOBILE_WS_URL;
+    }
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = location.hostname;
+    const port = window.EFIND_MOBILE_WS_PORT || '8090';
+    return `${scheme}://${host}:${port}/mobile-upload`;
+  }
+
+  function udResetLivePreview() {
+    const wrap = document.getElementById('ud-mobile-live');
+    const img = document.getElementById('ud-mobile-live-image');
+    const text = document.getElementById('ud-mobile-live-text');
+    if (img) img.removeAttribute('src');
+    if (text) text.textContent = 'Waiting for live camera preview…';
+    if (wrap) wrap.classList.add('d-none');
+  }
+
+  function udRenderLivePreview(frameData) {
+    const wrap = document.getElementById('ud-mobile-live');
+    const img = document.getElementById('ud-mobile-live-image');
+    const text = document.getElementById('ud-mobile-live-text');
+    if (!wrap || !img) return;
+    img.src = frameData;
+    if (text) text.textContent = 'Live camera preview from mobile.';
+    wrap.classList.remove('d-none');
+  }
+
+  function udUpdateLiveStatus(status) {
+    const text = document.getElementById('ud-mobile-live-text');
+    if (!text) return;
+    if (status === 'live') {
+      text.textContent = 'Live camera preview from mobile.';
+    } else if (status === 'stopped') {
+      text.textContent = 'Camera paused on mobile.';
+    }
+  }
+
+  function udHandleMobileComplete(data) {
+    if (udHandledComplete) return;
+    udHandledComplete = true;
+    udStopMobileRealtime();
+    udResetLivePreview();
+    document.getElementById('ud-mobile-waiting').classList.add('d-none');
+    document.getElementById('ud-mobile-complete').classList.remove('d-none');
+    const info = document.getElementById('ud-mobile-result-info');
+    if (info) {
+      const resultId = data && data.result_id ? data.result_id : 'N/A';
+      info.textContent = `Document saved (ID: ${resultId})`;
+    }
+    udMobileSession = null;
+    udQrCreated = false;
+  }
+
+  function udStopMobileRealtime() {
+    clearTimeout(udWsReconnectTimer);
+    udWsReconnectTimer = null;
+    if (udWs) {
+      udWs.onclose = null;
+      udWs.close();
+      udWs = null;
+    }
+    if (udPollTimer) {
+      clearInterval(udPollTimer);
+      udPollTimer = null;
+    }
+  }
+
+  function udStartMobileWebSocket() {
+    if (!udMobileSession || !window.WebSocket) return;
+    try {
+      udWs = new WebSocket(udResolveWsUrl());
+    } catch (error) {
+      udWs = null;
+      return;
+    }
+
+    udWs.onopen = function () {
+      if (!udWs || !udMobileSession) return;
+      udWs.send(JSON.stringify({
+        action: 'subscribe',
+        session_id: udMobileSession,
+        doc_type: udType,
+      }));
+    };
+
+    udWs.onmessage = function (event) {
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (error) {
+        return;
+      }
+      if (data.type === 'camera_frame' && data.session_id === udMobileSession && data.frame_data) {
+        udRenderLivePreview(data.frame_data);
+        return;
+      }
+      if (data.type === 'camera_status' && data.session_id === udMobileSession) {
+        udUpdateLiveStatus(data.status);
+        return;
+      }
+      if (data.type === 'upload_complete' && data.session_id === udMobileSession) {
+        udHandleMobileComplete(data);
+      }
+    };
+
+    udWs.onclose = function () {
+      udWs = null;
+      const panel = document.getElementById('ud-qr-panel');
+      if (panel && !panel.classList.contains('d-none') && udMobileSession && !udHandledComplete) {
+        clearTimeout(udWsReconnectTimer);
+        udWsReconnectTimer = setTimeout(udStartMobileWebSocket, 3000);
+      }
+    };
+
+    udWs.onerror = function () {
+      // Poll fallback remains active.
+    };
+  }
+
+  function udStartMobilePoll() {
+    if (udPollTimer) clearInterval(udPollTimer);
+    udPollTimer = setInterval(async () => {
+      if (!udMobileSession || udHandledComplete) return;
+      try {
+        const r = await fetch(`mobile_session.php?action=check&session=${udMobileSession}`);
+        const d = await r.json();
+        if (d.status === 'complete') {
+          udHandleMobileComplete({ result_id: d.result_id || null });
+        }
+      } catch (e) {}
+    }, 3000);
+  }
+
+  function udStartMobileRealtime() {
+    udStopMobileRealtime();
+    udStartMobilePoll();
+    udStartMobileWebSocket();
+  }
+
+  /* ── show QR panel (async: creates mobile session, then starts realtime listeners) ── */
   window.udShowQR = async function () {
     const panel = document.getElementById('ud-qr-panel');
     panel.classList.remove('d-none');
 
-    // Create a new pairing session if needed
     if (!udMobileSession) {
       try {
         const r = await fetch('mobile_session.php', {
@@ -2234,34 +2382,15 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
       udQrCreated = true;
     }
 
-    // Show waiting spinner and start polling
     if (udMobileSession) {
+      udHandledComplete = false;
+      udResetLivePreview();
       document.getElementById('ud-mobile-status').classList.remove('d-none');
       document.getElementById('ud-mobile-waiting').classList.remove('d-none');
       document.getElementById('ud-mobile-complete').classList.add('d-none');
-      udStartMobilePoll();
+      udStartMobileRealtime();
     }
   };
-
-  function udStartMobilePoll() {
-    if (udPollTimer) clearInterval(udPollTimer);
-    udPollTimer = setInterval(async () => {
-      if (!udMobileSession) return;
-      try {
-        const r = await fetch(`mobile_session.php?action=check&session=${udMobileSession}`);
-        const d = await r.json();
-        if (d.status === 'complete') {
-          clearInterval(udPollTimer); udPollTimer = null;
-          document.getElementById('ud-mobile-waiting').classList.add('d-none');
-          document.getElementById('ud-mobile-complete').classList.remove('d-none');
-          const info = document.getElementById('ud-mobile-result-info');
-          if (info) info.textContent = `Document saved (ID: ${d.result_id})`;
-          udMobileSession = null;
-          udQrCreated = false;
-        }
-      } catch (e) {}
-    }, 3000);
-  }
 
   /* ── reset QR when type changes ── */
   const origSelectType = window.udSelectType;
@@ -2270,6 +2399,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
     origSelectType(type, btn);
     // rebuild QR if panel already visible
     if (!document.getElementById('ud-qr-panel').classList.contains('d-none')) {
+      udStopMobileRealtime();
+      udResetLivePreview();
+      udHandledComplete = false;
       udMobileSession = null;
       udQrCreated = false;
       udShowQR();
@@ -2282,7 +2414,11 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
       document.getElementById(`ud-step-${i}`).classList.toggle('d-none', i !== n)
     );
     udSetDots(Math.min(n, 3));
-    if (n !== 2) document.getElementById('ud-qr-panel').classList.add('d-none');
+    if (n !== 2) {
+      document.getElementById('ud-qr-panel').classList.add('d-none');
+      udStopMobileRealtime();
+      udResetLivePreview();
+    }
     if (n === 3) {
       document.getElementById('ud-meta-fields').innerHTML = udMetaTemplates[udType] || '';
       document.getElementById('ud-meta-fields').addEventListener('input', udValidateStep3);
@@ -2473,7 +2609,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
 
   /* ── reset modal when closed ── */
   window.udResetModal = function () {
-    if (udPollTimer) { clearInterval(udPollTimer); udPollTimer = null; }
+    udStopMobileRealtime();
+    udResetLivePreview();
+    udHandledComplete = false;
     udMobileSession = null;
     udType      = '';
     udFiles     = [];

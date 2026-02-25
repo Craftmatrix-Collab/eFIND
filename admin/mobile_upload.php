@@ -506,6 +506,9 @@ videoInput.addEventListener('change',  e => addFiles([...e.target.files]));
 
 // ── Camera helpers ──
 let cameraStream = null;
+let liveStreamWs = null;
+let liveFrameTimer = null;
+let liveFrameCanvas = null;
 
 // Dismiss the camera splash overlay and open the native camera
 function dismissCameraSplash() {
@@ -515,7 +518,11 @@ function dismissCameraSplash() {
 }
 
 function openCamera() {
-  // Prefer native capture sheet on mobile (works on iOS & Android)
+  if (mobileSession && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    openLiveCamera();
+    return;
+  }
+  // Native capture sheet fallback
   cameraInput.click();
 }
 
@@ -523,8 +530,107 @@ function openCameraVideo() {
   videoInput.click();
 }
 
+function ensureLiveStreamSocket() {
+  if (!mobileSession || !window.WebSocket) return null;
+  if (liveStreamWs && (liveStreamWs.readyState === WebSocket.OPEN || liveStreamWs.readyState === WebSocket.CONNECTING)) {
+    return liveStreamWs;
+  }
+  try {
+    liveStreamWs = new WebSocket(getMobileUploadWsUrl());
+  } catch (error) {
+    liveStreamWs = null;
+    return null;
+  }
+
+  liveStreamWs.onopen = () => {
+    sendLiveStreamMessage({
+      action: 'camera_status',
+      session_id: mobileSession,
+      doc_type: selectedType,
+      status: 'live',
+    });
+  };
+
+  liveStreamWs.onclose = () => {
+    liveStreamWs = null;
+  };
+
+  liveStreamWs.onerror = () => {};
+  return liveStreamWs;
+}
+
+function sendLiveStreamMessage(payload) {
+  if (!liveStreamWs || liveStreamWs.readyState !== WebSocket.OPEN) return;
+  liveStreamWs.send(JSON.stringify(payload));
+}
+
+function startLiveFrameBroadcast() {
+  if (!mobileSession) return;
+  ensureLiveStreamSocket();
+  if (liveFrameTimer) return;
+
+  if (!liveFrameCanvas) {
+    liveFrameCanvas = document.createElement('canvas');
+  }
+
+  liveFrameTimer = setInterval(() => {
+    const video = document.getElementById('camera-video');
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+
+    ensureLiveStreamSocket();
+    if (!liveStreamWs || liveStreamWs.readyState !== WebSocket.OPEN) return;
+
+    const maxWidth = 640;
+    let frameWidth = video.videoWidth;
+    let frameHeight = video.videoHeight;
+    if (frameWidth > maxWidth) {
+      const scale = maxWidth / frameWidth;
+      frameWidth = Math.round(frameWidth * scale);
+      frameHeight = Math.round(frameHeight * scale);
+    }
+
+    liveFrameCanvas.width = frameWidth;
+    liveFrameCanvas.height = frameHeight;
+    const ctx = liveFrameCanvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, frameWidth, frameHeight);
+    sendLiveStreamMessage({
+      action: 'camera_frame',
+      session_id: mobileSession,
+      doc_type: selectedType,
+      frame_data: liveFrameCanvas.toDataURL('image/jpeg', 0.58),
+      width: frameWidth,
+      height: frameHeight,
+      ts: Date.now(),
+    });
+  }, 350);
+}
+
+function stopLiveFrameBroadcast() {
+  if (liveFrameTimer) {
+    clearInterval(liveFrameTimer);
+    liveFrameTimer = null;
+  }
+
+  if (liveStreamWs && liveStreamWs.readyState === WebSocket.OPEN && mobileSession) {
+    sendLiveStreamMessage({
+      action: 'camera_status',
+      session_id: mobileSession,
+      doc_type: selectedType,
+      status: 'stopped',
+    });
+  }
+
+  if (liveStreamWs) {
+    try { liveStreamWs.close(); } catch (e) {}
+    liveStreamWs = null;
+  }
+}
+
 // Fallback live viewfinder (for browsers / desktop that don't support capture attribute)
 async function openLiveCamera() {
+  stopCamera();
   const vf = document.getElementById('camera-viewfinder');
   const vid = document.getElementById('camera-video');
   try {
@@ -534,7 +640,9 @@ async function openLiveCamera() {
     });
     vid.srcObject = cameraStream;
     vf.classList.remove('d-none');
+    startLiveFrameBroadcast();
   } catch (err) {
+    stopLiveFrameBroadcast();
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
       alert('Camera permission denied. Please allow camera access in your browser settings and try again.');
     } else {
@@ -558,6 +666,7 @@ function capturePhoto() {
 }
 
 function stopCamera() {
+  stopLiveFrameBroadcast();
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
     cameraStream = null;
@@ -863,6 +972,8 @@ function showResult(success, data) {
       </button>`;
   }
 }
+
+window.addEventListener('beforeunload', stopLiveFrameBroadcast);
 </script>
 </body>
 </html>
