@@ -3210,6 +3210,7 @@ $count_stmt->close();
             autoFillSection.style.display = 'block';
             processingElement.style.display = 'block';
             autoFillProgressBar.style.width = '0%';
+            autoFillProgressBar.classList.add('progress-bar-animated');
             autoFillResults.innerHTML = '';
             processingElement.innerHTML = `
                 <div class="d-flex align-items-center">
@@ -3334,6 +3335,12 @@ $count_stmt->close();
                     const detectedFields = analyzeDocumentContent(combinedText);
                     updateFormWithDetectedData(detectedFields);
                     showAutoFillResults(detectedFields);
+                    processingElement.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            Processing complete. Fields have been auto-filled.
+                        </div>
+                    `;
                 } else {
                     processingElement.innerHTML = `
                         <div class="alert alert-warning">
@@ -3343,6 +3350,7 @@ $count_stmt->close();
                     `;
                 }
                 autoFillProgressBar.style.width = '100%';
+                autoFillProgressBar.classList.remove('progress-bar-animated');
             } catch (error) {
                 console.error('Error:', error);
                 processingElement.innerHTML = `
@@ -3352,6 +3360,7 @@ $count_stmt->close();
                     </div>
                 `;
                 autoFillProgressBar.style.width = '100%';
+                autoFillProgressBar.classList.remove('progress-bar-animated');
             }
         }
         
@@ -3367,6 +3376,7 @@ $count_stmt->close();
             autoFillSection.style.display = 'block';
             processingElement.style.display = 'block';
             autoFillProgressBar.style.width = '0%';
+            autoFillProgressBar.classList.add('progress-bar-animated');
             autoFillResults.innerHTML = '';
             processingElement.innerHTML = `
                 <div class="d-flex align-items-center">
@@ -3424,6 +3434,7 @@ $count_stmt->close();
                         showAutoFillResults(detectedFields, confidence);
                         // Update progress to complete
                         autoFillProgressBar.style.width = '100%';
+                        autoFillProgressBar.classList.remove('progress-bar-animated');
                         processingElement.style.display = 'none';
                     } else {
                         processingElement.innerHTML = `
@@ -3433,6 +3444,7 @@ $count_stmt->close();
                             </div>
                         `;
                         autoFillProgressBar.style.width = '100%';
+                        autoFillProgressBar.classList.remove('progress-bar-animated');
                     }
                 } else if (fileExtension === 'pdf' || fileExtension === 'docx' || fileExtension === 'doc') {
                     // Use server-side extraction for PDF and DOCX files
@@ -3475,6 +3487,7 @@ $count_stmt->close();
                                 showAutoFillResults(detectedFields, 100);
                                 // Update progress to complete
                                 autoFillProgressBar.style.width = '100%';
+                                autoFillProgressBar.classList.remove('progress-bar-animated');
                                 processingElement.style.display = 'none';
                             } else {
                                 processingElement.innerHTML = `
@@ -3484,6 +3497,7 @@ $count_stmt->close();
                                     </div>
                                 `;
                                 autoFillProgressBar.style.width = '100%';
+                                autoFillProgressBar.classList.remove('progress-bar-animated');
                             }
                         } else {
                             const errorMsg = result.extraction ? result.extraction.message : result.message;
@@ -3495,6 +3509,7 @@ $count_stmt->close();
                                 </div>
                             `;
                             autoFillProgressBar.style.width = '100%';
+                            autoFillProgressBar.classList.remove('progress-bar-animated');
                         }
                     } catch (error) {
                         console.error('Server extraction error:', error);
@@ -3505,6 +3520,7 @@ $count_stmt->close();
                             </div>
                         `;
                         autoFillProgressBar.style.width = '100%';
+                        autoFillProgressBar.classList.remove('progress-bar-animated');
                     }
                 } else {
                     processingElement.innerHTML = `
@@ -3514,6 +3530,7 @@ $count_stmt->close();
                         </div>
                     `;
                     autoFillProgressBar.style.width = '100%';
+                    autoFillProgressBar.classList.remove('progress-bar-animated');
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -3523,6 +3540,8 @@ $count_stmt->close();
                         Error processing file: ${error.message}
                     </div>
                 `;
+                autoFillProgressBar.style.width = '100%';
+                autoFillProgressBar.classList.remove('progress-bar-animated');
             }
         }
         // NEW FUNCTION: Analyze document content and extract structured data
@@ -3607,6 +3626,10 @@ $count_stmt->close();
             // Update content
             if (detectedFields.content && !document.getElementById('content').value) {
                 document.getElementById('content').value = detectedFields.content;
+                document.getElementById('content').dispatchEvent(new Event('input', { bubbles: true }));
+                if (typeof window.efindSyncTiptapFromTextarea === 'function') {
+                    window.efindSyncTiptapFromTextarea('content');
+                }
                 document.getElementById('content').classList.add('field-highlight', 'detected-field');
             }
         }
@@ -3888,6 +3911,10 @@ $count_stmt->close();
             }
             if (contentField) {
                 contentField.value = text;
+                contentField.dispatchEvent(new Event('input', { bubbles: true }));
+                if (typeof window.efindSyncTiptapFromTextarea === 'function' && contentField.id) {
+                    window.efindSyncTiptapFromTextarea(contentField.id);
+                }
             }
             const datePatterns = [
                 /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/g,

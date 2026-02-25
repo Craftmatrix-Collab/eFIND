@@ -3365,6 +3365,12 @@ $count_stmt->close();
                 if (combinedText.trim().length > 0) {
                     const detectedFields = analyzeDocumentContent(combinedText);
                     updateFormWithDetectedData(detectedFields);
+                    processingElement.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            Processing complete. Fields have been auto-filled.
+                        </div>
+                    `;
                 } else {
                     processingElement.innerHTML = `
                         <div class="alert alert-warning">
@@ -3626,6 +3632,10 @@ $count_stmt->close();
 
             if (detectedFields.content && !document.getElementById('content').value) {
                 document.getElementById('content').value = detectedFields.content;
+                document.getElementById('content').dispatchEvent(new Event('input', { bubbles: true }));
+                if (typeof window.efindSyncTiptapFromTextarea === 'function') {
+                    window.efindSyncTiptapFromTextarea('content');
+                }
                 document.getElementById('content').classList.add('field-highlight', 'detected-field');
             }
         }
@@ -3705,6 +3715,10 @@ $count_stmt->close();
 
             if (contentField) {
                 contentField.value = text;
+                contentField.dispatchEvent(new Event('input', { bubbles: true }));
+                if (typeof window.efindSyncTiptapFromTextarea === 'function' && contentField.id) {
+                    window.efindSyncTiptapFromTextarea(contentField.id);
+                }
             }
 
             const datePatterns = [
