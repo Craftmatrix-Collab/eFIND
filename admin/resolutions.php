@@ -1690,6 +1690,9 @@ $count_stmt->close();
                     <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addResolutionModal">
                         <i class="fas fa-plus me-1"></i> Add Resolution
                     </button>
+                    <button type="button" class="btn btn-secondary-custom" data-efind-open-compare>
+                        <i class="fas fa-columns me-1"></i> Compare
+                    </button>
                     <button class="btn btn-secondary-custom" id="printButton">
                         <i class="fas fa-print me-1"></i> Print
                     </button>

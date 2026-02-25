@@ -8,6 +8,7 @@ const PAGE_LABELS = {
 };
 
 const editorRegistry = new Map();
+let latestDuplicateComparison = null;
 
 function ensureEditorStyles() {
   if (document.getElementById('efind-tiptap-style')) return;
@@ -28,6 +29,35 @@ function ensureEditorStyles() {
     .efind-tiptap-editor .ProseMirror p:last-child { margin-bottom: 0; }
     textarea.field-highlight + .efind-tiptap-wrapper .efind-tiptap-editor {
       box-shadow: 0 0 0 .15rem rgba(13, 110, 253, .18);
+    }
+    .efind-compare-preview {
+      min-height: 240px;
+      max-height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #dee2e6;
+      border-radius: .375rem;
+      background: #f8f9fa;
+      overflow: hidden;
+      color: #6c757d;
+      text-align: center;
+      padding: .75rem;
+    }
+    .efind-compare-preview img,
+    .efind-compare-preview iframe,
+    .efind-compare-preview object {
+      width: 100%;
+      max-height: 318px;
+      border: 0;
+      border-radius: .25rem;
+      object-fit: contain;
+      background: #fff;
+    }
+    .efind-compare-meta {
+      margin: .75rem 0 0;
+      padding-left: 1rem;
+      font-size: .875rem;
     }
   `;
   document.head.appendChild(style);
@@ -265,6 +295,242 @@ window.efindConfirmDuplicateImage = function (message) {
   });
 };
 
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const amount = bytes / (1024 ** index);
+  return `${amount.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+}
+
+function getFileExtension(value) {
+  const source = String(value || '').split('?')[0].split('#')[0];
+  const token = source.includes('.') ? source.split('.').pop() : '';
+  return String(token || '').toLowerCase();
+}
+
+function toAbsoluteAssetUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw, window.location.href).href;
+  } catch (error) {
+    return raw;
+  }
+}
+
+function setPreviewMessage(container, message) {
+  if (!container) return;
+  container.innerHTML = `<span>${escapeHtml(message)}</span>`;
+}
+
+function setPreviewFromFile(container, file, modalEl) {
+  if (!container || !(file instanceof File)) {
+    setPreviewMessage(container, 'No duplicate file selected.');
+    return '';
+  }
+
+  const previousObjectUrl = modalEl ? String(modalEl.dataset.compareDuplicateObjectUrl || '') : '';
+  if (previousObjectUrl) {
+    URL.revokeObjectURL(previousObjectUrl);
+    if (modalEl) {
+      modalEl.dataset.compareDuplicateObjectUrl = '';
+    }
+  }
+
+  const extension = getFileExtension(file.name);
+  const objectUrl = URL.createObjectURL(file);
+  if (modalEl) {
+    modalEl.dataset.compareDuplicateObjectUrl = objectUrl;
+  }
+  if (file.type.startsWith('image/')) {
+    container.innerHTML = `<img src="${objectUrl}" alt="Duplicate preview">`;
+    return objectUrl;
+  }
+  if (file.type === 'application/pdf' || extension === 'pdf') {
+    container.innerHTML = `<iframe src="${objectUrl}" title="Duplicate PDF preview"></iframe>`;
+    return objectUrl;
+  }
+  setPreviewMessage(container, 'Preview unavailable for this file type.');
+  return objectUrl;
+}
+
+function setPreviewFromUrl(container, sourceUrl) {
+  if (!container) return '';
+  const absoluteUrl = toAbsoluteAssetUrl(sourceUrl);
+  if (!absoluteUrl) {
+    setPreviewMessage(container, 'Original file path is unavailable.');
+    return '';
+  }
+
+  const extension = getFileExtension(absoluteUrl);
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tif', 'tiff'];
+  if (imageExts.includes(extension)) {
+    container.innerHTML = `<img src="${escapeHtml(absoluteUrl)}" alt="Original preview">`;
+    return absoluteUrl;
+  }
+  if (extension === 'pdf') {
+    container.innerHTML = `<iframe src="${escapeHtml(absoluteUrl)}" title="Original PDF preview"></iframe>`;
+    return absoluteUrl;
+  }
+
+  container.innerHTML = `<a href="${escapeHtml(absoluteUrl)}" target="_blank" rel="noopener">Open original document</a>`;
+  return absoluteUrl;
+}
+
+function renderCompareMetadata(container, rows) {
+  if (!container) return;
+  const items = Array.isArray(rows) ? rows.filter((row) => row && row.value !== '') : [];
+  if (items.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = items
+    .map((row) => `<li><strong>${escapeHtml(row.label)}:</strong> ${escapeHtml(row.value)}</li>`)
+    .join('');
+}
+
+function getDuplicateCompareModal() {
+  let modal = document.getElementById('efindDuplicateCompareModal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.className = 'modal fade';
+  modal.id = 'efindDuplicateCompareModal';
+  modal.tabIndex = -1;
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-info text-white">
+          <h5 class="modal-title"><i class="fas fa-columns me-2"></i>Duplicate Comparison</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning py-2 mb-3" data-compare-status>No duplicate comparison data yet. Select a duplicate image first.</div>
+          <div class="row g-3">
+            <div class="col-lg-6">
+              <h6 class="mb-2">Duplicate (Selected)</h6>
+              <div class="efind-compare-preview" data-compare-duplicate-preview></div>
+              <ul class="efind-compare-meta" data-compare-duplicate-meta></ul>
+            </div>
+            <div class="col-lg-6">
+              <h6 class="mb-2">Original (Existing Record)</h6>
+              <div class="efind-compare-preview" data-compare-original-preview></div>
+              <ul class="efind-compare-meta" data-compare-original-meta></ul>
+              <a href="#" class="btn btn-sm btn-outline-primary mt-2 d-none" data-compare-open-original target="_blank" rel="noopener">
+                <i class="fas fa-external-link-alt me-1"></i>Open Original
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+  modal.addEventListener('hidden.bs.modal', () => {
+    const objectUrl = String(modal.dataset.compareDuplicateObjectUrl || '');
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      modal.dataset.compareDuplicateObjectUrl = '';
+    }
+  });
+
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function renderDuplicateCompareModal(modalEl) {
+  if (!modalEl) return;
+
+  const statusEl = modalEl.querySelector('[data-compare-status]');
+  const duplicatePreview = modalEl.querySelector('[data-compare-duplicate-preview]');
+  const originalPreview = modalEl.querySelector('[data-compare-original-preview]');
+  const duplicateMeta = modalEl.querySelector('[data-compare-duplicate-meta]');
+  const originalMeta = modalEl.querySelector('[data-compare-original-meta]');
+  const openOriginal = modalEl.querySelector('[data-compare-open-original]');
+
+  if (!latestDuplicateComparison || !(latestDuplicateComparison.duplicateFile instanceof File)) {
+    if (statusEl) {
+      statusEl.className = 'alert alert-warning py-2 mb-3';
+      statusEl.textContent = 'No duplicate comparison data yet. Select a duplicate image first.';
+    }
+    setPreviewMessage(duplicatePreview, 'Duplicate preview unavailable.');
+    setPreviewMessage(originalPreview, 'Original preview unavailable.');
+    renderCompareMetadata(duplicateMeta, []);
+    renderCompareMetadata(originalMeta, []);
+    if (openOriginal) {
+      openOriginal.classList.add('d-none');
+      openOriginal.href = '#';
+    }
+    return;
+  }
+
+  const { duplicateFile, originalMatch, duplicateHash, documentType } = latestDuplicateComparison;
+  const originalUrl = setPreviewFromUrl(originalPreview, originalMatch && originalMatch.image_path ? originalMatch.image_path : '');
+  setPreviewFromFile(duplicatePreview, duplicateFile, modalEl);
+
+  if (statusEl) {
+    statusEl.className = 'alert alert-info py-2 mb-3';
+    const originalTitle = originalMatch && originalMatch.title ? originalMatch.title : 'existing record';
+    statusEl.textContent = `Comparing duplicate file against ${originalTitle}.`;
+  }
+
+  renderCompareMetadata(duplicateMeta, [
+    { label: 'Name', value: duplicateFile.name || '' },
+    { label: 'Type', value: duplicateFile.type || getFileExtension(duplicateFile.name).toUpperCase() || 'Unknown' },
+    { label: 'Size', value: formatBytes(duplicateFile.size) },
+    { label: 'Document Type', value: String(documentType || '') },
+    { label: 'Hash', value: String(duplicateHash || '') },
+  ]);
+
+  renderCompareMetadata(originalMeta, [
+    { label: 'Title', value: originalMatch && originalMatch.title ? String(originalMatch.title) : '' },
+    { label: 'Record ID', value: originalMatch && originalMatch.document_id ? String(originalMatch.document_id) : '' },
+    { label: 'Path', value: originalMatch && originalMatch.image_path ? String(originalMatch.image_path) : '' },
+  ]);
+
+  if (openOriginal) {
+    if (originalUrl) {
+      openOriginal.href = originalUrl;
+      openOriginal.classList.remove('d-none');
+    } else {
+      openOriginal.href = '#';
+      openOriginal.classList.add('d-none');
+    }
+  }
+}
+
+window.efindOpenDuplicateComparison = function () {
+  if (!window.bootstrap || typeof window.bootstrap.Modal !== 'function') {
+    window.alert('Compare modal is unavailable right now.');
+    return;
+  }
+  ensureEditorStyles();
+  const modalEl = getDuplicateCompareModal();
+  renderDuplicateCompareModal(modalEl);
+  const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+};
+
+function initDuplicateCompareButtons() {
+  if (!document.body || document.body.dataset.efindCompareReady === '1') {
+    return;
+  }
+  document.body.dataset.efindCompareReady = '1';
+  document.addEventListener('click', (event) => {
+    const trigger = event.target instanceof Element
+      ? event.target.closest('[data-efind-open-compare]')
+      : null;
+    if (!trigger) return;
+    event.preventDefault();
+    window.efindOpenDuplicateComparison();
+  });
+}
+
 window.efindCheckImageDuplicate = async function (file, documentType = 'document') {
   if (!(file instanceof File)) {
     throw new Error('Image file is required for duplicate checking.');
@@ -332,10 +598,19 @@ window.efindHandleDuplicateImageSelection = async function (input, options = {})
   }
 
   if (duplicateEntries.length === 0) {
+    latestDuplicateComparison = null;
     return { proceed: true, filesRemaining: files.length, duplicateCount: 0 };
   }
 
-  const firstMatch = duplicateEntries[0].duplicateResult.matches[0];
+  const firstEntry = duplicateEntries[0];
+  const firstMatch = firstEntry.duplicateResult.matches[0];
+  latestDuplicateComparison = {
+    duplicateFile: firstEntry.file,
+    originalMatch: firstMatch || null,
+    duplicateHash: String(firstEntry.duplicateResult.hash || ''),
+    documentType: String(documentType || 'document'),
+    updatedAt: Date.now(),
+  };
   const duplicateLabel = firstMatch && firstMatch.title ? ` (matches: ${firstMatch.title})` : '';
   const proceedAnyway = await window.efindConfirmDuplicateImage(
     `This image is already upploaded${duplicateLabel}.`
@@ -561,6 +836,7 @@ window.efindSyncTiptapFromTextarea = function (textareaId = 'content') {
 };
 
 function init() {
+  initDuplicateCompareButtons();
   const textarea = document.querySelector(
     '#addOrdinanceForm textarea#content, #addResolutionForm textarea#content, #addMinuteForm textarea#content'
   );
