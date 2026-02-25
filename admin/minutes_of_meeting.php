@@ -2226,7 +2226,11 @@ $count_stmt->close();
         async function momGenerateQR() {
             if (momQrCreated && momMobileSession) return;
             const sessionId = await momEnsureSession();
-            const url = `${location.protocol}//${location.host}${location.pathname.replace('minutes_of_meeting.php', 'mobile_upload.php')}?type=minutes&camera=1&session=${encodeURIComponent(sessionId)}`;
+            const mobileUploadUrl = new URL('mobile_upload', window.location.href);
+            mobileUploadUrl.searchParams.set('type', 'minutes');
+            mobileUploadUrl.searchParams.set('camera', '1');
+            mobileUploadUrl.searchParams.set('session', sessionId);
+            const url = mobileUploadUrl.toString();
             const qrLink = document.getElementById('mom-qr-link');
             const qrWrap = document.getElementById('mom-qrcode');
             if (!qrLink || !qrWrap) return;

@@ -2281,7 +2281,11 @@ $count_stmt->close();
         async function resGenerateQR() {
             if (resQrCreated && resMobileSession) return;
             const sessionId = await resEnsureSession();
-            const url = `${location.protocol}//${location.host}${location.pathname.replace('resolutions.php', 'mobile_upload.php')}?type=resolutions&camera=1&session=${encodeURIComponent(sessionId)}`;
+            const mobileUploadUrl = new URL('mobile_upload', window.location.href);
+            mobileUploadUrl.searchParams.set('type', 'resolutions');
+            mobileUploadUrl.searchParams.set('camera', '1');
+            mobileUploadUrl.searchParams.set('session', sessionId);
+            const url = mobileUploadUrl.toString();
             const qrLink = document.getElementById('res-qr-link');
             const qrWrap = document.getElementById('res-qrcode');
             if (!qrLink || !qrWrap) return;

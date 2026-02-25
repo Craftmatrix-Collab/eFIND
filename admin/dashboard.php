@@ -2366,8 +2366,13 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
       } catch (e) { /* proceed without session */ }
     }
 
-    const sessionPart = udMobileSession ? `&session=${udMobileSession}` : '';
-    const url = `${location.protocol}//${location.host}${location.pathname.replace('dashboard.php','mobile_upload.php')}?type=${udType}&camera=1${sessionPart}`;
+    const mobileUploadUrl = new URL('mobile_upload', window.location.href);
+    mobileUploadUrl.searchParams.set('type', udType);
+    mobileUploadUrl.searchParams.set('camera', '1');
+    if (udMobileSession) {
+      mobileUploadUrl.searchParams.set('session', udMobileSession);
+    }
+    const url = mobileUploadUrl.toString();
     document.getElementById('ud-qr-link').href = url;
 
     if (!udQrCreated) {

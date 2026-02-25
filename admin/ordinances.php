@@ -2224,7 +2224,11 @@ $count_stmt->close();
         async function ordGenerateQR() {
             if (ordQrCreated && ordMobileSession) return;
             const sessionId = await ordEnsureSession();
-            const url = `${location.protocol}//${location.host}${location.pathname.replace('ordinances.php','mobile_upload.php')}?type=ordinances&camera=1&session=${encodeURIComponent(sessionId)}`;
+            const mobileUploadUrl = new URL('mobile_upload', window.location.href);
+            mobileUploadUrl.searchParams.set('type', 'ordinances');
+            mobileUploadUrl.searchParams.set('camera', '1');
+            mobileUploadUrl.searchParams.set('session', sessionId);
+            const url = mobileUploadUrl.toString();
             const qrLink = document.getElementById('ord-qr-link');
             const qrWrap = document.getElementById('ord-qrcode');
             if (!qrLink || !qrWrap) return;
