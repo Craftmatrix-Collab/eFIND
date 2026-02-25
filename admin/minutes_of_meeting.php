@@ -2509,8 +2509,7 @@ $count_stmt->close();
     <!-- jsPDF & html2canvas for PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-    <!-- Tesseract.js for OCR -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <!-- OCR now runs via composer_tesseract_ocr.php -->
     <!-- PDF.js for PDF text extraction -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js"></script>
     <script>
@@ -3168,25 +3167,26 @@ $count_stmt->close();
             });
         });
 
-        // Function to perform OCR using Tesseract.js
-        function performOCR(imagePath, minuteId, callback) {
-            Tesseract.recognize(
-                imagePath,
-                'eng',
-                {
-                    logger: progress => {
-                        const progressElement = document.getElementById('ocrProgress');
-                        if (progressElement) {
-                            if (progress.status === 'recognizing text') {
-                                const percent = Math.round(progress.progress * 100);
-                                progressElement.textContent = `Processing: ${percent}%`;
-                            } else {
-                                progressElement.textContent = `Status: ${progress.status}`;
-                            }
-                        }
+        // Function to perform OCR using composer backend
+        async function runComposerOcr(source, onProgress) {
+            if (typeof window.efindComposerOcr !== 'function') {
+                throw new Error('Composer OCR helper is unavailable. Please reload this page.');
+            }
+            return window.efindComposerOcr(source, {
+                documentType: 'minutes',
+                onProgress: ({ percent, message }) => {
+                    if (typeof onProgress === 'function') {
+                        onProgress(percent, message);
                     }
-                }
-            ).then(({ data: { text } }) => {
+                },
+            });
+        }
+        function performOCR(imagePath, minuteId, callback) {
+            runComposerOcr(imagePath, function (percent, message) {
+                const progressElement = document.getElementById('ocrProgress');
+                if (!progressElement) return;
+                progressElement.textContent = message || `Processing: ${Math.round(percent || 0)}%`;
+            }).then(({ text }) => {
                 callback(text);
             }).catch(error => {
                 console.error('OCR Error:', error);
@@ -3265,23 +3265,12 @@ $count_stmt->close();
                             </div>
                         `;
 
-                        const { data: { text } } = await Tesseract.recognize(
-                            URL.createObjectURL(file),
-                            'eng',
-                            {
-                                logger: progress => {
-                                    const progressElement = document.getElementById('fileOcrProgress');
-                                    if (progressElement) {
-                                        if (progress.status === 'recognizing text') {
-                                            const percent = Math.round(progress.progress * 100);
-                                            progressElement.textContent = `Processing: ${percent}%`;
-                                        } else {
-                                            progressElement.textContent = `Status: ${progress.status}`;
-                                        }
-                                    }
-                                }
+                        const { text } = await runComposerOcr(file, function (percent, message) {
+                            const progressElement = document.getElementById('fileOcrProgress');
+                            if (progressElement) {
+                                progressElement.textContent = message || `Processing: ${Math.round(percent || 0)}%`;
                             }
-                        );
+                        });
 
                         if (text && text.trim().length > 0) {
                             combinedText += cleanOcrText(text) + '\n\n---\n\n';
@@ -3437,23 +3426,12 @@ $count_stmt->close();
                             </div>
                         `;
 
-                        const { data: { text } } = await Tesseract.recognize(
-                            URL.createObjectURL(file),
-                            'eng',
-                            {
-                                logger: progress => {
-                                    const progressElement = document.getElementById('fileOcrProgress');
-                                    if (progressElement) {
-                                        if (progress.status === 'recognizing text') {
-                                            const percent = Math.round(progress.progress * 100);
-                                            progressElement.textContent = `Processing: ${percent}%`;
-                                        } else {
-                                            progressElement.textContent = `Status: ${progress.status}`;
-                                        }
-                                    }
-                                }
+                        const { text } = await runComposerOcr(file, function (percent, message) {
+                            const progressElement = document.getElementById('fileOcrProgress');
+                            if (progressElement) {
+                                progressElement.textContent = message || `Processing: ${Math.round(percent || 0)}%`;
                             }
-                        );
+                        });
 
                         if (text && text.trim().length > 0) {
                             combinedText += cleanOcrText(text) + '\n\n---\n\n';

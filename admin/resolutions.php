@@ -2564,8 +2564,7 @@ $count_stmt->close();
     <!-- jsPDF & html2canvas for PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-    <!-- Tesseract.js for OCR -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <!-- OCR now runs via composer_tesseract_ocr.php -->
     <script>
         // Delete confirmation functionality
         document.addEventListener('DOMContentLoaded', function() {
@@ -2986,7 +2985,7 @@ $count_stmt->close();
                                             formatOcrText(data.content);
                                             document.querySelector('#rawView pre').textContent = data.content;
                                         } else {
-                                            // Process new OCR with Tesseract.js for each image
+                                            // Process new OCR via composer backend for each image
                                             let combinedText = '';
                                             let processedImages = 0;
                                             imageSrcs.forEach((imageSrc, index) => {
@@ -3040,7 +3039,7 @@ $count_stmt->close();
                                         formatOcrText(data.content);
                                         document.querySelector('#rawView pre').textContent = data.content;
                                     } else {
-                                        // Process new OCR with Tesseract.js for each image
+                                        // Process new OCR via composer backend for each image
                                         let combinedText = '';
                                         let processedImages = 0;
                                         imageSrcs.forEach((imageSrc, index) => {
@@ -3267,25 +3266,26 @@ $count_stmt->close();
                 }
             });
         });
-        // Function to perform actual OCR using Tesseract.js
-        function performOCR(imagePath, resolutionId, callback) {
-            Tesseract.recognize(
-                imagePath,
-                'eng',
-                {
-                    logger: progress => {
-                        const progressElement = document.getElementById('ocrProgress');
-                        if (progressElement) {
-                            if (progress.status === 'recognizing text') {
-                                const percent = Math.round(progress.progress * 100);
-                                progressElement.textContent = `Processing: ${percent}%`;
-                            } else {
-                                progressElement.textContent = `Status: ${progress.status}`;
-                            }
-                        }
+        // Function to perform OCR using composer backend
+        async function runComposerOcr(source, onProgress) {
+            if (typeof window.efindComposerOcr !== 'function') {
+                throw new Error('Composer OCR helper is unavailable. Please reload this page.');
+            }
+            return window.efindComposerOcr(source, {
+                documentType: 'resolution',
+                onProgress: ({ percent, message }) => {
+                    if (typeof onProgress === 'function') {
+                        onProgress(percent, message);
                     }
-                }
-            ).then(({ data: { text } }) => {
+                },
+            });
+        }
+        function performOCR(imagePath, resolutionId, callback) {
+            runComposerOcr(imagePath, function (percent, message) {
+                const progressElement = document.getElementById('ocrProgress');
+                if (!progressElement) return;
+                progressElement.textContent = message || `Processing: ${Math.round(percent || 0)}%`;
+            }).then(({ text }) => {
                 callback(text);
             }).catch(error => {
                 console.error('OCR Error:', error);
@@ -3348,24 +3348,15 @@ $count_stmt->close();
                                 </div>
                             </div>
                         `;
-                        const { data: { text } } = await Tesseract.recognize(
-                            URL.createObjectURL(file),
-                            'eng',
-                            {
-                                logger: progress => {
-                                    const progressElement = document.getElementById('fileOcrProgress');
-                                    if (progressElement) {
-                                        if (progress.status === 'recognizing text') {
-                                            const percent = Math.round(progress.progress * 100);
-                                            progressElement.textContent = `Processing: ${percent}%`;
-                                            autoFillProgressBar.style.width = `${50 + (percent * 0.4)}%`;
-                                        } else {
-                                            progressElement.textContent = `Status: ${progress.status}`;
-                                        }
-                                    }
-                                }
+                        const { text } = await runComposerOcr(file, function (percent, message) {
+                            const progressElement = document.getElementById('fileOcrProgress');
+                            if (progressElement && message) {
+                                progressElement.textContent = message;
                             }
-                        );
+                            if (typeof percent === 'number') {
+                                autoFillProgressBar.style.width = `${50 + (percent * 0.4)}%`;
+                            }
+                        });
                         if (text && text.trim().length > 0) {
                             combinedText += cleanOcrText(text) + '\n\n---\n\n';
                         }
@@ -3518,23 +3509,12 @@ $count_stmt->close();
                                 </div>
                             </div>
                         `;
-                        const { data: { text } } = await Tesseract.recognize(
-                            URL.createObjectURL(file),
-                            'eng',
-                            {
-                                logger: progress => {
-                                    const progressElement = document.getElementById('fileOcrProgress');
-                                    if (progressElement) {
-                                        if (progress.status === 'recognizing text') {
-                                            const percent = Math.round(progress.progress * 100);
-                                            progressElement.textContent = `Processing: ${percent}%`;
-                                        } else {
-                                            progressElement.textContent = `Status: ${progress.status}`;
-                                        }
-                                    }
-                                }
+                        const { text } = await runComposerOcr(file, function (percent, message) {
+                            const progressElement = document.getElementById('fileOcrProgress');
+                            if (progressElement) {
+                                progressElement.textContent = message || `Processing: ${Math.round(percent || 0)}%`;
                             }
-                        );
+                        });
                         if (text && text.trim().length > 0) {
                             combinedText += cleanOcrText(text) + '\n\n---\n\n';
                         }
