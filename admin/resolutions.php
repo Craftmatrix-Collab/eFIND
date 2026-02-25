@@ -14,6 +14,7 @@ try {
     include(__DIR__ . '/includes/config.php');
     include(__DIR__ . '/includes/logger.php');
     include(__DIR__ . '/includes/minio_helper.php');
+    include(__DIR__ . '/includes/image_hash_helper.php');
 } catch (Exception $e) {
     error_log("Failed to include required files: " . $e->getMessage());
     die("System initialization error. Please contact the administrator.");
@@ -71,6 +72,10 @@ if ($tableResult->num_rows == 0) {
     if (!$conn->query($createTableQuery)) {
         error_log("Failed to create document_ocr_content table: " . $conn->error);
     }
+}
+
+if (!ensureDocumentImageHashTable($conn)) {
+    error_log("Failed to ensure document_image_hashes table: " . $conn->error);
 }
 
 // Function to generate reference number for resolutions
@@ -487,6 +492,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $date_posted = $_POST['date_posted'];
             $resolution_date = $_POST['resolution_date'];
             $content = trim($_POST['content']);
+            $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
+            $uploadedImageHashEntries = [];
             error_log("Form data received - Title: $title, Number: $resolution_number, Date: $resolution_date");
             
             $reference_number = generateReferenceNumber($conn, $resolution_date);
@@ -507,7 +514,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log("Processing file uploads...");
                     $minioClient = new MinioS3Client();
                     $image_paths = [];
-                    
+                    backfillDocumentImageHashes($conn, 'resolution', 200);
+                     
                     foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                         if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                             error_log("File upload error for file $key: " . $_FILES['image_file']['error'][$key]);
@@ -522,7 +530,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             header("Location: resolutions.php");
                             exit();
                         }
-                        
+
+                        $imageHash = computeAverageImageHashFromFile($tmpName);
+                        if ($imageHash !== null && $imageHash !== '') {
+                            $duplicateMatches = findMatchingImageHashes($conn, 'resolution', $imageHash);
+                            if (!$allowDuplicateImages && !empty($duplicateMatches)) {
+                                $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                                header("Location: resolutions.php");
+                                exit();
+                            }
+                        }
+                         
                         $fileName = basename($_FILES['image_file']['name'][$key]);
                         $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
                         $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
@@ -535,6 +553,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         if ($uploadResult['success']) {
                             $image_paths[] = $uploadResult['url'];
+                            $uploadedImageHashEntries[] = [
+                                'hash' => $imageHash,
+                                'path' => $uploadResult['url'],
+                            ];
                             error_log("File uploaded successfully: " . $uploadResult['url']);
                             logDocumentUpload('resolution', $fileName, $uniqueFileName);
                         } else {
@@ -573,6 +595,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param("ssssssssss", $title, $description, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $reference_number, $date_issued, $uploaded_by);
             if ($stmt->execute()) {
                 $new_resolution_id = $conn->insert_id;
+                if (!empty($uploadedImageHashEntries)) {
+                    saveDocumentImageHashes($conn, 'resolution', $new_resolution_id, $uploadedImageHashEntries);
+                }
                 error_log("Resolution inserted successfully with ID: $new_resolution_id");
                 logDocumentAction('create', 'resolution', $title, $new_resolution_id, "New resolution created with reference number: $reference_number");
                 $_SESSION['success'] = "Resolution added successfully!";
@@ -600,12 +625,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $resolution_date = $_POST['resolution_date'];
         $content = trim($_POST['content']);
         $existing_image_path = $_POST['existing_image_path'];
+        $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
+        $uploadedImageHashEntries = [];
         $image_path = $existing_image_path;
         // Handle multiple file uploads for update to MinIO
         if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
             $minioClient = new MinioS3Client();
             $image_paths = [];
-            
+            backfillDocumentImageHashes($conn, 'resolution', 200);
+             
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                 if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                     continue;
@@ -615,7 +643,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header("Location: resolutions.php");
                     exit();
                 }
-                
+
+                $imageHash = computeAverageImageHashFromFile($tmpName);
+                if ($imageHash !== null && $imageHash !== '') {
+                    $duplicateMatches = findMatchingImageHashes($conn, 'resolution', $imageHash, $id);
+                    if (!$allowDuplicateImages && !empty($duplicateMatches)) {
+                        $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                        header("Location: resolutions.php");
+                        exit();
+                    }
+                }
+                 
                 $fileName = basename($_FILES['image_file']['name'][$key]);
                 $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
                 $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
@@ -624,9 +662,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Upload to MinIO
                 $contentType = MinioS3Client::getMimeType($fileName);
                 $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
-                
+                 
                 if ($uploadResult['success']) {
                     $image_paths[] = $uploadResult['url'];
+                    $uploadedImageHashEntries[] = [
+                        'hash' => $imageHash,
+                        'path' => $uploadResult['url'],
+                    ];
                     logDocumentUpload('resolution', $fileName, $uniqueFileName);
                 } else {
                     $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
@@ -645,6 +687,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("UPDATE resolutions SET title = ?, description = ?, resolution_number = ?, date_posted = ?, resolution_date = ?, content = ?, image_path = ? WHERE id = ?");
         $stmt->bind_param("sssssssi", $title, $description, $resolution_number, $date_posted, $resolution_date, $content, $image_path, $id);
         if ($stmt->execute()) {
+            if (!empty($uploadedImageHashEntries)) {
+                saveDocumentImageHashes($conn, 'resolution', $id, $uploadedImageHashEntries);
+            }
             if (function_exists('logDocumentUpdate')) {
                 try {
                     logDocumentUpdate('resolution', $title, $id, "Resolution updated: $title");
@@ -719,7 +764,21 @@ if (!empty($year)) {
 }
 
 // Build the query
-$query = "SELECT id, title, description, resolution_number, date_posted, resolution_date, content, image_path, date_issued, reference_number FROM resolutions";
+$query = "SELECT id, title, description, resolution_number, date_posted, resolution_date, content, image_path, date_issued, reference_number,
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM document_image_hashes dih
+        WHERE dih.document_type = 'resolution'
+          AND dih.document_id = resolutions.id
+          AND dih.image_hash IN (
+              SELECT image_hash
+              FROM document_image_hashes
+              WHERE document_type = 'resolution'
+              GROUP BY image_hash
+              HAVING COUNT(DISTINCT document_id) > 1
+          )
+    ) THEN 1 ELSE 0 END AS has_duplicate_image
+    FROM resolutions";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
 }
@@ -1711,7 +1770,7 @@ $count_stmt->close();
                             <?php else: ?>
                                 <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($resolutions as $resolution): ?>
-                                    <tr data-id="<?php echo $resolution['id']; ?>">
+                                    <tr data-id="<?php echo $resolution['id']; ?>"<?php echo !empty($resolution['has_duplicate_image']) ? ' style="background-color: #ffd8a8;"' : ''; ?>>
                                         <td><?php echo $row_num++; ?></td>
                                         <!-- <td>
                                             <span class="reference-number">
@@ -1963,6 +2022,7 @@ $count_stmt->close();
                         <div id="autoFillResults" class="row"></div>
                     </div>
                     <form method="POST" action="" enctype="multipart/form-data" id="addResolutionForm">
+                        <input type="hidden" name="allow_duplicate_images" id="allowDuplicateResolutionImages" value="0">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
@@ -2060,6 +2120,7 @@ $count_stmt->close();
                     <form id="editResolutionForm" method="POST" action="" enctype="multipart/form-data">
                         <input type="hidden" name="resolution_id" id="editResolutionId">
                         <input type="hidden" name="existing_image_path" id="editExistingImagePath">
+                        <input type="hidden" name="allow_duplicate_images" id="allowDuplicateResolutionEditImages" value="0">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="editTitle" class="form-label">Title <span class="text-danger">*</span></label>
@@ -3314,6 +3375,15 @@ $count_stmt->close();
         }
         // Function to process multiple files with auto-fill feature
         async function processFilesWithAutoFill(input) {
+            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                    documentType: 'resolution',
+                    allowFieldId: 'allowDuplicateResolutionImages'
+                });
+                if (duplicateState && !duplicateState.proceed) {
+                    return;
+                }
+            }
             const files = input.files;
             if (!files || files.length === 0) return;
             const autoFillSection = document.getElementById('autoFillSection');
@@ -3481,6 +3551,16 @@ $count_stmt->close();
         }
         // Function to process files for edit form
         async function processFiles(input, formType = 'edit') {
+            const allowFieldId = formType === 'edit' ? 'allowDuplicateResolutionEditImages' : 'allowDuplicateResolutionImages';
+            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                    documentType: 'resolution',
+                    allowFieldId
+                });
+                if (duplicateState && !duplicateState.proceed) {
+                    return;
+                }
+            }
             const files = input.files;
             if (!files || files.length === 0) return;
             const processingId = formType === 'add' ? 'ocrProcessing' : 'editOcrProcessing';

@@ -183,6 +183,195 @@ window.efindComposerOcr = async function (source, options = {}) {
   };
 };
 
+function getDuplicateConfirmModal() {
+  let modal = document.getElementById('efindDuplicateImageModal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.className = 'modal fade';
+  modal.id = 'efindDuplicateImageModal';
+  modal.tabIndex = -1;
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-warning text-dark">
+          <h5 class="modal-title"><i class="fas fa-triangle-exclamation me-2"></i>Duplicate Image</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-0" data-duplicate-message>This image is already upploaded.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-duplicate-cancel>Cancel</button>
+          <button type="button" class="btn btn-warning text-dark" data-duplicate-proceed>Proceed anyway</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  return modal;
+}
+
+window.efindConfirmDuplicateImage = function (message) {
+  const text = String(message || 'This image is already upploaded.');
+  if (!window.bootstrap || typeof window.bootstrap.Modal !== 'function') {
+    return Promise.resolve(window.confirm(text));
+  }
+
+  const modalEl = getDuplicateConfirmModal();
+  const messageEl = modalEl.querySelector('[data-duplicate-message]');
+  const cancelBtn = modalEl.querySelector('[data-duplicate-cancel]');
+  const proceedBtn = modalEl.querySelector('[data-duplicate-proceed]');
+  if (messageEl) {
+    messageEl.textContent = text;
+  }
+
+  return new Promise((resolve) => {
+    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl, {
+      backdrop: 'static',
+      keyboard: false,
+    });
+
+    let settled = false;
+    const cleanup = () => {
+      cancelBtn?.removeEventListener('click', onCancel);
+      proceedBtn?.removeEventListener('click', onProceed);
+      modalEl.removeEventListener('hidden.bs.modal', onHidden);
+    };
+    const finish = (decision) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(decision);
+    };
+    const onCancel = () => {
+      modal.hide();
+      finish(false);
+    };
+    const onProceed = () => {
+      modal.hide();
+      finish(true);
+    };
+    const onHidden = () => {
+      finish(false);
+    };
+
+    cancelBtn?.addEventListener('click', onCancel);
+    proceedBtn?.addEventListener('click', onProceed);
+    modalEl.addEventListener('hidden.bs.modal', onHidden);
+    modal.show();
+  });
+};
+
+window.efindCheckImageDuplicate = async function (file, documentType = 'document') {
+  if (!(file instanceof File)) {
+    throw new Error('Image file is required for duplicate checking.');
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('document_type', String(documentType || 'document'));
+
+  const response = await fetch('check_image_duplicate.php', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result || !result.success) {
+    const message = (result && result.error) ? result.error : `Duplicate check failed (HTTP ${response.status})`;
+    throw new Error(message);
+  }
+
+  return {
+    isDuplicate: !!result.is_duplicate,
+    hash: String(result.hash || ''),
+    matches: Array.isArray(result.matches) ? result.matches : [],
+  };
+};
+
+window.efindHandleDuplicateImageSelection = async function (input, options = {}) {
+  const fileInput = input instanceof HTMLInputElement ? input : null;
+  const files = fileInput ? Array.from(fileInput.files || []) : [];
+  const {
+    documentType = 'document',
+    allowFieldId = '',
+  } = options || {};
+
+  const allowField = allowFieldId ? document.getElementById(allowFieldId) : null;
+  if (allowField) {
+    allowField.value = '0';
+  }
+
+  if (!fileInput || files.length === 0) {
+    return { proceed: false, filesRemaining: 0, duplicateCount: 0 };
+  }
+
+  const duplicateEntries = [];
+  const uniqueFiles = [];
+  for (const file of files) {
+    const extension = (file.name.split('.').pop() || '').toLowerCase();
+    if (!['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tif', 'tiff'].includes(extension)) {
+      uniqueFiles.push(file);
+      continue;
+    }
+
+    try {
+      const duplicateResult = await window.efindCheckImageDuplicate(file, documentType);
+      if (duplicateResult.isDuplicate) {
+        duplicateEntries.push({ file, duplicateResult });
+      } else {
+        uniqueFiles.push(file);
+      }
+    } catch (error) {
+      console.warn('Image duplicate check skipped:', error);
+      uniqueFiles.push(file);
+    }
+  }
+
+  if (duplicateEntries.length === 0) {
+    return { proceed: true, filesRemaining: files.length, duplicateCount: 0 };
+  }
+
+  const firstMatch = duplicateEntries[0].duplicateResult.matches[0];
+  const duplicateLabel = firstMatch && firstMatch.title ? ` (matches: ${firstMatch.title})` : '';
+  const proceedAnyway = await window.efindConfirmDuplicateImage(
+    `This image is already upploaded${duplicateLabel}.`
+  );
+
+  if (!proceedAnyway) {
+    const retainedFiles = uniqueFiles;
+    if (typeof DataTransfer !== 'undefined') {
+      const dt = new DataTransfer();
+      retainedFiles.forEach((file) => dt.items.add(file));
+      fileInput.files = dt.files;
+    } else {
+      fileInput.value = '';
+    }
+    if (allowField) {
+      allowField.value = '0';
+    }
+    return {
+      proceed: retainedFiles.length > 0,
+      filesRemaining: retainedFiles.length,
+      duplicateCount: duplicateEntries.length,
+      cancelled: true,
+    };
+  }
+
+  if (allowField) {
+    allowField.value = '1';
+  }
+  return {
+    proceed: true,
+    filesRemaining: files.length,
+    duplicateCount: duplicateEntries.length,
+    proceededAnyway: true,
+  };
+};
+
 window.efindFinalizeOcrMarkdown = async function (text, documentType = 'document') {
   const rawText = String(text || '').trim();
   if (!rawText) return null;

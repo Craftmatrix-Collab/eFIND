@@ -14,6 +14,7 @@ try {
     include(__DIR__ . '/includes/config.php');
     include(__DIR__ . '/includes/logger.php');
     include(__DIR__ . '/includes/minio_helper.php');
+    include(__DIR__ . '/includes/image_hash_helper.php');
 } catch (Exception $e) {
     error_log("Failed to include required files: " . $e->getMessage());
     die("System initialization error. Please contact the administrator.");
@@ -71,6 +72,10 @@ if ($tableResult->num_rows == 0) {
     if (!$conn->query($createTableQuery)) {
         error_log("Failed to create document_ocr_content table: " . $conn->error);
     }
+}
+
+if (!ensureDocumentImageHashTable($conn)) {
+    error_log("Failed to ensure document_image_hashes table: " . $conn->error);
 }
 
 // Function to generate reference number for ordinances
@@ -519,6 +524,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ordinance_date = $_POST['ordinance_date'];
             $status = $_POST['status'];
             $content = trim($_POST['content']);
+            $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
+            $uploadedImageHashEntries = [];
             error_log("Form data received - Title: $title, Number: $ordinance_number, Date: $ordinance_date");
             
             $reference_number = generateReferenceNumber($conn, $ordinance_date);
@@ -529,7 +536,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 error_log("Processing file uploads...");
                 $minioClient = new MinioS3Client();
                 $image_paths = [];
-            
+                backfillDocumentImageHashes($conn, 'ordinance', 200);
+             
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                 // Skip if no file or error
                 if (empty($_FILES['image_file']['name'][$key]) || $_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
@@ -540,7 +548,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header("Location: ordinances.php");
                     exit();
                 }
-                
+
+                $imageHash = computeAverageImageHashFromFile($tmpName);
+                if ($imageHash !== null && $imageHash !== '') {
+                    $duplicateMatches = findMatchingImageHashes($conn, 'ordinance', $imageHash);
+                    if (!$allowDuplicateImages && !empty($duplicateMatches)) {
+                        $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                        header("Location: ordinances.php");
+                        exit();
+                    }
+                }
+                 
                 $fileName = basename($_FILES['image_file']['name'][$key]);
                 $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
                 $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
@@ -552,6 +570,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if ($uploadResult['success']) {
                     $image_paths[] = $uploadResult['url'];
+                    $uploadedImageHashEntries[] = [
+                        'hash' => $imageHash,
+                        'path' => $uploadResult['url'],
+                    ];
                     error_log("File uploaded successfully: " . $uploadResult['url']);
                     logDocumentUpload('ordinance', $fileName, $uniqueFileName);
                 } else {
@@ -581,6 +603,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bind_param("ssssssssssss", $title, $description, $ordinance_number, $date_posted, $ordinance_date, $status, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by);
         if ($stmt->execute()) {
             $new_ordinance_id = $conn->insert_id;
+            if (!empty($uploadedImageHashEntries)) {
+                saveDocumentImageHashes($conn, 'ordinance', $new_ordinance_id, $uploadedImageHashEntries);
+            }
             error_log("Ordinance inserted successfully with ID: $new_ordinance_id");
             logDocumentAction('create', 'ordinance', $title, $new_ordinance_id, "New ordinance created with reference number: $reference_number");
             $_SESSION['success'] = "Ordinance added successfully!";
@@ -610,12 +635,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = $_POST['status'];
         $content = trim($_POST['content']);
         $existing_image_path = $_POST['existing_image_path'];
+        $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
+        $uploadedImageHashEntries = [];
         // Handle multiple file uploads for update to MinIO
         $image_path = $existing_image_path;
         if (isset($_FILES['image_file']) && !empty($_FILES['image_file']['name'][0])) {
             $minioClient = new MinioS3Client();
             $image_paths = [];
-            
+            backfillDocumentImageHashes($conn, 'ordinance', 200);
+             
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                 // Skip if no file or error
                 if (empty($_FILES['image_file']['name'][$key]) || $_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
@@ -626,7 +654,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header("Location: ordinances.php");
                     exit();
                 }
-                
+
+                $imageHash = computeAverageImageHashFromFile($tmpName);
+                if ($imageHash !== null && $imageHash !== '') {
+                    $duplicateMatches = findMatchingImageHashes($conn, 'ordinance', $imageHash, $id);
+                    if (!$allowDuplicateImages && !empty($duplicateMatches)) {
+                        $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                        header("Location: ordinances.php");
+                        exit();
+                    }
+                }
+                 
                 $fileName = basename($_FILES['image_file']['name'][$key]);
                 $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
                 $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
@@ -635,9 +673,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Upload to MinIO
                 $contentType = MinioS3Client::getMimeType($fileName);
                 $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
-                
+                 
                 if ($uploadResult['success']) {
                     $image_paths[] = $uploadResult['url'];
+                    $uploadedImageHashEntries[] = [
+                        'hash' => $imageHash,
+                        'path' => $uploadResult['url'],
+                    ];
                     logDocumentUpload('ordinance', $fileName, $uniqueFileName);
                 } else {
                     $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
@@ -656,6 +698,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("UPDATE ordinances SET title = ?, description = ?, ordinance_number = ?, date_posted = ?, ordinance_date = ?, status = ?, content = ?, image_path = ? WHERE id = ?");
         $stmt->bind_param("ssssssssi", $title, $description, $ordinance_number, $date_posted, $ordinance_date, $status, $content, $image_path, $id);
         if ($stmt->execute()) {
+            if (!empty($uploadedImageHashEntries)) {
+                saveDocumentImageHashes($conn, 'ordinance', $id, $uploadedImageHashEntries);
+            }
             if (function_exists('logDocumentUpdate')) {
                 try {
                     logDocumentUpdate('ordinance', $title, $id, "Ordinance updated: $title");
@@ -730,7 +775,21 @@ if (!empty($year)) {
 }
 
 // Build the query
-$query = "SELECT id, title, description, ordinance_number, date_posted, ordinance_date, status, content, image_path, date_issued, file_path, uploaded_by FROM ordinances";
+$query = "SELECT id, title, description, ordinance_number, date_posted, ordinance_date, status, content, image_path, date_issued, file_path, uploaded_by,
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM document_image_hashes dih
+        WHERE dih.document_type = 'ordinance'
+          AND dih.document_id = ordinances.id
+          AND dih.image_hash IN (
+              SELECT image_hash
+              FROM document_image_hashes
+              WHERE document_type = 'ordinance'
+              GROUP BY image_hash
+              HAVING COUNT(DISTINCT document_id) > 1
+          )
+    ) THEN 1 ELSE 0 END AS has_duplicate_image
+    FROM ordinances";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
 }
@@ -1642,7 +1701,7 @@ $count_stmt->close();
                             <?php else: ?>
                                 <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($ordinances as $ordinance): ?>
-                                    <tr data-id="<?php echo $ordinance['id']; ?>">
+                                    <tr data-id="<?php echo $ordinance['id']; ?>"<?php echo !empty($ordinance['has_duplicate_image']) ? ' style="background-color: #ffd8a8;"' : ''; ?>>
                                         <td><?php echo $row_num++; ?></td>
                                         <!-- <td>
                                             <span class="reference-number">
@@ -1897,6 +1956,7 @@ $count_stmt->close();
                         <div id="autoFillResults" class="row"></div>
                     </div>
                     <form method="POST" action="" enctype="multipart/form-data" id="addOrdinanceForm">
+                        <input type="hidden" name="allow_duplicate_images" id="allowDuplicateOrdinanceImages" value="0">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
@@ -2010,6 +2070,7 @@ $count_stmt->close();
                     <form id="editOrdinanceForm" method="POST" action="" enctype="multipart/form-data">
                         <input type="hidden" name="ordinance_id" id="editOrdinanceId">
                         <input type="hidden" name="existing_image_path" id="editExistingImagePath">
+                        <input type="hidden" name="allow_duplicate_images" id="allowDuplicateOrdinanceEditImages" value="0">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="editTitle" class="form-label">Title <span class="text-danger">*</span></label>
@@ -3196,14 +3257,25 @@ $count_stmt->close();
         
         // NEW FUNCTION: Process multiple files with auto-fill feature
         async function processFilesWithAutoFill(input) {
+            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                    documentType: 'ordinance',
+                    allowFieldId: 'allowDuplicateOrdinanceImages'
+                });
+                if (duplicateState && !duplicateState.proceed) {
+                    return;
+                }
+            }
             const files = input.files;
-            
+             
             // Show file count
             const fileCountDiv = document.getElementById('fileCount');
             const fileCountNumber = document.getElementById('fileCountNumber');
             if (fileCountDiv && fileCountNumber && files.length > 0) {
                 fileCountNumber.textContent = files.length;
                 fileCountDiv.style.display = 'block';
+            } else if (fileCountDiv) {
+                fileCountDiv.style.display = 'none';
             }
             
             if (!files || files.length === 0) return;
@@ -3765,6 +3837,16 @@ $count_stmt->close();
         }
         // Function to process multiple uploaded files with OCR (for edit form)
         async function processFiles(input, formType = 'edit') {
+            const allowFieldId = formType === 'edit' ? 'allowDuplicateOrdinanceEditImages' : 'allowDuplicateOrdinanceImages';
+            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                    documentType: 'ordinance',
+                    allowFieldId
+                });
+                if (duplicateState && !duplicateState.proceed) {
+                    return;
+                }
+            }
             const files = input.files;
             if (!files || files.length === 0) return;
             const processingId = formType === 'add' ? 'ocrProcessing' : 'editOcrProcessing';

@@ -14,6 +14,7 @@ try {
     include(__DIR__ . '/includes/config.php');
     include(__DIR__ . '/includes/logger.php');
     include(__DIR__ . '/includes/minio_helper.php');
+    include(__DIR__ . '/includes/image_hash_helper.php');
 } catch (Exception $e) {
     error_log("Failed to include required files: " . $e->getMessage());
     die("System initialization error. Please contact the administrator.");
@@ -71,6 +72,10 @@ if ($tableResult->num_rows == 0) {
     if (!$conn->query($createTableQuery)) {
         error_log("Failed to create document_ocr_content table: " . $conn->error);
     }
+}
+
+if (!ensureDocumentImageHashTable($conn)) {
+    error_log("Failed to ensure document_image_hashes table: " . $conn->error);
 }
 
 // Check if document_downloads table exists, create if not
@@ -452,6 +457,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $date_posted = $_POST['date_posted'];
             $meeting_date = $_POST['meeting_date'];
             $content = trim($_POST['content']);
+            $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
+            $uploadedImageHashEntries = [];
             error_log("Form data received - Title: $title, Session: $session_number, Date: $meeting_date");
             
             $reference_number = generateReferenceNumber($conn, $meeting_date);
@@ -473,7 +480,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log("Processing file uploads...");
                     $minioClient = new MinioS3Client();
                     $image_paths = [];
-                    
+                    backfillDocumentImageHashes($conn, 'minutes', 200);
+                     
                     foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                         if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                             error_log("File upload error for file $key: " . $_FILES['image_file']['error'][$key]);
@@ -488,7 +496,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             header("Location: minutes_of_meeting.php");
                             exit();
                         }
-                        
+
+                        $imageHash = computeAverageImageHashFromFile($tmpName);
+                        if ($imageHash !== null && $imageHash !== '') {
+                            $duplicateMatches = findMatchingImageHashes($conn, 'minutes', $imageHash);
+                            if (!$allowDuplicateImages && !empty($duplicateMatches)) {
+                                $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                                header("Location: minutes_of_meeting.php");
+                                exit();
+                            }
+                        }
+                         
                         $fileName = basename($_FILES['image_file']['name'][$key]);
                         $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
                         $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
@@ -501,6 +519,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         if ($uploadResult['success']) {
                             $image_paths[] = $uploadResult['url'];
+                            $uploadedImageHashEntries[] = [
+                                'hash' => $imageHash,
+                                'path' => $uploadResult['url'],
+                            ];
                             error_log("File uploaded successfully: " . $uploadResult['url']);
                             logDocumentUpload('minute', $fileName, $uniqueFileName);
                         } else {
@@ -529,6 +551,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param("ssssssss", $title, $session_number, $date_posted, $meeting_date, $content, $image_path, $reference_number, $uploaded_by);
             if ($stmt->execute()) {
                 $new_minute_id = $conn->insert_id;
+                if (!empty($uploadedImageHashEntries)) {
+                    saveDocumentImageHashes($conn, 'minutes', $new_minute_id, $uploadedImageHashEntries);
+                }
                 error_log("Minute inserted successfully with ID: $new_minute_id");
                 logDocumentAction('create', 'minute', $title, $new_minute_id, "New minute created with reference number: $reference_number");
                 $_SESSION['success'] = "Minute added successfully!";
@@ -557,13 +582,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $meeting_date = $_POST['meeting_date'];
         $content = trim($_POST['content']);
         $existing_image_path = $_POST['existing_image_path'];
+        $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
+        $uploadedImageHashEntries = [];
         $image_path = $existing_image_path;
 
         // Handle multiple file uploads for update to MinIO
         if (isset($_FILES['image_file']) && is_array($_FILES['image_file']['tmp_name'])) {
             $minioClient = new MinioS3Client();
             $image_paths = [];
-            
+            backfillDocumentImageHashes($conn, 'minutes', 200);
+             
             foreach ($_FILES['image_file']['tmp_name'] as $key => $tmpName) {
                 if ($_FILES['image_file']['error'][$key] !== UPLOAD_ERR_OK) {
                     continue;
@@ -573,7 +601,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header("Location: minutes_of_meeting.php");
                     exit();
                 }
-                
+
+                $imageHash = computeAverageImageHashFromFile($tmpName);
+                if ($imageHash !== null && $imageHash !== '') {
+                    $duplicateMatches = findMatchingImageHashes($conn, 'minutes', $imageHash, $id);
+                    if (!$allowDuplicateImages && !empty($duplicateMatches)) {
+                        $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                        header("Location: minutes_of_meeting.php");
+                        exit();
+                    }
+                }
+                 
                 $fileName = basename($_FILES['image_file']['name'][$key]);
                 $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
                 $uniqueFileName = uniqid() . '_' . time() . '_' . $key . '.' . $fileExt;
@@ -582,9 +620,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Upload to MinIO
                 $contentType = MinioS3Client::getMimeType($fileName);
                 $uploadResult = $minioClient->uploadFile($tmpName, $objectName, $contentType);
-                
+                 
                 if ($uploadResult['success']) {
                     $image_paths[] = $uploadResult['url'];
+                    $uploadedImageHashEntries[] = [
+                        'hash' => $imageHash,
+                        'path' => $uploadResult['url'],
+                    ];
                     logDocumentUpload('minute', $fileName, $uniqueFileName);
                 } else {
                     $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
@@ -600,6 +642,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("UPDATE minutes_of_meeting SET title = ?, session_number = ?, date_posted = ?, meeting_date = ?, content = ?, image_path = ? WHERE id = ?");
         $stmt->bind_param("ssssssi", $title, $session_number, $date_posted, $meeting_date, $content, $image_path, $id);
         if ($stmt->execute()) {
+            if (!empty($uploadedImageHashEntries)) {
+                saveDocumentImageHashes($conn, 'minutes', $id, $uploadedImageHashEntries);
+            }
             if (function_exists('logDocumentUpdate')) {
                 try {
                     logDocumentUpdate('minute', $title, $id, "Minute updated: $title");
@@ -674,7 +719,21 @@ if (!empty($year)) {
 }
 
 // Build the query
-$query = "SELECT id, title, session_number, date_posted, meeting_date, content, image_path FROM minutes_of_meeting";
+$query = "SELECT id, title, session_number, date_posted, meeting_date, content, image_path,
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM document_image_hashes dih
+        WHERE dih.document_type = 'minutes'
+          AND dih.document_id = minutes_of_meeting.id
+          AND dih.image_hash IN (
+              SELECT image_hash
+              FROM document_image_hashes
+              WHERE document_type = 'minutes'
+              GROUP BY image_hash
+              HAVING COUNT(DISTINCT document_id) > 1
+          )
+    ) THEN 1 ELSE 0 END AS has_duplicate_image
+    FROM minutes_of_meeting";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
 }
@@ -1670,7 +1729,7 @@ $count_stmt->close();
                             <?php else: ?>
                                 <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($minutes as $minute): ?>
-                                    <tr data-id="<?php echo $minute['id']; ?>">
+                                    <tr data-id="<?php echo $minute['id']; ?>"<?php echo !empty($minute['has_duplicate_image']) ? ' style="background-color: #ffd8a8;"' : ''; ?>>
                                         <td><?php echo $row_num++; ?></td>
                                         <!-- <td>
                                             <span class="reference-number">
@@ -1908,6 +1967,7 @@ $count_stmt->close();
                 <div class="modal-body">
                     <!-- Auto-fill Detection Section -->
                     <form method="POST" action="" enctype="multipart/form-data" id="addMinuteForm">
+                        <input type="hidden" name="allow_duplicate_images" id="allowDuplicateMinuteImages" value="0">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
@@ -2005,6 +2065,7 @@ $count_stmt->close();
                     <form id="editMinuteForm" method="POST" action="" enctype="multipart/form-data">
                         <input type="hidden" name="minute_id" id="editMinuteId">
                         <input type="hidden" name="existing_image_path" id="editExistingImagePath">
+                        <input type="hidden" name="allow_duplicate_images" id="allowDuplicateMinuteEditImages" value="0">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="editTitle" class="form-label">Title <span class="text-danger">*</span></label>
@@ -3233,6 +3294,15 @@ $count_stmt->close();
 
         // Function to process files with auto-fill
         async function processFilesWithAutoFill(input) {
+            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                    documentType: 'minutes',
+                    allowFieldId: 'allowDuplicateMinuteImages'
+                });
+                if (duplicateState && !duplicateState.proceed) {
+                    return;
+                }
+            }
             const files = input.files;
             if (!files || files.length === 0) return;
 
@@ -3393,6 +3463,16 @@ $count_stmt->close();
 
         // Function to process files for edit form
         async function processFiles(input, formType = 'edit') {
+            const allowFieldId = formType === 'edit' ? 'allowDuplicateMinuteEditImages' : 'allowDuplicateMinuteImages';
+            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                    documentType: 'minutes',
+                    allowFieldId
+                });
+                if (duplicateState && !duplicateState.proceed) {
+                    return;
+                }
+            }
             const files = input.files;
             if (!files || files.length === 0) return;
 
