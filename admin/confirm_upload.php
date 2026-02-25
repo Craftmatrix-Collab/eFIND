@@ -120,6 +120,45 @@ function ensureImagePathColumns(mysqli $conn, string $docType): void
     }
 }
 
+/**
+ * Resolve a valid users.id for activity_logs.user_id (nullable when unavailable).
+ */
+function resolveActivityLogUserId(mysqli $conn): ?int
+{
+    $candidates = [
+        $_SESSION['user_id'] ?? null,
+        $_SESSION['staff_id'] ?? null,
+        $_SESSION['admin_id'] ?? null,
+    ];
+
+    $stmt = $conn->prepare("SELECT 1 FROM users WHERE id = ? LIMIT 1");
+    if (!$stmt) {
+        error_log('confirm_upload user lookup prepare failed: ' . $conn->error);
+        return null;
+    }
+
+    foreach ($candidates as $candidate) {
+        if ($candidate === null || $candidate === '' || !is_numeric($candidate)) {
+            continue;
+        }
+
+        $id = (int)$candidate;
+        if ($id <= 0) {
+            continue;
+        }
+
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        if ($stmt->get_result()->num_rows > 0) {
+            $stmt->close();
+            return $id;
+        }
+    }
+
+    $stmt->close();
+    return null;
+}
+
 try {
     ensureImagePathColumns($conn, $docType);
 
@@ -198,7 +237,7 @@ try {
     // Log the activity
     if ($newId) {
         $docLabel = ['resolutions' => 'Resolution', 'minutes' => 'Minutes of Meeting', 'ordinances' => 'Ordinance'][$docType];
-        $userId   = $_SESSION['admin_id'] ?? $_SESSION['staff_id'] ?? 0;
+        $userId   = resolveActivityLogUserId($conn);
         $userRole = isAdmin() ? 'admin' : 'staff';
         $ip       = $_SERVER['REMOTE_ADDR'] ?? '';
         $logStmt  = $conn->prepare(
