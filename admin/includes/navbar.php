@@ -72,8 +72,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                         $_SESSION['logout_token'] = bin2hex(random_bytes(32));
                     }
                     ?>
-                    <!-- TEMPORARY: Using minimal logout for debugging HTTP 500 -->
-                    <li><a class="dropdown-item text-danger" href="logout_minimal.php" aria-label="Logout from your account"><i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout</a></li>
+                    <li><a class="dropdown-item text-danger" href="logout.php?token=<?php echo urlencode($_SESSION['logout_token']); ?>" aria-label="Logout from your account"><i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout</a></li>
                 </ul>
             </li>
         </ul>

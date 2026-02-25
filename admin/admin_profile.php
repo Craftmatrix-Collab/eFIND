@@ -1,15 +1,12 @@
 <?php
-// Start the session
-session_start();
+require_once __DIR__ . '/includes/auth.php';
+include('includes/config.php');
 
 // Check if the user is logged in, if not redirect to login page
-if (!isset($_SESSION['user_id'])) {
+if (!isLoggedIn()) {
     header("Location: login.php");
     exit();
 }
-
-// Include database configuration
-include('includes/config.php');
 
 // Fetch admin details from the database
 $user_id = $_SESSION['user_id'];

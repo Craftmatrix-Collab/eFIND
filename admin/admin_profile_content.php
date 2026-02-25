@@ -1,15 +1,13 @@
 <?php
-// Start session and check authentication
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/includes/auth.php';
+include 'includes/config.php';
 
 // Debug: Log session state (remove in production)
 error_log("Profile Access - Session ID: " . session_id());
 error_log("Profile Access - admin_id: " . (isset($_SESSION['admin_id']) ? $_SESSION['admin_id'] : 'NOT SET'));
 error_log("Profile Access - user_id: " . (isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 'NOT SET'));
 
-if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
+if (!isLoggedIn()) {
     error_log("Profile Access DENIED - No valid session found");
     die('<div class="alert alert-danger alert-dismissible fade show">
             <i class="fas fa-exclamation-circle me-2"></i>
@@ -18,9 +16,6 @@ if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
          </div>');
 }
-
-// Include database connection
-include 'includes/config.php';
 
 // Determine user type and fetch data
 try {

@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'includes/config.php';
+require_once 'includes/auth.php';
 require_once 'includes/logger.php';
 
 // CSRF Protection: Validate logout token
@@ -21,6 +22,10 @@ if (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])) {
     
     // Log logout activity
     logLogout($username);
+}
+
+if (isset($conn) && $conn instanceof mysqli) {
+    logoutPrimaryLoginSession($conn);
 }
 
 // Destroy the session

@@ -1,11 +1,11 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/config.php';
 header('Content-Type: application/json');
 
 // Check if the user is an admin
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['role'] !== 'admin') {
+if (!isLoggedIn() || !isAdmin()) {
+    http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Unauthorized access.']);
     exit;
 }
@@ -16,8 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Include your database connection
-require_once __DIR__ . '/includes/config.php';
+// Include dependencies
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
 

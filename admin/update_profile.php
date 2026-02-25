@@ -1,7 +1,5 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/includes/auth.php';
 include 'includes/config.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
@@ -33,14 +31,13 @@ if (!function_exists('logProfileUpdate')) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Ensure user is authenticated
-    if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
+    if (!isLoggedIn()) {
         if ($is_ajax) {
             header('Content-Type: application/json');
             echo json_encode(['success' => false, 'message' => 'Unauthorized access. Please login first.']);
             exit;
         }
-        $_SESSION['error'] = 'Unauthorized access. Please login first.';
-        header("Location: edit_profile.php");
+        header("Location: login.php");
         exit;
     }
 

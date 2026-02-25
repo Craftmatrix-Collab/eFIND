@@ -3,6 +3,7 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 include('includes/config.php');
+include('includes/auth.php');
 include('includes/logger.php'); // Include the logger
 
 // Create logs directory if it doesn't exist
@@ -12,7 +13,7 @@ if (!file_exists($logDir)) {
 }
 
 // Redirect if already logged in
-if (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])) {
+if (isLoggedIn()) {
     header("Location: dashboard.php");
     exit();
 }
@@ -89,15 +90,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                         $_SESSION['full_name'] = $user['full_name'];
                         $_SESSION['profile_picture'] = $user['profile_picture'];
 
-                        // Log successful admin login
-                        logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
-                        logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
+                        $primaryToken = registerPrimaryLoginSession($conn, 'admin', (int)$user['id'], (string)$user['username']);
+                        if ($primaryToken === null) {
+                            $error = "Unable to start secure session. Please try again.";
+                            logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], 'admin');
+                            logActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                            session_unset();
+                            session_destroy();
+                            $loginSuccessful = true;
+                        } else {
+                            // Log successful admin login
+                            logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
+                            logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
 
-                        $loginSuccessful = true;
-                        
-                        // Redirect to dashboard or original requested URL
-                        header("Location: " . getSafeRedirect());
-                        exit();
+                            $loginSuccessful = true;
+                            
+                            // Redirect to dashboard or original requested URL
+                            header("Location: " . getSafeRedirect());
+                            exit();
+                        }
                     }
                 } else {
                     // Admin account exists but password is wrong - stop here, don't try staff login
@@ -144,13 +155,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                         $_SESSION['staff_role'] = $user['role'];
                         $_SESSION['staff_logged_in'] = true;
 
-                        // Log successful staff login
-                        logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
-                        logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
+                        $primaryToken = registerPrimaryLoginSession($conn, 'staff', (int)$user['id'], (string)$user['username']);
+                        if ($primaryToken === null) {
+                            $error = "Unable to start secure session. Please try again.";
+                            logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], $user['role']);
+                            logActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
+                            session_unset();
+                            session_destroy();
+                        } else {
+                            // Log successful staff login
+                            logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
+                            logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
 
-                        // Redirect to dashboard or original requested URL
-                        header("Location: " . getSafeRedirect());
-                        exit();
+                            // Redirect to dashboard or original requested URL
+                            header("Location: " . getSafeRedirect());
+                            exit();
+                        }
                     } else {
                         $error = "Invalid username or password.";
                         logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid password');

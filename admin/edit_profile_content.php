@@ -1,8 +1,8 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
+require_once __DIR__ . '/includes/auth.php';
+include_once __DIR__ . '/includes/config.php';
+
+if (!isLoggedIn()) {
     die('<div class="alert alert-danger alert-dismissible fade show">
             <i class="fas fa-exclamation-circle me-2"></i>Unauthorized access. Please login first.
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -13,9 +13,6 @@ if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
-
-// Include database connection
-include_once __DIR__ . '/includes/config.php';
 
 // Determine user type and fetch data
 try {
