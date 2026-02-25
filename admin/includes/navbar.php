@@ -462,24 +462,49 @@ function normalizeNavbarProfilePicturePath(path) {
 
 function initNavbarJQueryHandlers() {
     $(document).ready(function() {
-        // Load edit form when edit profile modal is shown
-        $('#editProfileModal').on('show.bs.modal', function () {
+        function loadEditProfileForm(routeIndex = 0) {
+            const routes = ['edit_profile_content', 'edit_profile_content.php'];
+            const route = routes[routeIndex] || routes[routes.length - 1];
             $.ajax({
-                url: 'edit_profile_content.php',
+                url: route,
                 type: 'GET',
+                cache: false,
                 success: function(response) {
                     $('#editProfileModalBody').html(response);
                 },
                 error: function(xhr, status, error) {
-                    console.error('Edit profile load error:', xhr.responseText);
+                    if (routeIndex + 1 < routes.length) {
+                        loadEditProfileForm(routeIndex + 1);
+                        return;
+                    }
+
+                    const httpStatus = xhr && xhr.status ? ` (HTTP ${xhr.status})` : '';
+                    let reason = 'Please try again.';
+                    if (status === 'timeout') {
+                        reason = 'The request timed out.';
+                    } else if (xhr && xhr.status === 404) {
+                        reason = 'The edit form route was not found.';
+                    } else if (xhr && xhr.status === 500) {
+                        reason = 'The server returned an error.';
+                    } else if (xhr && xhr.status === 0) {
+                        reason = 'The request was blocked or lost.';
+                    }
+
+                    console.error('Edit profile load error:', route, status, error, xhr && xhr.responseText ? xhr.responseText : '');
                     $('#editProfileModalBody').html(
                         '<div class="alert alert-danger">' +
                         '<i class="fas fa-exclamation-circle me-2"></i>' +
-                        'Error loading edit form. Please try again.' +
+                        'Error loading edit form' + httpStatus + '. ' + reason + ' ' +
+                        '<a href="edit_profile.php" class="alert-link">Open full edit page</a>.' +
                         '</div>'
                     );
                 }
             });
+        }
+
+        // Load edit form when edit profile modal is shown
+        $('#editProfileModal').on('show.bs.modal', function () {
+            loadEditProfileForm(0);
         });
 
         // Handle save button click

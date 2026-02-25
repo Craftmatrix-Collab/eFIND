@@ -15,7 +15,7 @@ if (!isset($_SESSION['csrf_token'])) {
 }
 
 // Include database connection
-include 'includes/config.php';
+include_once __DIR__ . '/includes/config.php';
 
 // Determine user type and fetch data
 try {
@@ -26,16 +26,31 @@ try {
               FROM $table
               WHERE id = ?";
     $stmt = $conn->prepare($query);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
+    if (!$stmt) {
+        throw new RuntimeException('Unable to prepare profile query.');
+    }
+
+    if (!$stmt->bind_param("i", $user_id)) {
+        throw new RuntimeException('Unable to bind profile query parameters.');
+    }
+
+    if (!$stmt->execute()) {
+        throw new RuntimeException('Unable to execute profile query.');
+    }
+
     $result = $stmt->get_result();
     $user = $result->fetch_assoc();
+    $stmt->close();
     if (!$user) {
         throw new Exception("Profile not found.");
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    error_log('Edit Profile Load Exception: ' . $e->getMessage());
+    $publicMessage = $e->getMessage() === 'Profile not found.'
+        ? 'Profile not found.'
+        : 'Unable to load edit form right now. Please refresh and try again.';
     die('<div class="alert alert-danger alert-dismissible fade show">
-            <i class="fas fa-exclamation-circle me-2"></i>' . htmlspecialchars($e->getMessage()) . '
+            <i class="fas fa-exclamation-circle me-2"></i>' . htmlspecialchars($publicMessage) . '
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
          </div>');
 }
