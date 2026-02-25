@@ -40,6 +40,20 @@ $sort_clause = $valid_sorts[$sort_by] ?? 'date_posted DESC';
 $search_query = isset($_GET['search_query']) ? trim($_GET['search_query']) : '';
 $document_type = isset($_GET['document_type']) ? $_GET['document_type'] : '';
 $year = isset($_GET['year']) ? $_GET['year'] : '';
+$is_superadmin_dashboard = function_exists('isSuperAdmin') && isSuperAdmin();
+if ($is_superadmin_dashboard && function_exists('checkRecycleBinTable')) {
+    checkRecycleBinTable();
+}
+$allowed_document_types = ['ordinance', 'resolution', 'meeting'];
+if ($is_superadmin_dashboard) {
+    $allowed_document_types = array_merge($allowed_document_types, ['user', 'activity', 'recycle']);
+}
+if ($document_type !== '' && !in_array($document_type, $allowed_document_types, true)) {
+    $document_type = '';
+}
+$dashboard_search_placeholder = $is_superadmin_dashboard
+    ? 'Search any field (documents, users, activity logs, recycle bin)...'
+    : 'Search any document field (title, number, reference, content, uploader, etc.)...';
 // Validate year
 if (!empty($year) && (!is_numeric($year) || $year < 1900 || $year > date('Y'))) {
     $year = '';
@@ -97,6 +111,72 @@ $base_query = "
         FROM minutes_of_meeting m
         LEFT JOIN users u ON m.uploaded_by = u.username
         LEFT JOIN admin_users au ON m.uploaded_by = au.username
+";
+if ($is_superadmin_dashboard) {
+    $base_query .= "
+        UNION ALL
+        SELECT
+            'user' as doc_type,
+            u.id,
+            COALESCE(u.full_name, u.username, CONCAT('User #', u.id)) as title,
+            COALESCE(u.created_at, u.updated_at, u.last_login, NOW()) as date,
+            NULL as reference_number,
+            COALESCE(u.username, '') as document_number,
+            COALESCE(u.role, '') as document_status,
+            COALESCE(u.email, '') as document_description,
+            CONCAT('Email: ', COALESCE(u.email, ''), ' | Contact: ', COALESCE(u.contact_number, ''), ' | Username: ', COALESCE(u.username, '')) as content,
+            COALESCE(u.full_name, u.username, 'User') as uploaded_by,
+            COALESCE(u.created_at, u.updated_at, u.last_login, NOW()) as date_posted,
+            '' as image_path
+        FROM users u
+        UNION ALL
+        SELECT
+            'user' as doc_type,
+            a.id,
+            COALESCE(a.full_name, a.username, CONCAT('Admin #', a.id)) as title,
+            COALESCE(a.created_at, a.updated_at, a.last_login, NOW()) as date,
+            NULL as reference_number,
+            COALESCE(a.username, '') as document_number,
+            'admin' as document_status,
+            COALESCE(a.email, '') as document_description,
+            CONCAT('Email: ', COALESCE(a.email, ''), ' | Contact: ', COALESCE(a.contact_number, ''), ' | Username: ', COALESCE(a.username, ''), ' | Role: admin') as content,
+            COALESCE(a.full_name, a.username, 'Admin') as uploaded_by,
+            COALESCE(a.created_at, a.updated_at, a.last_login, NOW()) as date_posted,
+            '' as image_path
+        FROM admin_users a
+        UNION ALL
+        SELECT
+            'activity' as doc_type,
+            al.id,
+            CONCAT('Activity: ', COALESCE(al.action, '')) as title,
+            COALESCE(al.log_time, NOW()) as date,
+            CAST(al.document_id AS CHAR) as reference_number,
+            COALESCE(al.document_type, '') as document_number,
+            COALESCE(al.user_role, '') as document_status,
+            COALESCE(al.user_name, '') as document_description,
+            CONCAT(COALESCE(al.description, ''), ' ', COALESCE(al.details, ''), ' ', COALESCE(al.ip_address, '')) as content,
+            COALESCE(al.user_name, 'system') as uploaded_by,
+            COALESCE(al.log_time, NOW()) as date_posted,
+            '' as image_path
+        FROM activity_logs al
+        UNION ALL
+        SELECT
+            'recycle' as doc_type,
+            rb.id,
+            CONCAT('Recycle: ', COALESCE(rb.original_table, ''), ' #', COALESCE(CAST(rb.original_id AS CHAR), '')) as title,
+            COALESCE(rb.deleted_at, NOW()) as date,
+            CAST(rb.original_id AS CHAR) as reference_number,
+            COALESCE(rb.original_table, '') as document_number,
+            CASE WHEN rb.restored_at IS NULL THEN 'deleted' ELSE 'restored' END as document_status,
+            COALESCE(rb.deleted_by, '') as document_description,
+            CAST(rb.data AS CHAR) as content,
+            COALESCE(rb.deleted_by, 'system') as uploaded_by,
+            COALESCE(rb.deleted_at, NOW()) as date_posted,
+            '' as image_path
+        FROM recycle_bin rb
+    ";
+}
+$base_query .= "
     ) as combined
 ";
 // Build WHERE conditions
@@ -202,14 +282,27 @@ if ($count_stmt) {
 }
 $total_pages = ceil($total_documents / $table_limit);
 // Fetch distinct years from the database
-$years_query = $conn->query("
+$years_query_sql = "
     SELECT DISTINCT YEAR(date_posted) as year FROM ordinances
     UNION
     SELECT DISTINCT YEAR(date_posted) as year FROM resolutions
     UNION
     SELECT DISTINCT YEAR(date_posted) as year FROM minutes_of_meeting
-    ORDER BY year DESC
-");
+";
+if ($is_superadmin_dashboard) {
+    $years_query_sql .= "
+    UNION
+    SELECT DISTINCT YEAR(created_at) as year FROM users
+    UNION
+    SELECT DISTINCT YEAR(created_at) as year FROM admin_users
+    UNION
+    SELECT DISTINCT YEAR(log_time) as year FROM activity_logs
+    UNION
+    SELECT DISTINCT YEAR(deleted_at) as year FROM recycle_bin
+    ";
+}
+$years_query_sql .= " ORDER BY year DESC";
+$years_query = $conn->query($years_query_sql);
 $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
 ?>
 <!DOCTYPE html>
@@ -1310,7 +1403,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     <div class="col-md-9">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
-                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any document field (title, number, reference, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
+                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="<?php echo htmlspecialchars($dashboard_search_placeholder); ?>" value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-md-1">
@@ -1319,6 +1412,11 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                             <option value="ordinance" <?php echo $document_type === 'ordinance' ? 'selected' : ''; ?>>Ordinances</option>
                             <option value="resolution" <?php echo $document_type === 'resolution' ? 'selected' : ''; ?>>Resolutions</option>
                             <option value="meeting" <?php echo $document_type === 'meeting' ? 'selected' : ''; ?>>Meeting Minutes</option>
+                            <?php if ($is_superadmin_dashboard): ?>
+                                <option value="user" <?php echo $document_type === 'user' ? 'selected' : ''; ?>>Users</option>
+                                <option value="activity" <?php echo $document_type === 'activity' ? 'selected' : ''; ?>>Activity Logs</option>
+                                <option value="recycle" <?php echo $document_type === 'recycle' ? 'selected' : ''; ?>>Recycle Bin</option>
+                            <?php endif; ?>
                         </select>
                     </div>
                     <div class="col-md-1">
@@ -1343,7 +1441,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                 <div>
                     <i class="fas fa-file-alt me-2"></i>
                     <span style="color: var(--secondary-blue); font-weight: 600;">
-                        Showing <?php echo count($all_documents); ?> of <?php echo $total_documents; ?> documents
+                        Showing <?php echo count($all_documents); ?> of <?php echo $total_documents; ?> records
                     </span>
                     <?php if (!empty($search_query)): ?>
                         <span class="text-muted ms-2">(Filtered results)</span>
@@ -1353,7 +1451,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             <!-- Documents Table Section -->
             <div class="documents-table-section card">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-table me-2"></i>All Documents Overview</h5>
+                    <h5 class="mb-0"><i class="fas fa-table me-2"></i>All Records Overview</h5>
                     <div class="table-controls">
                         <form method="GET" action="dashboard.php" class="d-flex align-items-center">
                             <input type="hidden" name="search_query" value="<?php echo htmlspecialchars($search_query); ?>">
@@ -1390,7 +1488,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                     <tr>
                                         <td colspan="5" class="text-center py-4 text-muted">
                                             <i class="fas fa-file fa-2x mb-3"></i>
-                                            <p>No documents found</p>
+                                            <p>No records found</p>
                                         </td>
                                     </tr>
                                 <?php else: ?>
@@ -1402,6 +1500,9 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                                         case 'ordinance': echo 'info'; break;
                                                         case 'resolution': echo 'primary'; break;
                                                         case 'meeting': echo 'warning'; break;
+                                                        case 'user': echo 'success'; break;
+                                                        case 'activity': echo 'secondary'; break;
+                                                        case 'recycle': echo 'danger'; break;
                                                         default: echo 'light text-dark';
                                                     }
                                                 ?> badge-sm">
@@ -1420,12 +1521,22 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                             </td> -->
                                             <td>
                                                 <small class="text-truncate-2">
-                                                    <?= date('F j, Y', strtotime($document['date_posted'])) ?>
+                                                    <?php
+                                                    $postedAt = trim((string)($document['date_posted'] ?? ''));
+                                                    echo $postedAt !== '' ? date('F j, Y', strtotime($postedAt)) : 'N/A';
+                                                    ?>
                                                 </small>
                                             </td>
                                             <td class="text-start">
     <div class="content-preview">
-        <?= htmlspecialchars(substr($document['content'], 0, 100)) ?>...
+        <?php
+        $contentPreview = trim((string)($document['content'] ?? ''));
+        if ($contentPreview === '') {
+            echo 'N/A';
+        } else {
+            echo htmlspecialchars(strlen($contentPreview) > 100 ? substr($contentPreview, 0, 100) . '...' : $contentPreview);
+        }
+        ?>
     </div>
 </td>
                                             <td>
