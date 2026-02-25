@@ -120,6 +120,168 @@ if (isset($_POST['action']) && $_POST['action'] === 'check_verify_otp') {
     echo json_encode(['success' => true, 'message' => 'Email verified successfully!']);
     exit();
 }
+
+// ── AJAX: Send email verification OTP (Edit User Modal) ──────────────────────
+if (isset($_POST['action']) && $_POST['action'] === 'send_edit_verify_otp') {
+    header('Content-Type: application/json');
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+        exit();
+    }
+
+    $email = trim($_POST['email'] ?? '');
+    $userId = (int)($_POST['user_id'] ?? 0);
+    $userType = trim($_POST['user_type'] ?? '');
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid email address.']);
+        exit();
+    }
+    if ($userId <= 0 || !in_array($userType, ['users', 'admin_users'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
+        exit();
+    }
+
+    $table = ($userType === 'admin_users') ? 'admin_users' : 'users';
+    $targetStmt = $conn->prepare("SELECT email FROM $table WHERE id = ?");
+    if (!$targetStmt) {
+        error_log('Edit OTP target-user prepare failed: ' . $conn->error);
+        echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
+        exit();
+    }
+    $targetStmt->bind_param("i", $userId);
+    if (!$targetStmt->execute()) {
+        error_log('Edit OTP target-user execute failed: ' . $targetStmt->error);
+        $targetStmt->close();
+        echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
+        exit();
+    }
+    $targetResult = $targetStmt->get_result();
+    $targetUser = $targetResult->fetch_assoc();
+    $targetStmt->close();
+    if (!$targetUser) {
+        echo json_encode(['success' => false, 'message' => 'User not found.']);
+        exit();
+    }
+
+    // Check email not already taken by another account
+    $chk = $conn->prepare("SELECT 1 FROM users WHERE email = ? AND NOT (? = 'users' AND id = ?) UNION ALL SELECT 1 FROM admin_users WHERE email = ? AND NOT (? = 'admin_users' AND id = ?) LIMIT 1");
+    if (!$chk) {
+        error_log('Edit OTP duplicate-check prepare failed: ' . $conn->error);
+        echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
+        exit();
+    }
+    $chk->bind_param("ssissi", $email, $userType, $userId, $email, $userType, $userId);
+    if (!$chk->execute()) {
+        error_log('Edit OTP duplicate-check execute failed: ' . $chk->error);
+        $chk->close();
+        echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
+        exit();
+    }
+    $chk->store_result();
+    if ($chk->num_rows > 0) {
+        $chk->close();
+        echo json_encode(['success' => false, 'message' => 'This email is already registered.']);
+        exit();
+    }
+    $chk->close();
+
+    $otp = sprintf("%06d", random_int(0, 999999));
+    $_SESSION['edit_user_verify_otp'] = $otp;
+    $_SESSION['edit_user_verify_email'] = $email;
+    $_SESSION['edit_user_verify_expires'] = time() + 600; // 10 min
+    $_SESSION['edit_user_verify_user_id'] = $userId;
+    $_SESSION['edit_user_verify_user_type'] = $userType;
+    unset($_SESSION['edit_user_verified_email'], $_SESSION['edit_user_verified_user_id'], $_SESSION['edit_user_verified_user_type']);
+
+    require_once __DIR__ . '/vendor/autoload.php';
+    try {
+        if (trim((string)RESEND_API_KEY) === '') {
+            throw new RuntimeException('RESEND_API_KEY is not configured.');
+        }
+        $resend = \Resend::client(RESEND_API_KEY);
+        $resend->emails->send([
+            'from'    => FROM_EMAIL,
+            'to'      => [$email],
+            'subject' => 'Email Verification OTP – eFIND System',
+            'html'    => "
+                <div style='font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px'>
+                    <div style='background:linear-gradient(135deg,#4361ee,#3a0ca3);color:#fff;padding:24px;border-radius:10px 10px 0 0;text-align:center'>
+                        <h2 style='margin:0'>Email Verification</h2>
+                    </div>
+                    <div style='background:#f8f9fa;padding:24px;border-radius:0 0 10px 10px'>
+                        <p>An administrator is updating your account details in the <strong>eFIND System</strong>.</p>
+                        <p>Please share this OTP with the administrator to verify your updated email address:</p>
+                        <div style='background:#fff;border:2px dashed #4361ee;border-radius:8px;padding:20px;text-align:center;margin:20px 0'>
+                            <p style='margin:0;color:#666;font-size:13px'>Your OTP Code</p>
+                            <div style='font-size:36px;font-weight:bold;color:#4361ee;letter-spacing:8px;margin-top:6px'>{$otp}</div>
+                        </div>
+                        <p style='color:#666;font-size:13px'>This code expires in <strong>10 minutes</strong>. If you did not expect this, please ignore.</p>
+                    </div>
+                </div>"
+        ]);
+        echo json_encode(['success' => true, 'message' => 'OTP sent to ' . htmlspecialchars($email)]);
+    } catch (Throwable $e) {
+        error_log('Resend Error (edit user verify): ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to send OTP email. Please contact the system administrator.']);
+    }
+    exit();
+}
+
+// ── AJAX: Check email verification OTP (Edit User Modal) ─────────────────────
+if (isset($_POST['action']) && $_POST['action'] === 'check_edit_verify_otp') {
+    header('Content-Type: application/json');
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+        exit();
+    }
+
+    $email = trim($_POST['email'] ?? '');
+    $otp = trim($_POST['otp'] ?? '');
+    $userId = (int)($_POST['user_id'] ?? 0);
+    $userType = trim($_POST['user_type'] ?? '');
+
+    if ($userId <= 0 || !in_array($userType, ['users', 'admin_users'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
+        exit();
+    }
+    if (!preg_match('/^\d{6}$/', $otp)) {
+        echo json_encode(['success' => false, 'message' => 'Please enter a valid 6-digit OTP.']);
+        exit();
+    }
+
+    if (
+        empty($_SESSION['edit_user_verify_otp']) ||
+        empty($_SESSION['edit_user_verify_email']) ||
+        empty($_SESSION['edit_user_verify_user_id']) ||
+        empty($_SESSION['edit_user_verify_user_type']) ||
+        strcasecmp((string)$_SESSION['edit_user_verify_email'], $email) !== 0 ||
+        (int)$_SESSION['edit_user_verify_user_id'] !== $userId ||
+        (string)$_SESSION['edit_user_verify_user_type'] !== $userType ||
+        time() > ($_SESSION['edit_user_verify_expires'] ?? 0)
+    ) {
+        echo json_encode(['success' => false, 'message' => 'OTP expired or invalid. Please request a new one.']);
+        exit();
+    }
+
+    if ((string)$_SESSION['edit_user_verify_otp'] !== $otp) {
+        echo json_encode(['success' => false, 'message' => 'Incorrect OTP. Please try again.']);
+        exit();
+    }
+
+    $_SESSION['edit_user_verified_email'] = $email;
+    $_SESSION['edit_user_verified_user_id'] = $userId;
+    $_SESSION['edit_user_verified_user_type'] = $userType;
+    unset(
+        $_SESSION['edit_user_verify_otp'],
+        $_SESSION['edit_user_verify_email'],
+        $_SESSION['edit_user_verify_expires'],
+        $_SESSION['edit_user_verify_user_id'],
+        $_SESSION['edit_user_verify_user_type']
+    );
+    echo json_encode(['success' => true, 'message' => 'Email verified successfully!']);
+    exit();
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Generate CSRF token if not exists
@@ -287,7 +449,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
             $password_field = ($user_type === 'admin_users') ? 'password_hash' : 'password';
 
-            $existsStmt = $conn->prepare("SELECT profile_picture FROM $table WHERE id = ?");
+            $existsStmt = $conn->prepare("SELECT email, profile_picture FROM $table WHERE id = ?");
             $existsStmt->bind_param("i", $id);
             $existsStmt->execute();
             $existsResult = $existsStmt->get_result();
@@ -295,6 +457,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $existsStmt->close();
             if (!$currentUser) {
                 $_SESSION['error'] = "User not found.";
+                header("Location: " . $_SERVER['PHP_SELF']);
+                exit();
+            }
+            $currentEmail = trim((string)($currentUser['email'] ?? ''));
+            $emailChanged = strcasecmp($currentEmail, $email) !== 0;
+            $isEditEmailVerified = !empty($_SESSION['edit_user_verified_email'])
+                && !empty($_SESSION['edit_user_verified_user_id'])
+                && !empty($_SESSION['edit_user_verified_user_type'])
+                && strcasecmp((string)$_SESSION['edit_user_verified_email'], $email) === 0
+                && (int)$_SESSION['edit_user_verified_user_id'] === $id
+                && (string)$_SESSION['edit_user_verified_user_type'] === $user_type;
+            if ($emailChanged && !$isEditEmailVerified) {
+                $_SESSION['error'] = "Please verify the updated email address before saving changes.";
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit();
             }
@@ -360,6 +535,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->execute()) {
                 $userRoleDisplay = ($user_type === 'admin_users') ? 'admin' : $role;
                 logActivity('user_update', "User updated: $username", "Role: $userRoleDisplay | Email: $email", $id);
+                unset(
+                    $_SESSION['edit_user_verified_email'],
+                    $_SESSION['edit_user_verified_user_id'],
+                    $_SESSION['edit_user_verified_user_type'],
+                    $_SESSION['edit_user_verify_otp'],
+                    $_SESSION['edit_user_verify_email'],
+                    $_SESSION['edit_user_verify_expires'],
+                    $_SESSION['edit_user_verify_user_id'],
+                    $_SESSION['edit_user_verify_user_type']
+                );
                 $_SESSION['success'] = "User updated successfully!";
             } else {
                 $_SESSION['error'] = "Error updating user: " . $stmt->error;
@@ -1489,6 +1674,7 @@ $count_stmt->close();
                     <form id="editUserForm" method="POST" action="" enctype="multipart/form-data">
                         <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
                         <input type="hidden" name="user_id" id="editUserId">
+                        <input type="hidden" id="editOriginalEmail" value="">
                         <input type="hidden" name="existing_profile_picture" id="editExistingProfilePicture">
                         <div class="row">
                             <div class="col-md-6 mb-3">
@@ -1503,11 +1689,31 @@ $count_stmt->close();
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="editEmail" class="form-label">Email <span class="text-danger">*</span></label>
-                                <input type="email" class="form-control" id="editEmail" name="email" required>
+                                <div class="input-group">
+                                    <input type="email" class="form-control" id="editEmail" name="email" required>
+                                    <button class="btn btn-outline-primary" type="button" id="editSendOtpBtn">
+                                        <i class="fas fa-paper-plane me-1"></i> Send OTP
+                                    </button>
+                                </div>
+                                <div id="editEmailVerifiedBadge" class="mt-1 d-none">
+                                    <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Email Verified</span>
+                                </div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="editUsername" class="form-label">Username <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" id="editUsername" name="username" required>
+                            </div>
+                        </div>
+                        <div class="row" id="editOtpSection" style="display:none !important">
+                            <div class="col-12 mb-3">
+                                <label class="form-label">Enter OTP <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="editOtpInput" maxlength="6" placeholder="6-digit OTP code" inputmode="numeric">
+                                    <button class="btn btn-outline-success" type="button" id="editVerifyOtpBtn">
+                                        <i class="fas fa-check me-1"></i> Verify
+                                    </button>
+                                </div>
+                                <small class="text-muted" id="editOtpTimer"></small>
                             </div>
                         </div>
                         <div class="row">
@@ -1539,7 +1745,7 @@ $count_stmt->close();
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" name="update_user" class="btn btn-primary-custom">Update User</button>
+                            <button type="submit" name="update_user" class="btn btn-primary-custom" id="editUserSubmitBtn">Update User</button>
                         </div>
                     </form>
                 </div>
@@ -1613,6 +1819,7 @@ $count_stmt->close();
                             document.getElementById('editFullName').value = user.full_name;
                             document.getElementById('editContactNumber').value = user.contact_number || '';
                             document.getElementById('editEmail').value = user.email;
+                            document.getElementById('editOriginalEmail').value = user.email;
                             document.getElementById('editUsername').value = user.username;
                             document.getElementById('editRole').value = user.role;
                             document.getElementById('editExistingProfilePicture').value = user.profile_picture || '';
@@ -1846,6 +2053,267 @@ $count_stmt->close();
             new bootstrap.Toast(toast, { delay: 4000 }).show();
             toast.addEventListener('hidden.bs.toast', () => toast.remove());
         }
+    })();
+    </script>
+
+    <script>
+    // ── Email Verification OTP (Edit User Modal) ─────────────────────────────
+    (function () {
+        const csrfToken = '<?php echo $_SESSION['csrf_token']; ?>';
+        let otpTimer = null;
+        let originalEmail = '';
+        let verifiedEmail = '';
+
+        const modalEl = document.getElementById('editUserModal');
+        const emailInput = document.getElementById('editEmail');
+        const originalEmailInput = document.getElementById('editOriginalEmail');
+        const userIdInput = document.getElementById('editUserId');
+        const sendOtpBtn = document.getElementById('editSendOtpBtn');
+        const otpSection = document.getElementById('editOtpSection');
+        const otpInput = document.getElementById('editOtpInput');
+        const verifyOtpBtn = document.getElementById('editVerifyOtpBtn');
+        const verifiedBadge = document.getElementById('editEmailVerifiedBadge');
+        const submitBtn = document.getElementById('editUserSubmitBtn');
+        const otpTimerEl = document.getElementById('editOtpTimer');
+
+        if (!modalEl || !emailInput || !sendOtpBtn || !otpSection || !otpInput || !verifyOtpBtn || !submitBtn || !otpTimerEl) {
+            return;
+        }
+
+        function normalizedEmail(value) {
+            return (value || '').trim().toLowerCase();
+        }
+
+        function getUserType() {
+            const field = document.getElementById('editUserType');
+            return field ? (field.value || '').trim() : '';
+        }
+
+        function emailChanged() {
+            return normalizedEmail(emailInput.value) !== normalizedEmail(originalEmail);
+        }
+
+        function clearOtpTimer() {
+            if (otpTimer) {
+                clearInterval(otpTimer);
+                otpTimer = null;
+            }
+            otpTimerEl.textContent = '';
+            otpTimerEl.style.color = '';
+        }
+
+        function hideOtpSection() {
+            otpSection.style.setProperty('display', 'none', 'important');
+            otpInput.value = '';
+            clearOtpTimer();
+        }
+
+        function syncSubmitState() {
+            if (!emailChanged()) {
+                submitBtn.disabled = false;
+                return;
+            }
+            submitBtn.disabled = normalizedEmail(verifiedEmail) !== normalizedEmail(emailInput.value);
+        }
+
+        function startOtpTimer(seconds) {
+            clearOtpTimer();
+            let remaining = seconds;
+            otpTimerEl.textContent = `OTP expires in ${remaining}s`;
+            otpTimer = setInterval(function () {
+                remaining--;
+                if (remaining <= 0) {
+                    clearOtpTimer();
+                    otpTimerEl.textContent = 'OTP expired. Please request a new one.';
+                    otpTimerEl.style.color = '#dc3545';
+                } else {
+                    otpTimerEl.textContent = `OTP expires in ${remaining}s`;
+                }
+            }, 1000);
+        }
+
+        function showToast(message, type) {
+            const id = 'toast_' + Date.now();
+            const toast = document.createElement('div');
+            toast.id = id;
+            toast.className = `toast align-items-center text-white bg-${type} border-0 position-fixed bottom-0 end-0 m-3`;
+            toast.style.zIndex = 9999;
+            toast.setAttribute('role', 'alert');
+            toast.innerHTML = `<div class="d-flex"><div class="toast-body">${message}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+            document.body.appendChild(toast);
+            new bootstrap.Toast(toast, { delay: 4000 }).show();
+            toast.addEventListener('hidden.bs.toast', () => toast.remove());
+        }
+
+        function parseJsonResponse(response) {
+            return response.text().then(function (responseText) {
+                if (!response.ok) {
+                    throw new Error('Request failed. Please refresh and try again.');
+                }
+                try {
+                    return JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error('Unexpected server response. Please refresh and try again.');
+                }
+            });
+        }
+
+        modalEl.addEventListener('shown.bs.modal', function () {
+            originalEmail = (originalEmailInput ? originalEmailInput.value : '').trim();
+            verifiedEmail = '';
+            if (verifiedBadge) {
+                verifiedBadge.classList.add('d-none');
+            }
+            sendOtpBtn.disabled = false;
+            sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+            hideOtpSection();
+            syncSubmitState();
+        });
+
+        modalEl.addEventListener('hidden.bs.modal', function () {
+            originalEmail = '';
+            verifiedEmail = '';
+            if (verifiedBadge) {
+                verifiedBadge.classList.add('d-none');
+            }
+            sendOtpBtn.disabled = false;
+            sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+            hideOtpSection();
+            submitBtn.disabled = false;
+        });
+
+        emailInput.addEventListener('input', function () {
+            if (!emailChanged()) {
+                verifiedEmail = '';
+                if (verifiedBadge) {
+                    verifiedBadge.classList.add('d-none');
+                }
+                sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+                hideOtpSection();
+            } else if (normalizedEmail(verifiedEmail) !== normalizedEmail(emailInput.value)) {
+                if (verifiedBadge) {
+                    verifiedBadge.classList.add('d-none');
+                }
+                sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+                hideOtpSection();
+            }
+            syncSubmitState();
+        });
+
+        sendOtpBtn.addEventListener('click', function () {
+            const email = emailInput.value.trim();
+            const userId = parseInt(userIdInput.value || '0', 10);
+            const userType = getUserType();
+
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showToast('Please enter a valid email address first.', 'warning');
+                return;
+            }
+            if (!emailChanged()) {
+                showToast('Email is unchanged. You can save without OTP.', 'info');
+                syncSubmitState();
+                return;
+            }
+            if (!userId || !['users', 'admin_users'].includes(userType)) {
+                showToast('Invalid user context. Please reopen the modal.', 'danger');
+                return;
+            }
+
+            sendOtpBtn.disabled = true;
+            sendOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending…';
+            verifiedEmail = '';
+
+            fetch('users.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'send_edit_verify_otp',
+                    email: email,
+                    user_id: String(userId),
+                    user_type: userType,
+                    csrf_token: csrfToken
+                })
+            })
+            .then(parseJsonResponse)
+            .then(data => {
+                sendOtpBtn.disabled = false;
+                sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Resend OTP';
+                if (data.success) {
+                    otpSection.style.removeProperty('display');
+                    otpInput.value = '';
+                    otpInput.focus();
+                    startOtpTimer(600);
+                    showToast(data.message, 'success');
+                } else {
+                    showToast(data.message, 'danger');
+                }
+            })
+            .catch(err => {
+                sendOtpBtn.disabled = false;
+                sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
+                showToast(err.message || 'Network error. Please try again.', 'danger');
+            });
+        });
+
+        verifyOtpBtn.addEventListener('click', function () {
+            const email = emailInput.value.trim();
+            const otp = otpInput.value.trim();
+            const userId = parseInt(userIdInput.value || '0', 10);
+            const userType = getUserType();
+
+            if (!emailChanged()) {
+                showToast('Email is unchanged. OTP verification is not required.', 'info');
+                syncSubmitState();
+                return;
+            }
+            if (!otp || !/^\d{6}$/.test(otp)) {
+                showToast('Please enter the 6-digit OTP.', 'warning');
+                return;
+            }
+            if (!userId || !['users', 'admin_users'].includes(userType)) {
+                showToast('Invalid user context. Please reopen the modal.', 'danger');
+                return;
+            }
+
+            verifyOtpBtn.disabled = true;
+            verifyOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+
+            fetch('users.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'check_edit_verify_otp',
+                    email: email,
+                    otp: otp,
+                    user_id: String(userId),
+                    user_type: userType,
+                    csrf_token: csrfToken
+                })
+            })
+            .then(parseJsonResponse)
+            .then(data => {
+                verifyOtpBtn.disabled = false;
+                verifyOtpBtn.innerHTML = '<i class="fas fa-check me-1"></i> Verify';
+                if (data.success) {
+                    verifiedEmail = email;
+                    otpSection.style.setProperty('display', 'none', 'important');
+                    if (verifiedBadge) {
+                        verifiedBadge.classList.remove('d-none');
+                    }
+                    clearOtpTimer();
+                    syncSubmitState();
+                    showToast('Email verified! You can now update the user.', 'success');
+                } else {
+                    showToast(data.message, 'danger');
+                }
+            })
+            .catch(err => {
+                verifyOtpBtn.disabled = false;
+                verifyOtpBtn.innerHTML = '<i class="fas fa-check me-1"></i> Verify';
+                showToast(err.message || 'Network error. Please try again.', 'danger');
+            });
+        });
     })();
     </script>
     <footer class="bg-white p-3">

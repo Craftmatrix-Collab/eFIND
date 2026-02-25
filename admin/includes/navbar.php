@@ -460,131 +460,145 @@ function normalizeNavbarProfilePicturePath(path) {
     return file ? `uploads/profiles/${file}` : '';
 }
 
-$(document).ready(function() {
-    // Load edit form when edit profile modal is shown
-    $('#editProfileModal').on('show.bs.modal', function () {
-        $.ajax({
-            url: 'edit_profile_content.php',
-            type: 'GET',
-            success: function(response) {
-                $('#editProfileModalBody').html(response);
-            },
-            error: function(xhr, status, error) {
-                console.error('Edit profile load error:', xhr.responseText);
-                $('#editProfileModalBody').html(
-                    '<div class="alert alert-danger">' +
-                    '<i class="fas fa-exclamation-circle me-2"></i>' +
-                    'Error loading edit form. Please try again.' +
-                    '</div>'
-                );
-            }
+function initNavbarJQueryHandlers() {
+    $(document).ready(function() {
+        // Load edit form when edit profile modal is shown
+        $('#editProfileModal').on('show.bs.modal', function () {
+            $.ajax({
+                url: 'edit_profile_content.php',
+                type: 'GET',
+                success: function(response) {
+                    $('#editProfileModalBody').html(response);
+                },
+                error: function(xhr, status, error) {
+                    console.error('Edit profile load error:', xhr.responseText);
+                    $('#editProfileModalBody').html(
+                        '<div class="alert alert-danger">' +
+                        '<i class="fas fa-exclamation-circle me-2"></i>' +
+                        'Error loading edit form. Please try again.' +
+                        '</div>'
+                    );
+                }
+            });
         });
-    });
 
-    // Handle save button click
-    $('#saveProfileChanges').on('click', function() {
-        const btn = $(this);
-        const originalText = btn.html();
-        
-        // Show loading state
-        btn.prop('disabled', true).html('<i class="spinner-border spinner-border-sm me-1"></i>Saving...');
-        
-        // Get form data
-        var formData = new FormData(document.getElementById('editProfileForm'));
-        
-        // Submit via AJAX
-        $.ajax({
-            url: 'update_profile.php',
-            type: 'POST',
-            data: formData,
-            processData: false,
-            contentType: false,
-            dataType: 'json',
-            success: function(response) {
-                if(response.success) {
-                    // Close edit modal
-                    $('#editProfileModal').modal('hide');
-                    
-                    // Reload page to reflect updated profile in navbar modal
-                    location.reload();
-                    
-                    // Update navbar if profile picture changed
-                    if (response.profile_picture) {
-                        const normalizedProfilePath = normalizeNavbarProfilePicturePath(response.profile_picture);
-                        const profileSrc = normalizedProfilePath
-                            ? normalizedProfilePath + (normalizedProfilePath.includes('?') ? '&' : '?') + 't=' + Date.now()
-                            : '';
-                        const profileImg = $('.nav-link.dropdown-toggle img');
-                        if (profileSrc && profileImg.length) {
-                            profileImg.attr('src', profileSrc);
-                        } else if (profileSrc) {
-                            // Replace icon with image
-                            $('.nav-link.dropdown-toggle i.fa-user-circle').replaceWith(
-                                '<img src="' + profileSrc + 
-                                '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null;this.src=\'images/eFind_logo.png\';">'
-                            );
+        // Handle save button click
+        $('#saveProfileChanges').on('click', function() {
+            const btn = $(this);
+            const originalText = btn.html();
+            
+            // Show loading state
+            btn.prop('disabled', true).html('<i class="spinner-border spinner-border-sm me-1"></i>Saving...');
+            
+            // Get form data
+            var formData = new FormData(document.getElementById('editProfileForm'));
+            
+            // Submit via AJAX
+            $.ajax({
+                url: 'update_profile.php',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                dataType: 'json',
+                success: function(response) {
+                    if(response.success) {
+                        // Close edit modal
+                        $('#editProfileModal').modal('hide');
+                        
+                        // Reload page to reflect updated profile in navbar modal
+                        location.reload();
+                        
+                        // Update navbar if profile picture changed
+                        if (response.profile_picture) {
+                            const normalizedProfilePath = normalizeNavbarProfilePicturePath(response.profile_picture);
+                            const profileSrc = normalizedProfilePath
+                                ? normalizedProfilePath + (normalizedProfilePath.includes('?') ? '&' : '?') + 't=' + Date.now()
+                                : '';
+                            const profileImg = $('.nav-link.dropdown-toggle img');
+                            if (profileSrc && profileImg.length) {
+                                profileImg.attr('src', profileSrc);
+                            } else if (profileSrc) {
+                                // Replace icon with image
+                                $('.nav-link.dropdown-toggle i.fa-user-circle').replaceWith(
+                                    '<img src="' + profileSrc + 
+                                    '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null;this.src=\'images/eFind_logo.png\';">'
+                                );
+                            }
                         }
+                        
+                        // Update navbar name if changed
+                        if (response.full_name) {
+                            $('.nav-link.dropdown-toggle .text-white').text(response.full_name);
+                        }
+                        
+                        // Show success toast
+                        showToast(response.message, 'success');
+                    } else {
+                        // Show error toast
+                        showToast('Error: ' + response.message, 'error');
                     }
-                    
-                    // Update navbar name if changed
-                    if (response.full_name) {
-                        $('.nav-link.dropdown-toggle .text-white').text(response.full_name);
-                    }
-                    
-                    // Show success toast
-                    showToast(response.message, 'success');
-                } else {
-                    // Show error toast
-                    showToast('Error: ' + response.message, 'error');
+                },
+                error: function(xhr, status, error) {
+                    console.error('Save error:', xhr.responseText);
+                    showToast('Error saving changes: ' + error, 'error');
+                },
+                complete: function() {
+                    // Reset button state
+                    btn.prop('disabled', false).html(originalText);
                 }
-            },
-            error: function(xhr, status, error) {
-                console.error('Save error:', xhr.responseText);
-                showToast('Error saving changes: ' + error, 'error');
-            },
-            complete: function() {
-                // Reset button state
-                btn.prop('disabled', false).html(originalText);
-            }
+            });
+        });
+
+        // Handle edit profile button click
+        $('#profileModal').on('click', '.btn-primary', function() {
+            $('#profileModal').modal('hide');
+            $('#editProfileModal').modal('show');
+        });
+
+        // --- Add Staff AJAX handler ---
+        $('#addStaffForm').submit(function(e) {
+            e.preventDefault();
+            var formData = new FormData(this);
+            $('#addStaffMessage').html('<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div> Adding staff...');
+            $.ajax({
+                url: 'add_staff.php',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        showToast(response.message, 'success');
+                        $('#addStaffForm')[0].reset();
+                        setTimeout(function() {
+                            $('#add_staffModal').modal('hide');
+                            $('#addStaffMessage').html('');
+                        }, 1500);
+                    } else {
+                        $('#addStaffMessage').html('<div class="alert alert-danger">' + response.message + '</div>');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $('#addStaffMessage').html('<div class="alert alert-danger">An error occurred: ' + error + '</div>');
+                }
+            });
         });
     });
+}
 
-    // Handle edit profile button click
-    $('#profileModal').on('click', '.btn-primary', function() {
-        $('#profileModal').modal('hide');
-        $('#editProfileModal').modal('show');
-    });
-
-    // --- Add Staff AJAX handler ---
-    $('#addStaffForm').submit(function(e) {
-        e.preventDefault();
-        var formData = new FormData(this);
-        $('#addStaffMessage').html('<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div> Adding staff...');
-        $.ajax({
-            url: 'add_staff.php',
-            type: 'POST',
-            data: formData,
-            processData: false,
-            contentType: false,
-            dataType: 'json',
-            success: function(response) {
-                if (response.success) {
-                    showToast(response.message, 'success');
-                    $('#addStaffForm')[0].reset();
-                    setTimeout(function() {
-                        $('#add_staffModal').modal('hide');
-                        $('#addStaffMessage').html('');
-                    }, 1500);
-                } else {
-                    $('#addStaffMessage').html('<div class="alert alert-danger">' + response.message + '</div>');
-                }
-            },
-            error: function(xhr, status, error) {
-                $('#addStaffMessage').html('<div class="alert alert-danger">An error occurred: ' + error + '</div>');
-            }
-        });
-    });
-});
+if (window.jQuery) {
+    initNavbarJQueryHandlers();
+} else {
+    const navbarJqueryScript = document.createElement('script');
+    navbarJqueryScript.src = 'https://code.jquery.com/jquery-3.6.0.min.js';
+    navbarJqueryScript.onload = initNavbarJQueryHandlers;
+    navbarJqueryScript.onerror = function() {
+        console.error('Failed to load jQuery; profile editing actions are unavailable.');
+    };
+    document.head.appendChild(navbarJqueryScript);
+}
 
 // Toggle password visibility
 document.querySelectorAll('.toggle-password').forEach(button => {
