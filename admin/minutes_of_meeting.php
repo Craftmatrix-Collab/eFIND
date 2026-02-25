@@ -3230,17 +3230,70 @@ $count_stmt->close();
 
         // Function to perform OCR using composer backend
         async function runComposerOcr(source, onProgress) {
-            if (typeof window.efindComposerOcr !== 'function') {
-                throw new Error('Composer OCR helper is unavailable. Please reload this page.');
+            if (typeof window.efindComposerOcr === 'function') {
+                return window.efindComposerOcr(source, {
+                    documentType: 'minutes',
+                    onProgress: ({ percent, message }) => {
+                        if (typeof onProgress === 'function') {
+                            onProgress(percent, message);
+                        }
+                    },
+                });
             }
-            return window.efindComposerOcr(source, {
-                documentType: 'minutes',
-                onProgress: ({ percent, message }) => {
-                    if (typeof onProgress === 'function') {
-                        onProgress(percent, message);
-                    }
-                },
+
+            let file = null;
+            let imageUrl = '';
+            if (source instanceof File) {
+                file = source;
+            } else if (source instanceof Blob) {
+                file = new File([source], `ocr_${Date.now()}.jpg`, { type: source.type || 'image/jpeg' });
+            } else if (typeof source === 'string' && source.trim() !== '') {
+                try {
+                    imageUrl = new URL(source.trim(), window.location.href).href;
+                } catch (error) {
+                    throw new Error('Invalid OCR source URL.');
+                }
+            } else {
+                throw new Error('OCR source is required.');
+            }
+
+            if (typeof onProgress === 'function') {
+                onProgress(35, 'Uploading image to server OCR...');
+            }
+
+            const formData = new FormData();
+            if (file) {
+                formData.append('file', file);
+            } else {
+                formData.append('image_url', imageUrl);
+            }
+            formData.append('document_type', 'minutes');
+
+            const response = await fetch('composer_tesseract_ocr.php', {
+                method: 'POST',
+                body: formData,
             });
+
+            let result = null;
+            try {
+                result = await response.json();
+            } catch (error) {
+                throw new Error(`Invalid OCR response (HTTP ${response.status})`);
+            }
+
+            if (!response.ok || !result || !result.success) {
+                const message = result && result.error ? result.error : `OCR failed (HTTP ${response.status})`;
+                throw new Error(message);
+            }
+
+            if (typeof onProgress === 'function') {
+                onProgress(100, 'OCR complete.');
+            }
+
+            return {
+                text: typeof result.text === 'string' ? result.text : '',
+                confidence: typeof result.confidence === 'number' ? result.confidence : null,
+            };
         }
         function performOCR(imagePath, minuteId, callback) {
             runComposerOcr(imagePath, function (percent, message) {

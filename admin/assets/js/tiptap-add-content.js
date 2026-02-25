@@ -236,8 +236,8 @@ window.efindConfirmDuplicateImage = function (message) {
 
     let settled = false;
     const cleanup = () => {
-      cancelBtn?.removeEventListener('click', onCancel);
-      proceedBtn?.removeEventListener('click', onProceed);
+      if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
+      if (proceedBtn) proceedBtn.removeEventListener('click', onProceed);
       modalEl.removeEventListener('hidden.bs.modal', onHidden);
     };
     const finish = (decision) => {
@@ -258,8 +258,8 @@ window.efindConfirmDuplicateImage = function (message) {
       finish(false);
     };
 
-    cancelBtn?.addEventListener('click', onCancel);
-    proceedBtn?.addEventListener('click', onProceed);
+    if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+    if (proceedBtn) proceedBtn.addEventListener('click', onProceed);
     modalEl.addEventListener('hidden.bs.modal', onHidden);
     modal.show();
   });
