@@ -153,7 +153,7 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
     </div>
 
     <!-- Metadata fields rendered by JS -->
-    <div id="meta-fields"></div>
+    <div id="meta-fields-step1"></div>
 
     <button class="btn btn-primary w-100 py-2" id="btn-next-1" disabled onclick="goToStep2()">
       Next — Add Files <i class="fas fa-arrow-right ms-1"></i>
@@ -173,7 +173,7 @@ $mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
       </div>
       <div class="card-body pb-1">
         <!-- Metadata injected by JS -->
-        <div id="meta-fields"></div>
+        <div id="meta-fields-direct"></div>
       </div>
     </div>
 
@@ -453,15 +453,17 @@ function selectType(type, btn) {
   selectedType = type;
   document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
-  document.getElementById('meta-fields').innerHTML = metaTemplates[type];
+  const stepMeta = document.getElementById('meta-fields-step1');
+  if (!stepMeta) return;
+  stepMeta.innerHTML = metaTemplates[type];
   // Enable next button if required fields are eventually valid
-  document.getElementById('meta-fields').addEventListener('input', validateStep1);
+  stepMeta.addEventListener('input', validateStep1);
   validateStep1();
 }
 
 function validateStep1() {
   if (!selectedType) { document.getElementById('btn-next-1').disabled = true; return; }
-  const required = document.querySelectorAll('#meta-fields [required]');
+  const required = document.querySelectorAll('#meta-fields-step1 [required]');
   const allFilled = [...required].every(el => el.value.trim() !== '');
   document.getElementById('btn-next-1').disabled = !allFilled;
 }
@@ -469,22 +471,24 @@ function validateStep1() {
 // If type pre-selected via URL param, render its form immediately
 if (selectedType) {
   const btn = document.querySelector(`.type-btn[onclick*="${selectedType}"]`);
-  if (btn) selectType(selectedType, btn);
+  if (btn) btn.classList.add('selected');
 
   // Direct mode: meta form is in #direct-mode, re-wire validation to btn-direct-upload
-  const directMeta = document.getElementById('meta-fields');
+  const directMeta = document.getElementById('meta-fields-direct');
   if (directMeta && document.getElementById('btn-direct-upload')) {
     // Re-render meta template into the direct-mode #meta-fields
     directMeta.innerHTML = metaTemplates[selectedType] || '';
     directMeta.addEventListener('input', validateDirectMode);
     validateDirectMode();
+  } else if (btn) {
+    selectType(selectedType, btn);
   }
 }
 
 function validateDirectMode() {
   const btn = document.getElementById('btn-direct-upload');
   if (!btn) return;
-  const req = document.querySelectorAll('#meta-fields [required]');
+  const req = document.querySelectorAll('#meta-fields-direct [required]');
   const metaOk = [...req].every(el => el.value.trim() !== '');
   btn.disabled = !(metaOk && selectedFiles.length > 0);
 }
@@ -519,6 +523,7 @@ function dismissCameraSplash() {
 }
 
 function openCamera() {
+  cameraInput.value = '';
   if (autoCameraMode) {
     // QR flow should launch native camera capture directly.
     cameraInput.click();
@@ -707,6 +712,8 @@ function addFiles(files) {
   validateDirectMode();
   // reset input so same file can be re-added if removed
   fileInput.value = '';
+  cameraInput.value = '';
+  videoInput.value = '';
 }
 
 function removeFile(idx) {
@@ -930,7 +937,10 @@ function setFileStatus(rowId, type, msg) {
 
 function collectMeta() {
   const fields = {};
-  document.querySelectorAll('#meta-fields input, #meta-fields textarea, #meta-fields select').forEach(el => {
+  const metaRootSelector = document.getElementById('btn-direct-upload')
+    ? '#meta-fields-direct'
+    : '#meta-fields-step1';
+  document.querySelectorAll(`${metaRootSelector} input, ${metaRootSelector} textarea, ${metaRootSelector} select`).forEach(el => {
     if (el.name) fields[el.name] = el.value;
   });
   return fields;
