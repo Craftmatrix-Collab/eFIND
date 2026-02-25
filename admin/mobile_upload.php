@@ -301,6 +301,7 @@ const MAX_MOBILE_FILES = 8;
 const mobileSession = '<?= $mobileSession ?>';
 const autoCameraMode = <?= $autoCameraMode ? 'true' : 'false' ?>;
 const deferToDesktop = <?= $deferToDesktop ? 'true' : 'false' ?>;
+const requiresMobileMeta = !deferToDesktop;
 
 function getMobileUploadWsUrl() {
   if (window.EFIND_MOBILE_WS_URL) {
@@ -446,8 +447,13 @@ const metaTemplates = {
         <input class="form-control" name="reference_number" placeholder="Optional"></div>
       <div class="mb-3"><label class="form-label fw-semibold">Description</label>
         <textarea class="form-control" name="description" rows="2" placeholder="Brief description"></textarea></div>
-    </div></div>`
+     </div></div>`
 };
+const deferredMetaNotice = `
+  <div class="alert alert-info mb-0">
+    <i class="fas fa-info-circle me-1"></i>
+    Document details will be completed in the desktop add-document modal after upload.
+  </div>`;
 
 function selectType(type, btn) {
   selectedType = type;
@@ -455,17 +461,25 @@ function selectType(type, btn) {
   btn.classList.add('selected');
   const stepMeta = document.getElementById('meta-fields-step1');
   if (!stepMeta) return;
-  stepMeta.innerHTML = metaTemplates[type];
+  stepMeta.innerHTML = requiresMobileMeta ? (metaTemplates[type] || '') : deferredMetaNotice;
   // Enable next button if required fields are eventually valid
-  stepMeta.addEventListener('input', validateStep1);
+  if (requiresMobileMeta) {
+    stepMeta.addEventListener('input', validateStep1);
+  }
   validateStep1();
 }
 
 function validateStep1() {
-  if (!selectedType) { document.getElementById('btn-next-1').disabled = true; return; }
+  const nextBtn = document.getElementById('btn-next-1');
+  if (!nextBtn) return;
+  if (!selectedType) { nextBtn.disabled = true; return; }
+  if (!requiresMobileMeta) {
+    nextBtn.disabled = false;
+    return;
+  }
   const required = document.querySelectorAll('#meta-fields-step1 [required]');
   const allFilled = [...required].every(el => el.value.trim() !== '');
-  document.getElementById('btn-next-1').disabled = !allFilled;
+  nextBtn.disabled = !allFilled;
 }
 
 // If type pre-selected via URL param, render its form immediately
@@ -477,8 +491,12 @@ if (selectedType) {
   const directMeta = document.getElementById('meta-fields-direct');
   if (directMeta && document.getElementById('btn-direct-upload')) {
     // Re-render meta template into the direct-mode #meta-fields
-    directMeta.innerHTML = metaTemplates[selectedType] || '';
-    directMeta.addEventListener('input', validateDirectMode);
+    if (requiresMobileMeta) {
+      directMeta.innerHTML = metaTemplates[selectedType] || '';
+      directMeta.addEventListener('input', validateDirectMode);
+    } else {
+      directMeta.innerHTML = deferredMetaNotice;
+    }
     validateDirectMode();
   } else if (btn) {
     selectType(selectedType, btn);
@@ -488,8 +506,10 @@ if (selectedType) {
 function validateDirectMode() {
   const btn = document.getElementById('btn-direct-upload');
   if (!btn) return;
-  const req = document.querySelectorAll('#meta-fields-direct [required]');
-  const metaOk = [...req].every(el => el.value.trim() !== '');
+  const req = requiresMobileMeta
+    ? document.querySelectorAll('#meta-fields-direct [required]')
+    : [];
+  const metaOk = !requiresMobileMeta || [...req].every(el => el.value.trim() !== '');
   btn.disabled = uploadInProgress || !(metaOk && selectedFiles.length > 0);
 }
 
@@ -1058,6 +1078,7 @@ function goBackAfterUploadFailure() {
 }
 
 function collectMeta() {
+  if (!requiresMobileMeta) return {};
   const fields = {};
   const metaRootSelector = document.getElementById('btn-direct-upload')
     ? '#meta-fields-direct'
