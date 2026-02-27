@@ -38,6 +38,107 @@ function getSafeRedirect() {
     return 'dashboard.php';
 }
 
+if (!defined('LOGIN_MAX_FAILED_ATTEMPTS')) {
+    define('LOGIN_MAX_FAILED_ATTEMPTS', 5);
+}
+
+if (!defined('LOGIN_LOCKOUT_WINDOW_MINUTES')) {
+    define('LOGIN_LOCKOUT_WINDOW_MINUTES', 15);
+}
+
+function getWrongPasswordAttemptState($username, $ip_address) {
+    global $conn;
+
+    $maxAttempts = (int)LOGIN_MAX_FAILED_ATTEMPTS;
+    $state = [
+        'is_locked' => false,
+        'remaining_attempts' => $maxAttempts,
+        'retry_after_minutes' => 0,
+    ];
+
+    $username = trim((string)$username);
+    $ip_address = trim((string)$ip_address);
+
+    if ($username === '' || $ip_address === '' || !isset($conn) || !($conn instanceof mysqli)) {
+        return $state;
+    }
+
+    try {
+        $tableCheck = $conn->query("SHOW TABLES LIKE 'login_logs'");
+        if (!$tableCheck || (int)$tableCheck->num_rows === 0) {
+            return $state;
+        }
+
+        $windowMinutes = (int)LOGIN_LOCKOUT_WINDOW_MINUTES;
+        $query = "SELECT COUNT(*) AS failed_count, MAX(login_time) AS last_failed
+                  FROM login_logs
+                  WHERE username = ?
+                    AND ip_address = ?
+                    AND status = 'FAILED'
+                    AND login_time >= DATE_SUB(NOW(), INTERVAL {$windowMinutes} MINUTE)
+                    AND login_time > COALESCE(
+                        (SELECT MAX(login_time)
+                         FROM login_logs
+                         WHERE username = ?
+                           AND ip_address = ?
+                           AND status = 'SUCCESS'),
+                        '1970-01-01 00:00:00'
+                    )";
+
+        $stmt = $conn->prepare($query);
+        if (!$stmt) {
+            return $state;
+        }
+
+        $stmt->bind_param("ssss", $username, $ip_address, $username, $ip_address);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        $failedCount = (int)($row['failed_count'] ?? 0);
+        $state['remaining_attempts'] = max(0, $maxAttempts - $failedCount);
+
+        if ($failedCount >= $maxAttempts) {
+            $state['is_locked'] = true;
+
+            $retryAfterMinutes = $windowMinutes;
+            $lastFailed = (string)($row['last_failed'] ?? '');
+            if ($lastFailed !== '') {
+                $unlockTimestamp = strtotime($lastFailed . " +{$windowMinutes} minutes");
+                if ($unlockTimestamp !== false) {
+                    $secondsRemaining = $unlockTimestamp - time();
+                    if ($secondsRemaining > 0) {
+                        $retryAfterMinutes = (int)ceil($secondsRemaining / 60);
+                    }
+                }
+            }
+
+            $state['retry_after_minutes'] = max(1, $retryAfterMinutes);
+        }
+    } catch (Throwable $e) {
+        error_log("Failed to evaluate wrong-password attempt state: " . $e->getMessage());
+    }
+
+    return $state;
+}
+
+function buildWrongPasswordErrorMessage($username, $ip_address) {
+    $attemptState = getWrongPasswordAttemptState($username, $ip_address);
+
+    if (!empty($attemptState['is_locked'])) {
+        $minutes = max(1, (int)($attemptState['retry_after_minutes'] ?? 0));
+        return "Too many wrong password attempts. Please try again in {$minutes} minute(s).";
+    }
+
+    $remaining = max(0, (int)($attemptState['remaining_attempts'] ?? 0));
+    if ($remaining > 0) {
+        $attemptWord = $remaining === 1 ? 'attempt' : 'attempts';
+        return "Invalid username or password. You have {$remaining} {$attemptWord} remaining.";
+    }
+
+    return "Invalid username or password.";
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
     // Sanitize inputs
     $username = trim($_POST['username']);
@@ -51,81 +152,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
         logLoginAttempt($username, $user_ip, 'FAILED', 'Empty credentials');
         logActivity(null, 'failed_login', 'Login attempt with empty credentials', 'system', $user_ip, "Username: $username");
     } else {
-        $loginSuccessful = false;
+        $attemptState = getWrongPasswordAttemptState($username, $user_ip);
+        if (!empty($attemptState['is_locked'])) {
+            $minutes = max(1, (int)($attemptState['retry_after_minutes'] ?? 0));
+            $error = "Too many wrong password attempts. Please try again in {$minutes} minute(s).";
+            logActivity(null, 'failed_login', 'Login blocked due to too many failed attempts', 'system', $user_ip, "Username: $username");
+        } else {
+            $loginSuccessful = false;
         
-        // Try admin login first
-        $query = "SELECT id, username, password_hash, full_name, profile_picture, is_verified FROM admin_users WHERE username = ?";
-        $stmt = $conn->prepare($query);
-        
-        if ($stmt) {
-            $stmt->bind_param("s", $username);
-            $stmt->execute();
-            $result = $stmt->get_result();
-
-            if ($result->num_rows == 1) {
-                $user = $result->fetch_assoc();
-                
-                // Verify password
-                if (password_verify($password, $user['password_hash'])) {
-                    // Block login if email is not yet verified
-                    if (!$user['is_verified']) {
-                        $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
-                        logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified');
-                        logActivity(null, 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username");
-                        $loginSuccessful = true; // Mark as processed to skip staff login
-                    } else {
-                        // Regenerate session ID to prevent session fixation
-                        session_regenerate_id(true);
-
-                        // Set session variables for admin
-                        $_SESSION['admin_id'] = $user['id'];
-                        $_SESSION['admin_username'] = $user['username'];
-                        $_SESSION['admin_full_name'] = $user['full_name'];
-                        $_SESSION['admin_profile_picture'] = $user['profile_picture'];
-                        $_SESSION['admin_logged_in'] = true;
-
-                        // Set these for compatibility
-                        $_SESSION['user_id'] = $user['id'];
-                        $_SESSION['role'] = 'admin';
-                        $_SESSION['full_name'] = $user['full_name'];
-                        $_SESSION['profile_picture'] = $user['profile_picture'];
-
-                        $primaryToken = registerPrimaryLoginSession($conn, 'admin', (int)$user['id'], (string)$user['username']);
-                        if ($primaryToken === null) {
-                            $error = "Unable to start secure session. Please try again.";
-                            logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], 'admin');
-                            logActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
-                            session_unset();
-                            session_destroy();
-                            $loginSuccessful = true;
-                        } else {
-                            // Log successful admin login
-                            logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
-                            logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
-
-                            $loginSuccessful = true;
-                            
-                            // Redirect to dashboard or original requested URL
-                            header("Location: " . getSafeRedirect());
-                            exit();
-                        }
-                    }
-                } else {
-                    // Admin account exists but password is wrong - stop here, don't try staff login
-                    logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid admin password');
-                    logActivity(null, 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username");
-                    $error = "Invalid username or password.";
-                    $loginSuccessful = true; // Mark as "processed" to skip staff login
-                }
-            }
-            $stmt->close();
-        }
-
-        // Only try staff login if username was NOT found in admin_users table
-        if (!$loginSuccessful) {
-            $query = "SELECT id, username, password, full_name, profile_picture, role FROM users WHERE username = ?";
+            // Try admin login first
+            $query = "SELECT id, username, password_hash, full_name, profile_picture, is_verified FROM admin_users WHERE username = ?";
             $stmt = $conn->prepare($query);
-            
+        
             if ($stmt) {
                 $stmt->bind_param("s", $username);
                 $stmt->execute();
@@ -133,60 +171,130 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                 if ($result->num_rows == 1) {
                     $user = $result->fetch_assoc();
-                    
-                    // Verify password (using the 'password' column from your table)
-                    if (password_verify($password, $user['password'])) {
-                        // Regenerate session ID to prevent session fixation
-                        session_regenerate_id(true);
-
-                        // Set session variables for staff
-                        $_SESSION['user_id'] = $user['id'];
-                        $_SESSION['username'] = $user['username'];
-                        $_SESSION['full_name'] = $user['full_name'];
-                        $_SESSION['profile_picture'] = $user['profile_picture'];
-                        $_SESSION['role'] = $user['role'];
-                        $_SESSION['logged_in'] = true;
-
-                        // For backward compatibility with admin sessions
-                        $_SESSION['staff_id'] = $user['id'];
-                        $_SESSION['staff_username'] = $user['username'];
-                        $_SESSION['staff_full_name'] = $user['full_name'];
-                        $_SESSION['staff_profile_picture'] = $user['profile_picture'];
-                        $_SESSION['staff_role'] = $user['role'];
-                        $_SESSION['staff_logged_in'] = true;
-
-                        $primaryToken = registerPrimaryLoginSession($conn, 'staff', (int)$user['id'], (string)$user['username']);
-                        if ($primaryToken === null) {
-                            $error = "Unable to start secure session. Please try again.";
-                            logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], $user['role']);
-                            logActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
-                            session_unset();
-                            session_destroy();
+                
+                    // Verify password
+                    if (password_verify($password, $user['password_hash'])) {
+                        // Block login if email is not yet verified
+                        if (!$user['is_verified']) {
+                            $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
+                            logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified');
+                            logActivity(null, 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username");
+                            $loginSuccessful = true; // Mark as processed to skip staff login
                         } else {
-                            // Log successful staff login
-                            logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
-                            logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
+                            // Regenerate session ID to prevent session fixation
+                            session_regenerate_id(true);
 
-                            // Redirect to dashboard or original requested URL
-                            header("Location: " . getSafeRedirect());
-                            exit();
+                            // Set session variables for admin
+                            $_SESSION['admin_id'] = $user['id'];
+                            $_SESSION['admin_username'] = $user['username'];
+                            $_SESSION['admin_full_name'] = $user['full_name'];
+                            $_SESSION['admin_profile_picture'] = $user['profile_picture'];
+                            $_SESSION['admin_logged_in'] = true;
+
+                            // Set these for compatibility
+                            $_SESSION['user_id'] = $user['id'];
+                            $_SESSION['role'] = 'admin';
+                            $_SESSION['full_name'] = $user['full_name'];
+                            $_SESSION['profile_picture'] = $user['profile_picture'];
+
+                            $primaryToken = registerPrimaryLoginSession($conn, 'admin', (int)$user['id'], (string)$user['username']);
+                            if ($primaryToken === null) {
+                                $error = "Unable to start secure session. Please try again.";
+                                logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], 'admin');
+                                logActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                                session_unset();
+                                session_destroy();
+                                $loginSuccessful = true;
+                            } else {
+                                // Log successful admin login
+                                logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
+                                logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
+
+                                $loginSuccessful = true;
+                                
+                                // Redirect to dashboard or original requested URL
+                                header("Location: " . getSafeRedirect());
+                                exit();
+                            }
                         }
                     } else {
-                        $error = "Invalid username or password.";
-                        logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid password');
+                        // Admin account exists but password is wrong - stop here, don't try staff login
+                        logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid admin password');
                         logActivity(null, 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username");
+                        $error = buildWrongPasswordErrorMessage($username, $user_ip);
+                        $loginSuccessful = true; // Mark as "processed" to skip staff login
                     }
-                } else {
-                    $error = "Invalid username or password.";
-                    logLoginAttempt($username, $user_ip, 'FAILED', 'Username not found');
-                    logActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
                 }
-                
                 $stmt->close();
-            } else {
-                $error = "Database error. Please try again later.";
-                logLoginAttempt($username, $user_ip, 'FAILED', 'Database error');
-                logActivity(null, 'failed_login', 'Database error during login', 'system', $user_ip, "Username: $username");
+            }
+
+            // Only try staff login if username was NOT found in admin_users table
+            if (!$loginSuccessful) {
+                $query = "SELECT id, username, password, full_name, profile_picture, role FROM users WHERE username = ?";
+                $stmt = $conn->prepare($query);
+            
+                if ($stmt) {
+                    $stmt->bind_param("s", $username);
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+
+                    if ($result->num_rows == 1) {
+                        $user = $result->fetch_assoc();
+                    
+                        // Verify password (using the 'password' column from your table)
+                        if (password_verify($password, $user['password'])) {
+                            // Regenerate session ID to prevent session fixation
+                            session_regenerate_id(true);
+
+                            // Set session variables for staff
+                            $_SESSION['user_id'] = $user['id'];
+                            $_SESSION['username'] = $user['username'];
+                            $_SESSION['full_name'] = $user['full_name'];
+                            $_SESSION['profile_picture'] = $user['profile_picture'];
+                            $_SESSION['role'] = $user['role'];
+                            $_SESSION['logged_in'] = true;
+
+                            // For backward compatibility with admin sessions
+                            $_SESSION['staff_id'] = $user['id'];
+                            $_SESSION['staff_username'] = $user['username'];
+                            $_SESSION['staff_full_name'] = $user['full_name'];
+                            $_SESSION['staff_profile_picture'] = $user['profile_picture'];
+                            $_SESSION['staff_role'] = $user['role'];
+                            $_SESSION['staff_logged_in'] = true;
+
+                            $primaryToken = registerPrimaryLoginSession($conn, 'staff', (int)$user['id'], (string)$user['username']);
+                            if ($primaryToken === null) {
+                                $error = "Unable to start secure session. Please try again.";
+                                logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], $user['role']);
+                                logActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
+                                session_unset();
+                                session_destroy();
+                            } else {
+                                // Log successful staff login
+                                logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
+                                logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
+
+                                // Redirect to dashboard or original requested URL
+                                header("Location: " . getSafeRedirect());
+                                exit();
+                            }
+                        } else {
+                            logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid password');
+                            logActivity(null, 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username");
+                            $error = buildWrongPasswordErrorMessage($username, $user_ip);
+                        }
+                    } else {
+                        logLoginAttempt($username, $user_ip, 'FAILED', 'Username not found');
+                        logActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
+                        $error = buildWrongPasswordErrorMessage($username, $user_ip);
+                    }
+                 
+                    $stmt->close();
+                } else {
+                    $error = "Database error. Please try again later.";
+                    logLoginAttempt($username, $user_ip, 'FAILED', 'Database error');
+                    logActivity(null, 'failed_login', 'Database error during login', 'system', $user_ip, "Username: $username");
+                }
             }
         }
     }
@@ -1070,7 +1178,7 @@ checkActivityLogsTable();
 
                 <div class="security-notice">
                     <i class="fas fa-shield-alt"></i>
-                    All login attempts are logged for security purposes.
+                    All login attempts are logged. Too many wrong passwords will trigger a temporary lockout.
                 </div>
 
                 <form method="post" action="login.php">

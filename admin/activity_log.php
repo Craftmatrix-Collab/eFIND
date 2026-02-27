@@ -32,7 +32,7 @@ if (!isLoggedIn()) {
 }
 
 // Check if user has admin privileges
-if (!isAdmin()) {
+if (!isAdmin() && !(function_exists('isSuperAdmin') && isSuperAdmin())) {
     header("Location: /unauthorized.php");
     exit();
 }

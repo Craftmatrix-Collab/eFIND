@@ -3,8 +3,8 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 header('Content-Type: application/json');
 
-// Check if the user is an admin
-if (!isLoggedIn() || !isAdmin()) {
+// Check if the user is an admin or superadmin
+if (!isLoggedIn() || (!isAdmin() && !(function_exists('isSuperAdmin') && isSuperAdmin()))) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Unauthorized access.']);
     exit;

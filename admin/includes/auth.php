@@ -220,14 +220,19 @@ function isAdmin() {
  * Check if the logged-in user is a superadmin
  */
 function isSuperAdmin() {
-    if (!isAdmin()) {
+    $isAdminSession = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
+    $isStaffSession = (isset($_SESSION['staff_logged_in']) && $_SESSION['staff_logged_in'] === true)
+        || (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true);
+
+    if (!$isAdminSession && !$isStaffSession) {
         return false;
     }
 
-    $sessionRole = strtolower((string)($_SESSION['role'] ?? ''));
+    $sessionRole = strtolower((string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? '')));
     $adminUsername = strtolower((string)($_SESSION['admin_username'] ?? ''));
+    $staffUsername = strtolower((string)($_SESSION['staff_username'] ?? ($_SESSION['username'] ?? '')));
 
-    return $sessionRole === 'superadmin' || $adminUsername === 'superadmin';
+    return $sessionRole === 'superadmin' || $adminUsername === 'superadmin' || $staffUsername === 'superadmin';
 }
 
 /**

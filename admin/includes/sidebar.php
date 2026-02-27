@@ -1,4 +1,5 @@
 <div class="sidebar" id="sidebar" style="background: linear-gradient(135deg, #1a3a8f, #1e40af); color: white;">
+    <?php $canManageAdminSections = (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) || (function_exists('isSuperAdmin') && isSuperAdmin()); ?>
     <div class="sidebar-header text-center p-3">
         <div class="logo-container mb-3">
             <img src="./images/logo_pbsth.png" alt="Barangay Poblacion South Logo" class="sidebar-logo" style="max-width: 100px; height: auto;">
@@ -34,7 +35,7 @@
                     <i class="fas fa-chart-bar me-2"></i> Meeting Minutes
                 </a>
             </li>
-            <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true): ?>
+            <?php if ($canManageAdminSections): ?>
                 <li class="<?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'active' : '' ?>">
                     <a href="users.php" class="d-flex align-items-center py-2 px-3 text-white text-decoration-none <?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'bg-dark text-dark rounded' : '' ?>">
                         <i class="fas fa-user me-2"></i> Users

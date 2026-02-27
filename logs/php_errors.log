@@ -26,3 +26,4 @@ Stack trace:
 #0 Command line code(1): mysqli->query()
 #1 {main}
   thrown in Command line code on line 1
+[28-Feb-2026 00:34:28 Asia/Manila] Failed to evaluate wrong-password attempt state: mysqli object is already closed

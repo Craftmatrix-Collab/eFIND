@@ -15,7 +15,7 @@ if (!isLoggedIn()) {
     header('Location: login.php');
     exit();
 }
-if (!isAdmin()) {
+if (!isAdmin() && !(function_exists('isSuperAdmin') && isSuperAdmin())) {
     $_SESSION['error'] = 'You do not have permission to access this page.';
     header('Location: dashboard.php');
     exit();
