@@ -1420,7 +1420,6 @@ $count_stmt->close();
                                 <th style="width:18%">Email</th>
                                 <th style="width:12%">Username</th>
                                 <th style="width:8%">Role</th>
-                                <th style="width:9%">User Type</th>
                                 <th style="width:8%">Profile Picture</th>
                                 <th style="width:10%">Actions</th>
                             </tr>
@@ -1428,7 +1427,7 @@ $count_stmt->close();
                         <tbody id="usersTableBody">
                             <?php if (empty($users)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-4">No users found</td>
+                                    <td colspan="8" class="text-center py-4">No users found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php $row_num = $offset + 1; ?>
@@ -1448,11 +1447,6 @@ $count_stmt->close();
                                                 }
                                             ?>">
                                                 <?php echo htmlspecialchars(ucfirst($user['role'])); ?>
-                                            </span>
-                                        </td>
-                                        <td class="user-type">
-                                            <span class="badge bg-<?php echo $user['user_type'] === 'admin_users' ? 'warning' : 'info'; ?>">
-                                                <?php echo htmlspecialchars($user['user_type'] === 'admin_users' ? 'Admin User' : 'Regular User'); ?>
                                             </span>
                                         </td>
                                         <td>
@@ -1514,7 +1508,7 @@ $count_stmt->close();
                                 <?php
                                 $filled = count($users);
                                 for ($i = $filled; $i < $table_limit; $i++): ?>
-                                    <tr class="filler-row"><td colspan="9">&nbsp;</td></tr>
+                                    <tr class="filler-row"><td colspan="8">&nbsp;</td></tr>
                                 <?php endfor; ?>
                             <?php endif; ?>
                         </tbody>
