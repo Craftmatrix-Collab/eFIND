@@ -16,3 +16,13 @@ Stack trace:
 [22-Feb-2026 11:32:53 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
 [22-Feb-2026 11:35:31 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
 [22-Feb-2026 15:15:53 Asia/Manila] PHP Fatal error:  Cannot redeclare class Resend (previously declared in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php:10) in /home/delfin/code/clone/eFIND/admin/vendor/resend/resend-php/src/Resend.php on line 10
+[27-Feb-2026 23:55:01 Asia/Manila] PHP Fatal error:  Uncaught mysqli_sql_exception: Table 'barangay_poblacion_south.executive_orders' doesn't exist in Command line code:1
+Stack trace:
+#0 Command line code(1): mysqli->query()
+#1 {main}
+  thrown in Command line code on line 1
+[27-Feb-2026 23:55:51 Asia/Manila] PHP Fatal error:  Uncaught mysqli_sql_exception: Table 'barangay_poblacion_south.executive_orders' doesn't exist in Command line code:1
+Stack trace:
+#0 Command line code(1): mysqli->query()
+#1 {main}
+  thrown in Command line code on line 1

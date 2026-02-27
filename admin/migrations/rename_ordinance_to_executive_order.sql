@@ -25,6 +25,20 @@ BEGIN
         RENAME TABLE ordinances TO executive_orders;
     END IF;
 
+    SELECT COUNT(*) INTO v_old_table_exists
+    FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'executive_order';
+
+    SELECT COUNT(*) INTO v_new_table_exists
+    FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'executive_orders';
+
+    IF v_old_table_exists = 1 AND v_new_table_exists = 0 THEN
+        RENAME TABLE executive_order TO executive_orders;
+    END IF;
+
     SELECT COUNT(*) INTO v_old_column_exists
     FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
@@ -42,11 +56,6 @@ BEGIN
             'ALTER TABLE `executive_orders` CHANGE `ordinance_number` `executive_order_number` ',
             COLUMN_TYPE,
             CASE WHEN IS_NULLABLE = 'NO' THEN ' NOT NULL' ELSE ' NULL' END,
-            CASE
-                WHEN COLUMN_DEFAULT IS NULL THEN ''
-                WHEN COLUMN_DEFAULT = 'CURRENT_TIMESTAMP' THEN ' DEFAULT CURRENT_TIMESTAMP'
-                ELSE CONCAT(' DEFAULT ', QUOTE(COLUMN_DEFAULT))
-            END,
             CASE WHEN EXTRA = '' THEN '' ELSE CONCAT(' ', EXTRA) END
         )
         INTO @sql_stmt
@@ -54,6 +63,37 @@ BEGIN
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'executive_orders'
           AND COLUMN_NAME = 'ordinance_number'
+        LIMIT 1;
+
+        PREPARE stmt FROM @sql_stmt;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+
+    SELECT COUNT(*) INTO v_old_column_exists
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'executive_orders'
+      AND COLUMN_NAME = 'eo_number';
+
+    SELECT COUNT(*) INTO v_new_column_exists
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'executive_orders'
+      AND COLUMN_NAME = 'executive_order_number';
+
+    IF v_old_column_exists = 1 AND v_new_column_exists = 0 THEN
+        SELECT CONCAT(
+            'ALTER TABLE `executive_orders` CHANGE `eo_number` `executive_order_number` ',
+            COLUMN_TYPE,
+            CASE WHEN IS_NULLABLE = 'NO' THEN ' NOT NULL' ELSE ' NULL' END,
+            CASE WHEN EXTRA = '' THEN '' ELSE CONCAT(' ', EXTRA) END
+        )
+        INTO @sql_stmt
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'executive_orders'
+          AND COLUMN_NAME = 'eo_number'
         LIMIT 1;
 
         PREPARE stmt FROM @sql_stmt;
@@ -78,11 +118,6 @@ BEGIN
             'ALTER TABLE `executive_orders` CHANGE `ordinance_date` `executive_order_date` ',
             COLUMN_TYPE,
             CASE WHEN IS_NULLABLE = 'NO' THEN ' NOT NULL' ELSE ' NULL' END,
-            CASE
-                WHEN COLUMN_DEFAULT IS NULL THEN ''
-                WHEN COLUMN_DEFAULT = 'CURRENT_TIMESTAMP' THEN ' DEFAULT CURRENT_TIMESTAMP'
-                ELSE CONCAT(' DEFAULT ', QUOTE(COLUMN_DEFAULT))
-            END,
             CASE WHEN EXTRA = '' THEN '' ELSE CONCAT(' ', EXTRA) END
         )
         INTO @sql_stmt
@@ -90,6 +125,37 @@ BEGIN
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'executive_orders'
           AND COLUMN_NAME = 'ordinance_date'
+        LIMIT 1;
+
+        PREPARE stmt FROM @sql_stmt;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+
+    SELECT COUNT(*) INTO v_old_column_exists
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'executive_orders'
+      AND COLUMN_NAME = 'eo_date';
+
+    SELECT COUNT(*) INTO v_new_column_exists
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'executive_orders'
+      AND COLUMN_NAME = 'executive_order_date';
+
+    IF v_old_column_exists = 1 AND v_new_column_exists = 0 THEN
+        SELECT CONCAT(
+            'ALTER TABLE `executive_orders` CHANGE `eo_date` `executive_order_date` ',
+            COLUMN_TYPE,
+            CASE WHEN IS_NULLABLE = 'NO' THEN ' NOT NULL' ELSE ' NULL' END,
+            CASE WHEN EXTRA = '' THEN '' ELSE CONCAT(' ', EXTRA) END
+        )
+        INTO @sql_stmt
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'executive_orders'
+          AND COLUMN_NAME = 'eo_date'
         LIMIT 1;
 
         PREPARE stmt FROM @sql_stmt;
@@ -174,7 +240,7 @@ BEGIN
     ) THEN
         UPDATE recycle_bin
         SET original_table = 'executive_orders'
-        WHERE original_table = 'ordinances';
+        WHERE original_table IN ('ordinances', 'executive_order');
     END IF;
 
     IF EXISTS (
@@ -196,6 +262,16 @@ BEGIN
 
         UPDATE recycle_bin
         SET data = JSON_REMOVE(
+            JSON_SET(data, '$.executive_order_number', JSON_EXTRACT(data, '$.eo_number')),
+            '$.eo_number'
+        )
+        WHERE JSON_VALID(data)
+          AND original_table = 'executive_orders'
+          AND JSON_EXTRACT(data, '$.executive_order_number') IS NULL
+          AND JSON_EXTRACT(data, '$.eo_number') IS NOT NULL;
+
+        UPDATE recycle_bin
+        SET data = JSON_REMOVE(
             JSON_SET(data, '$.executive_order_date', JSON_EXTRACT(data, '$.ordinance_date')),
             '$.ordinance_date'
         )
@@ -203,6 +279,16 @@ BEGIN
           AND original_table = 'executive_orders'
           AND JSON_EXTRACT(data, '$.executive_order_date') IS NULL
           AND JSON_EXTRACT(data, '$.ordinance_date') IS NOT NULL;
+
+        UPDATE recycle_bin
+        SET data = JSON_REMOVE(
+            JSON_SET(data, '$.executive_order_date', JSON_EXTRACT(data, '$.eo_date')),
+            '$.eo_date'
+        )
+        WHERE JSON_VALID(data)
+          AND original_table = 'executive_orders'
+          AND JSON_EXTRACT(data, '$.executive_order_date') IS NULL
+          AND JSON_EXTRACT(data, '$.eo_date') IS NOT NULL;
     END IF;
 END //
 
