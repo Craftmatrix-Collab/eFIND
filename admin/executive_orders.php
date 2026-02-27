@@ -93,7 +93,7 @@ function generateReferenceNumber($conn, $executive_order_date = null) {
     $result = $stmt->get_result();
     $count = $result->fetch_assoc()['count'] + 1;
     $stmt->close();
-    return sprintf("ORD%04d%02d%04d", $year, $month, $count);
+    return sprintf("EO%04d%02d%04d", $year, $month, $count);
 }
 
 // Handle print action
