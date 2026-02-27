@@ -63,9 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
-    // Require document number for ordinances and resolutions
-    if (in_array($document_type, ['ordinance', 'resolution']) && empty($reference_number)) {
-        $_SESSION['error'] = "Reference/document number is required for ordinances and resolutions.";
+    // Require document number for executive_orders and resolutions
+    if (in_array($document_type, ['executive_order', 'resolution']) && empty($reference_number)) {
+        $_SESSION['error'] = "Reference/document number is required for executive_orders and resolutions.";
         header("Location: add_documents.php");
         exit();
     }
@@ -75,9 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Insert into appropriate table based on document type
         try {
             switch ($document_type) {
-                case 'ordinance':
-                    // ordinance_number is NOT NULL; use reference_number as fallback
-                    $sql = "INSERT INTO ordinances (title, ordinance_number, reference_number, date_issued, description, file_path, uploaded_by) 
+                case 'executive_order':
+                    // executive_order_number is NOT NULL; use reference_number as fallback
+                    $sql = "INSERT INTO executive_orders (title, executive_order_number, reference_number, date_issued, description, file_path, uploaded_by) 
                             VALUES (?, ?, ?, ?, ?, ?, ?)";
                     break;
                 case 'resolution':
@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $conn->prepare($sql);
 
-            if ($document_type === 'ordinance') {
+            if ($document_type === 'executive_order') {
                 $stmt->bind_param("sssssss", $title, $reference_number, $reference_number, $date_issued, $description, $target_file, $updated_by);
             } elseif ($document_type === 'resolution') {
                 $stmt->bind_param("ssssssss", $title, $reference_number, $reference_number, $date_issued, $description, $description, $target_file, $updated_by);
@@ -258,7 +258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <label for="document_type" class="form-label required-field">Document Type</label>
                                 <select class="form-select" id="document_type" name="document_type" required>
                                     <option value="">Select document type</option>
-                                    <option value="ordinance">Ordinance</option>
+                                    <option value="executive_order">Executive Order</option>
                                     <option value="resolution">Resolution</option>
                                     <option value="meeting_minutes">Meeting Minutes</option>
                                 </select>
@@ -346,8 +346,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $('#meeting_date_field').addClass('d-none');
                     $('#meeting_date').removeAttr('required');
                     $('label[for="date_issued"]').text('Date Issued');
-                    if (type === 'ordinance') {
-                        $('#reference_number_label').text('Ordinance Number *');
+                    if (type === 'executive_order') {
+                        $('#reference_number_label').text('Executive Order Number *');
                     } else if (type === 'resolution') {
                         $('#reference_number_label').text('Resolution Number *');
                     } else {

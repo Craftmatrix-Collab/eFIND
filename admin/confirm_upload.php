@@ -4,15 +4,15 @@
  *
  * POST /admin/confirm_upload.php
  * Body (JSON): {
- *   "doc_type": "resolutions"|"minutes"|"ordinances",
+ *   "doc_type": "resolutions"|"minutes"|"executive_orders",
  *   "object_keys": ["resolutions/2025/01/file_abc123.jpg", ...],
  *   -- resolutions --
  *   "title", "description", "resolution_number", "resolution_date",
  *   "reference_number", "date_issued", "content"
  *   -- minutes --
  *   "title", "session_number", "meeting_date", "reference_number", "content"
- *   -- ordinances --
- *   "title", "description", "ordinance_number", "ordinance_date",
+ *   -- executive_orders --
+ *   "title", "description", "executive_order_number", "executive_order_date",
  *   "status", "reference_number", "date_issued", "content"
  * }
  *
@@ -63,7 +63,7 @@ if (!isLoggedIn() && !$isMobileAuth) {
 
 $docType = $body['doc_type'] ?? '';
 
-$allowedTypes = ['resolutions', 'minutes', 'ordinances'];
+$allowedTypes = ['resolutions', 'minutes', 'executive_orders'];
 if (!in_array($docType, $allowedTypes)) {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'Invalid doc_type']);
@@ -84,7 +84,7 @@ function ensureImagePathColumns(mysqli $conn, string $docType): void
     $targetsByDocType = [
         'resolutions' => [['resolutions', 'image_path']],
         'minutes' => [['minutes_of_meeting', 'image_path']],
-        'ordinances' => [['ordinances', 'image_path'], ['ordinances', 'file_path']],
+        'executive_orders' => [['executive_orders', 'image_path'], ['executive_orders', 'file_path']],
     ];
 
     if (!isset($targetsByDocType[$docType])) {
@@ -336,11 +336,11 @@ try {
         $newId = $conn->insert_id;
         $stmt->close();
 
-    } elseif ($docType === 'ordinances') {
+    } elseif ($docType === 'executive_orders') {
         $title            = $body['title']             ?? '';
         $description      = $body['description']       ?? '';
-        $ordinanceNumber  = $body['ordinance_number']  ?? '';
-        $ordinanceDate    = normalizeOptionalDate($body['ordinance_date'] ?? null, 'ordinance_date');
+        $executive_orderNumber  = $body['executive_order_number']  ?? '';
+        $executive_orderDate    = normalizeOptionalDate($body['executive_order_date'] ?? null, 'executive_order_date');
         $status           = trim((string)($body['status'] ?? 'Active'));
         if ($status === '') {
             $status = 'Active';
@@ -348,17 +348,17 @@ try {
         $referenceNumber  = $body['reference_number']  ?? '';
         $dateIssued       = normalizeOptionalDate($body['date_issued'] ?? null, 'date_issued');
         $content          = $body['content']           ?? '';
-        $filePath         = $imagePath; // ordinances also stores as file_path
+        $filePath         = $imagePath; // executive_orders also stores as file_path
 
         $stmt = $conn->prepare(
-            "INSERT INTO ordinances
-             (title, description, ordinance_number, date_posted, ordinance_date,
+            "INSERT INTO executive_orders
+             (title, description, executive_order_number, date_posted, executive_order_date,
               status, content, image_path, reference_number, date_issued,
               file_path, uploaded_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $stmt->bind_param('ssssssssssss',
-            $title, $description, $ordinanceNumber, $datePosted, $ordinanceDate,
+            $title, $description, $executive_orderNumber, $datePosted, $executive_orderDate,
             $status, $content, $imagePath, $referenceNumber, $dateIssued,
             $filePath, $uploadedBy
         );
@@ -369,7 +369,7 @@ try {
 
     // Log the activity
     if ($newId) {
-        $docLabel = ['resolutions' => 'Resolution', 'minutes' => 'Minutes of Meeting', 'ordinances' => 'Ordinance'][$docType];
+        $docLabel = ['resolutions' => 'Resolution', 'minutes' => 'Minutes of Meeting', 'executive_orders' => 'Executive Order'][$docType];
         $userId   = resolveActivityLogUserId($conn);
         $userRole = isAdmin() ? 'admin' : 'staff';
         $ip       = $_SERVER['REMOTE_ADDR'] ?? '';

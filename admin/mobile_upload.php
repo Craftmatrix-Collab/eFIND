@@ -2,7 +2,7 @@
 /**
  * Mobile-first direct-upload page.
  * Users on mobile devices upload images/documents for resolutions,
- * minutes of meeting, and ordinances directly to MinIO via presigned URLs.
+ * minutes of meeting, and executive_orders directly to MinIO via presigned URLs.
  * The PHP server only orchestrates — it never handles the file bytes.
  *
  * Access: /admin/mobile_upload.php
@@ -12,7 +12,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 
 
-$preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'ordinances'])
+$preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'executive_orders'])
     ? $_GET['type']
     : '';
 
@@ -108,7 +108,7 @@ $deferToDesktop = (($_GET['flow'] ?? '') === 'modal_ocr');
   <div style="font-size:22px;font-weight:700;margin-bottom:10px;">Tap to Open Camera</div>
   <div style="font-size:14px;opacity:.7;">
     <?php
-      $labels = ['resolutions'=>'Resolution','minutes'=>'Minutes of Meeting','ordinances'=>'Ordinance'];
+      $labels = ['resolutions'=>'Resolution','minutes'=>'Minutes of Meeting','executive_orders'=>'Executive Order'];
       echo 'Uploading ' . ($labels[$preselectedType] ?? '');
     ?>
   </div>
@@ -145,10 +145,10 @@ $deferToDesktop = (($_GET['flow'] ?? '') === 'modal_ocr');
           <span class="icon">📝</span>
           <span class="info"><h6>Minutes of Meeting</h6><p>Council session minutes</p></span>
         </button>
-        <button class="type-btn <?= $preselectedType === 'ordinances' ? 'selected' : '' ?>"
-                onclick="selectType('ordinances', this)">
+        <button class="type-btn <?= $preselectedType === 'executive_orders' ? 'selected' : '' ?>"
+                onclick="selectType('executive_orders', this)">
           <span class="icon">⚖️</span>
-          <span class="info"><h6>Ordinance</h6><p>Barangay ordinances</p></span>
+          <span class="info"><h6>Executive Order</h6><p>Barangay executive_orders</p></span>
         </button>
       </div>
     </div>
@@ -167,8 +167,8 @@ $deferToDesktop = (($_GET['flow'] ?? '') === 'modal_ocr');
     <div class="card mb-2">
       <div class="card-header py-2 px-3">
         <?php
-          $icons = ['resolutions'=>'📋','minutes'=>'📝','ordinances'=>'⚖️'];
-          $labels= ['resolutions'=>'Resolution','minutes'=>'Minutes of Meeting','ordinances'=>'Ordinance'];
+          $icons = ['resolutions'=>'📋','minutes'=>'📝','executive_orders'=>'⚖️'];
+          $labels= ['resolutions'=>'Resolution','minutes'=>'Minutes of Meeting','executive_orders'=>'Executive Order'];
           echo $icons[$preselectedType] . ' ' . $labels[$preselectedType] . ' — Upload';
         ?>
       </div>
@@ -424,16 +424,16 @@ const metaTemplates = {
         <input class="form-control" name="reference_number" placeholder="Optional"></div>
     </div></div>`,
 
-  ordinances: `
-    <div class="card"><div class="card-header py-2 px-3"><i class="fas fa-pencil me-2"></i>Ordinance Details</div>
+  executive_orders: `
+    <div class="card"><div class="card-header py-2 px-3"><i class="fas fa-pencil me-2"></i>Executive Order Details</div>
     <div class="card-body">
       <div class="mb-3"><label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
-        <input class="form-control" name="title" placeholder="e.g. Ordinance on Noise Regulation" required></div>
-      <div class="mb-3"><label class="form-label fw-semibold">Ordinance Number <span class="text-danger">*</span></label>
-        <input class="form-control" name="ordinance_number" placeholder="e.g. ORD-2025-001" required></div>
+        <input class="form-control" name="title" placeholder="e.g. Executive Order on Noise Regulation" required></div>
+      <div class="mb-3"><label class="form-label fw-semibold">Executive Order Number <span class="text-danger">*</span></label>
+        <input class="form-control" name="executive_order_number" placeholder="e.g. EO-2025-001" required></div>
       <div class="row g-2 mb-3">
-        <div class="col"><label class="form-label fw-semibold">Ordinance Date</label>
-          <input class="form-control" type="date" name="ordinance_date"></div>
+        <div class="col"><label class="form-label fw-semibold">Executive Order Date</label>
+          <input class="form-control" type="date" name="executive_order_date"></div>
         <div class="col"><label class="form-label fw-semibold">Date Issued</label>
           <input class="form-control" type="date" name="date_issued"></div>
       </div>
@@ -1103,7 +1103,7 @@ function showResult(success, data) {
   const docPages = {
     resolutions: 'resolutions.php',
     minutes:     'minutes_of_meeting.php',
-    ordinances:  'ordinances.php',
+    executive_orders:  'executive_orders.php',
   };
 
   if (success) {

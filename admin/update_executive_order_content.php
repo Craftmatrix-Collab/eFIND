@@ -1,5 +1,5 @@
 <?php
-// update_ordinance_content.php
+// update_executive_order_content.php
 session_start();
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/auth.php');
@@ -23,7 +23,7 @@ $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
 $content = isset($_POST['content']) ? trim($_POST['content']) : '';
 
 if ($id <= 0) {
-    echo json_encode(['success' => false, 'error' => 'Invalid ordinance ID']);
+    echo json_encode(['success' => false, 'error' => 'Invalid executive_order ID']);
     exit;
 }
 
@@ -33,13 +33,13 @@ if (empty($content)) {
 }
 
 try {
-    // Update the ordinance content in the database
-    $stmt = $conn->prepare("UPDATE ordinances SET content = ? WHERE id = ?");
+    // Update the executive_order content in the database
+    $stmt = $conn->prepare("UPDATE executive_orders SET content = ? WHERE id = ?");
     $stmt->bind_param("si", $content, $id);
     
     if ($stmt->execute()) {
         // Log the update
-        logDocumentUpdate('ordinance', 'Content updated via OCR', $id, 'OCR text content updated');
+        logDocumentUpdate('executive_order', 'Content updated via OCR', $id, 'OCR text content updated');
         
         echo json_encode(['success' => true, 'message' => 'Content updated successfully']);
     } else {
@@ -49,7 +49,7 @@ try {
     $stmt->close();
     
 } catch (Exception $e) {
-    error_log("Update Ordinance Content Error: " . $e->getMessage());
+    error_log("Update Executive Order Content Error: " . $e->getMessage());
     echo json_encode(['success' => false, 'error' => 'Failed to update content: ' . $e->getMessage()]);
 }
 ?>

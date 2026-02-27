@@ -1,6 +1,6 @@
 <?php
 $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
-$enableTiptapAddContent = in_array($currentPage, ['ordinances.php', 'resolutions.php', 'minutes_of_meeting.php'], true);
+$enableTiptapAddContent = in_array($currentPage, ['executive_orders.php', 'resolutions.php', 'minutes_of_meeting.php'], true);
 ?>
 <!-- Mobile-upload live notification toast -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:9999" id="upload-toast-container"></div>
@@ -9,7 +9,7 @@ $enableTiptapAddContent = in_array($currentPage, ['ordinances.php', 'resolutions
   if (!window.EventSource) return; // browser doesn't support SSE
   // Only connect on the three document-management pages
   const page = location.pathname.split('/').pop();
-  if (!['resolutions.php','minutes_of_meeting.php','ordinances.php','dashboard.php'].includes(page)) return;
+  if (!['resolutions.php','minutes_of_meeting.php','executive_orders.php','dashboard.php'].includes(page)) return;
 
   function connectSSE() {
     const src = new EventSource('upload_events.php');

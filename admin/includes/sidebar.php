@@ -19,9 +19,9 @@
                     <i class="fas fa-tachometer-alt me-2"></i> Dashboard
                 </a>
             </li>
-            <li class="<?= basename($_SERVER['PHP_SELF']) == 'ordinances.php' ? 'active' : '' ?>">
-                <a href="ordinances.php" class="d-flex align-items-center py-2 px-3 text-white text-decoration-none <?= basename($_SERVER['PHP_SELF']) == 'ordinances.php' ? 'bg-dark text-dark rounded' : '' ?>">
-                    <i class="fas fa-file-alt me-2"></i> Ordinances
+            <li class="<?= basename($_SERVER['PHP_SELF']) == 'executive_orders.php' ? 'active' : '' ?>">
+                <a href="executive_orders.php" class="d-flex align-items-center py-2 px-3 text-white text-decoration-none <?= basename($_SERVER['PHP_SELF']) == 'executive_orders.php' ? 'bg-dark text-dark rounded' : '' ?>">
+                    <i class="fas fa-file-alt me-2"></i> Executive Orders
                 </a>
             </li>
             <li class="<?= basename($_SERVER['PHP_SELF']) == 'resolutions.php' ? 'active' : '' ?>">

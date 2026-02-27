@@ -16,8 +16,8 @@ $content = trim($_POST['content']);
 
 try {
     // Update the main document table based on document type
-    if ($document_type === 'ordinance') {
-        $stmt = $conn->prepare("UPDATE ordinances SET content = ? WHERE id = ?");
+    if ($document_type === 'executive_order') {
+        $stmt = $conn->prepare("UPDATE executive_orders SET content = ? WHERE id = ?");
     } elseif ($document_type === 'resolution') {
         $stmt = $conn->prepare("UPDATE resolutions SET content = ? WHERE id = ?");
     } elseif ($document_type === 'meeting_minutes' || $document_type === 'minute') {

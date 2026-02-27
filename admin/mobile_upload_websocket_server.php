@@ -7,7 +7,7 @@
  *
  * Client protocol (JSON text frames):
  * 1) Subscribe desktop client
- *    {"action":"subscribe","session_id":"<hex-session-id>","doc_type":"resolutions|minutes|ordinances"}
+ *    {"action":"subscribe","session_id":"<hex-session-id>","doc_type":"resolutions|minutes|executive_orders"}
  *
  * 2) Notify completion from mobile client
  *    {"action":"upload_complete","session_id":"<hex-session-id>","doc_type":"...","title":"...","uploaded_by":"...","result_id":123,"object_keys":[...],"image_urls":[...]}

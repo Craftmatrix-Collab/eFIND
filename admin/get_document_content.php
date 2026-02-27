@@ -9,8 +9,8 @@ $id = $_GET['id'];
 $document_type = $_GET['document_type'];
 
 try {
-    if ($document_type === 'ordinance') {
-        $stmt = $conn->prepare("SELECT content FROM ordinances WHERE id = ?");
+    if ($document_type === 'executive_order') {
+        $stmt = $conn->prepare("SELECT content FROM executive_orders WHERE id = ?");
     } elseif ($document_type === 'resolution') {
         $stmt = $conn->prepare("SELECT content FROM resolutions WHERE id = ?");
     } elseif ($document_type === 'meeting') {

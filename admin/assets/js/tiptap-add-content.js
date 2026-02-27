@@ -2,7 +2,7 @@ import { Editor } from 'https://esm.sh/@tiptap/core@2.11.5?target=es2022';
 import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.11.5?target=es2022';
 
 const PAGE_LABELS = {
-  'ordinances.php': 'ordinance',
+  'executive_orders.php': 'executive_order',
   'resolutions.php': 'resolution',
   'minutes_of_meeting.php': 'minutes',
 };
@@ -843,7 +843,7 @@ window.efindSyncTiptapFromTextarea = function (textareaId = 'content') {
 function init() {
   initDuplicateCompareButtons();
   const textarea = document.querySelector(
-    '#addOrdinanceForm textarea#content, #addResolutionForm textarea#content, #addMinuteForm textarea#content'
+    '#addExecutive OrderForm textarea#content, #addResolutionForm textarea#content, #addMinuteForm textarea#content'
   );
   if (!textarea) return;
   initTiptapForTextarea(textarea);

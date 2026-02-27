@@ -1,7 +1,7 @@
 <?php
 /**
  * COMPREHENSIVE UPLOAD DIAGNOSTIC TOOL
- * Tests: Resolutions, Ordinances, and Meeting Minutes upload functionality
+ * Tests: Resolutions, Executive Orders, and Meeting Minutes upload functionality
  * Date: 2026-02-16
  */
 
@@ -103,7 +103,7 @@ define('COLOR_INFO', '#17a2b8');
         echo '<h4><i class="fas fa-file-code"></i> TEST 1: File Existence</h4>';
         
         $files = [
-            'ordinances.php' => __DIR__ . '/ordinances.php',
+            'executive_orders.php' => __DIR__ . '/executive_orders.php',
             'resolutions.php' => __DIR__ . '/resolutions.php',
             'add_documents.php' => __DIR__ . '/add_documents.php'
         ];
@@ -148,7 +148,7 @@ define('COLOR_INFO', '#17a2b8');
         echo '<div class="test-section">';
         echo '<h4><i class="fas fa-code"></i> TEST 3: HTML Input Configuration</h4>';
         
-        foreach (['ordinances.php', 'resolutions.php'] as $file) {
+        foreach (['executive_orders.php', 'resolutions.php'] as $file) {
             if (file_exists($file)) {
                 $content = file_get_contents($file);
                 
@@ -196,7 +196,7 @@ define('COLOR_INFO', '#17a2b8');
         echo '<div class="test-section">';
         echo '<h4><i class="fas fa-server"></i> TEST 4: PHP Backend Configuration</h4>';
         
-        foreach (['ordinances.php', 'resolutions.php'] as $file) {
+        foreach (['executive_orders.php', 'resolutions.php'] as $file) {
             if (file_exists($file)) {
                 $content = file_get_contents($file);
                 
@@ -245,7 +245,7 @@ define('COLOR_INFO', '#17a2b8');
             require_once 'includes/config.php';
             
             if (isset($conn)) {
-                $tables = ['ordinances', 'resolutions', 'meeting_minutes'];
+                $tables = ['executive_orders', 'resolutions', 'meeting_minutes'];
                 
                 foreach ($tables as $table) {
                     $result = $conn->query("SHOW COLUMNS FROM $table LIKE 'image_path'");
@@ -307,7 +307,7 @@ define('COLOR_INFO', '#17a2b8');
         
         $dirs = [
             'uploads/documents/',
-            'uploads/ordinances/',
+            'uploads/executive_orders/',
             'uploads/resolutions/',
             'uploads/minutes/'
         ];

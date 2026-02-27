@@ -3,7 +3,7 @@
  * Generate a MinIO presigned PUT URL for direct browser-to-MinIO upload.
  *
  * POST /admin/generate_presigned_url.php
- * Body (JSON): { "doc_type": "resolutions"|"minutes"|"ordinances",
+ * Body (JSON): { "doc_type": "resolutions"|"minutes"|"executive_orders",
  *                "file_name": "image.jpg",
  *                "content_type": "image/jpeg" }
  *
@@ -54,7 +54,7 @@ $docType     = $body['doc_type']     ?? '';
 $fileName    = $body['file_name']    ?? '';
 $contentType = strtolower(trim($body['content_type'] ?? 'application/octet-stream'));
 
-$allowedTypes = ['resolutions', 'minutes', 'ordinances'];
+$allowedTypes = ['resolutions', 'minutes', 'executive_orders'];
 if (!in_array($docType, $allowedTypes)) {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'Invalid doc_type']);

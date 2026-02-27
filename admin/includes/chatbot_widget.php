@@ -12,7 +12,7 @@ if ($chatbot_profile_picture_raw !== '') {
     }
 }
 ?>
-<!-- AI Chatbot Widget for Ordinances, Resolutions, and Meeting Minutes -->
+<!-- AI Chatbot Widget for Executive Orders, Resolutions, and Meeting Minutes -->
 <style>
     .chatbot-widget,
     .chatbot-widget * {
@@ -436,10 +436,10 @@ if ($chatbot_profile_picture_raw !== '') {
         <div class="welcome-message">
             <i class="fas fa-comments"></i>
             <h3>Hello! How can I help you today?</h3>
-            <p>I can assist you with information about ordinances, resolutions, and meeting minutes.</p>
+            <p>I can assist you with information about executive_orders, resolutions, and meeting minutes.</p>
             <div class="quick-actions">
-                <button class="quick-action-btn" onclick="sendQuickMessage('What are the latest ordinances?')">
-                    <i class="fas fa-file-alt"></i> Latest Ordinances
+                <button class="quick-action-btn" onclick="sendQuickMessage('What are the latest executive_orders?')">
+                    <i class="fas fa-file-alt"></i> Latest Executive Orders
                 </button>
                 <button class="quick-action-btn" onclick="sendQuickMessage('Show me recent resolutions')">
                     <i class="fas fa-gavel"></i> Recent Resolutions
@@ -606,7 +606,7 @@ async function sendMessage() {
                 userId: chatbotUserId,
                 context: {
                     page: 'documents',
-                    categories: ['ordinances', 'resolutions', 'minutes']
+                    categories: ['executive_orders', 'resolutions', 'minutes']
                 },
                 timestamp: new Date().toISOString()
             })

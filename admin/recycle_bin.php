@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
         exit();
     }
 
-    $allowed_tables = ['resolutions', 'ordinances', 'minutes_of_meeting'];
+    $allowed_tables = ['resolutions', 'executive_orders', 'minutes_of_meeting'];
 
     try {
         $conn->begin_transaction();

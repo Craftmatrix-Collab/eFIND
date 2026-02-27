@@ -12,7 +12,7 @@ if (!isLoggedIn()) {
 // Set default time zone
 date_default_timezone_set('Asia/Manila');
 // Fetch counts for statistics cards
-$ordinances_count = $conn->query("SELECT COUNT(*) FROM ordinances")->fetch_row()[0];
+$executive_orders_count = $conn->query("SELECT COUNT(*) FROM executive_orders")->fetch_row()[0];
 $resolutions_count = $conn->query("SELECT COUNT(*) FROM resolutions")->fetch_row()[0];
 $meeting_minutes_count = $conn->query("SELECT COUNT(*) FROM minutes_of_meeting")->fetch_row()[0];
 $users_count = $conn->query("SELECT COUNT(*) FROM users")->fetch_row()[0];
@@ -44,7 +44,7 @@ $is_superadmin_dashboard = function_exists('isSuperAdmin') && isSuperAdmin();
 if ($is_superadmin_dashboard && function_exists('checkRecycleBinTable')) {
     checkRecycleBinTable();
 }
-$allowed_document_types = ['ordinance', 'resolution', 'meeting'];
+$allowed_document_types = ['executive_order', 'resolution', 'meeting'];
 if ($is_superadmin_dashboard) {
     $allowed_document_types = array_merge($allowed_document_types, ['user', 'activity', 'recycle']);
 }
@@ -62,19 +62,19 @@ if (!empty($year) && (!is_numeric($year) || $year < 1900 || $year > date('Y'))) 
 $base_query = "
     SELECT * FROM (
         SELECT
-            'ordinance' as doc_type,
+            'executive_order' as doc_type,
             o.id,
             o.title,
             o.date_posted as date,
             o.reference_number,
-            o.ordinance_number as document_number,
+            o.executive_order_number as document_number,
             o.status as document_status,
             o.description as document_description,
             o.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
             o.date_posted as date_posted,
             o.image_path
-        FROM ordinances o
+        FROM executive_orders o
         LEFT JOIN users u ON o.uploaded_by = u.username
         LEFT JOIN admin_users au ON o.uploaded_by = au.username
         UNION ALL
@@ -283,7 +283,7 @@ if ($count_stmt) {
 $total_pages = ceil($total_documents / $table_limit);
 // Fetch distinct years from the database
 $years_query_sql = "
-    SELECT DISTINCT YEAR(date_posted) as year FROM ordinances
+    SELECT DISTINCT YEAR(date_posted) as year FROM executive_orders
     UNION
     SELECT DISTINCT YEAR(date_posted) as year FROM resolutions
     UNION
@@ -459,7 +459,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
         }
         .stat-card.resolutions { border-left-color: #4A90E2; }
-        .stat-card.ordinances { border-left-color: #28a745; }
+        .stat-card.executive_orders { border-left-color: #28a745; }
         .stat-card.meetings { border-left-color: #17a2b8; }
         .stat-card.users { border-left-color: #ffc107; }
         .stat-content {
@@ -492,7 +492,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             margin-left: 10px;
         }
         .stat-icon.resolutions { background: linear-gradient(135deg, #4A90E2, #357ABD); }
-        .stat-icon.ordinances { background: linear-gradient(135deg, #28a745, #218838); }
+        .stat-icon.executive_orders { background: linear-gradient(135deg, #28a745, #218838); }
         .stat-icon.meetings { background: linear-gradient(135deg, #17a2b8, #138496); }
         .stat-icon.users { background: linear-gradient(135deg, #ffc107, #daa520); }
         /* Documents Table Section */
@@ -1361,13 +1361,13 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                 </div>
             </div>
         </a>
-        <a href="ordinances.php" class="stat-card-link">
-            <div class="stat-card ordinances">
+        <a href="executive_orders.php" class="stat-card-link">
+            <div class="stat-card executive_orders">
                 <div class="stat-content">
-                    <div class="stat-number"><?php echo $ordinances_count; ?></div>
-                    <div class="stat-label">Total Active Ordinances</div>
+                    <div class="stat-number"><?php echo $executive_orders_count; ?></div>
+                    <div class="stat-label">Total Active Executive Orders</div>
                 </div>
-                <div class="stat-icon ordinances">
+                <div class="stat-icon executive_orders">
                     <i class="fas fa-gavel"></i>
                 </div>
             </div>
@@ -1409,7 +1409,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     <div class="col-md-1">
                         <select name="document_type" class="form-select">
                             <option value="">All Types</option>
-                            <option value="ordinance" <?php echo $document_type === 'ordinance' ? 'selected' : ''; ?>>Ordinances</option>
+                            <option value="executive_order" <?php echo $document_type === 'executive_order' ? 'selected' : ''; ?>>Executive Orders</option>
                             <option value="resolution" <?php echo $document_type === 'resolution' ? 'selected' : ''; ?>>Resolutions</option>
                             <option value="meeting" <?php echo $document_type === 'meeting' ? 'selected' : ''; ?>>Meeting Minutes</option>
                             <?php if ($is_superadmin_dashboard): ?>
@@ -1497,7 +1497,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                             <td>
                                                 <span class="badge bg-<?php
                                                     switch($document['doc_type']) {
-                                                        case 'ordinance': echo 'info'; break;
+                                                        case 'executive_order': echo 'info'; break;
                                                         case 'resolution': echo 'primary'; break;
                                                         case 'meeting': echo 'warning'; break;
                                                         case 'user': echo 'success'; break;
@@ -1658,7 +1658,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             <!-- Chat messages will appear here -->
             <div class="chat-message bot-message">
                 <div class="message-content">
-                    <strong>eFIND Assistant:</strong> Hello! I'm your eFIND AI Assistant. How can I help you with documents, ordinances, resolutions, or meeting minutes today?
+                    <strong>eFIND Assistant:</strong> Hello! I'm your eFIND AI Assistant. How can I help you with documents, executive_orders, resolutions, or meeting minutes today?
                 </div>
             </div>
         </div>
@@ -2140,10 +2140,10 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
               </button>
             </div>
             <div class="col-md-4">
-              <button class="ud-type-btn w-100 p-3 border rounded-3 text-start bg-white" onclick="udSelectType('ordinances', this)">
+              <button class="ud-type-btn w-100 p-3 border rounded-3 text-start bg-white" onclick="udSelectType('executive_orders', this)">
                 <div class="fs-2">⚖️</div>
-                <div class="fw-semibold mt-1">Ordinance</div>
-                <div class="text-muted small">Barangay ordinances</div>
+                <div class="fw-semibold mt-1">Executive Order</div>
+                <div class="text-muted small">Barangay executive_orders</div>
               </button>
             </div>
           </div>
@@ -2329,14 +2329,14 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
         <div class="col-12"><label class="form-label fw-semibold">Reference Number</label>
           <input class="form-control" name="reference_number" placeholder="Optional"></div>
       </div>`,
-    ordinances: `
+    executive_orders: `
       <div class="row g-3">
         <div class="col-12"><label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
-          <input class="form-control" name="title" placeholder="e.g. Ordinance on Noise Regulation" required></div>
-        <div class="col-md-6"><label class="form-label fw-semibold">Ordinance Number <span class="text-danger">*</span></label>
-          <input class="form-control" name="ordinance_number" placeholder="e.g. ORD-2025-001" required></div>
-        <div class="col-md-6"><label class="form-label fw-semibold">Ordinance Date</label>
-          <input class="form-control" type="date" name="ordinance_date"></div>
+          <input class="form-control" name="title" placeholder="e.g. Executive Order on Noise Regulation" required></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Executive Order Number <span class="text-danger">*</span></label>
+          <input class="form-control" name="executive_order_number" placeholder="e.g. EO-2025-001" required></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Executive Order Date</label>
+          <input class="form-control" type="date" name="executive_order_date"></div>
         <div class="col-md-6"><label class="form-label fw-semibold">Date Issued</label>
           <input class="form-control" type="date" name="date_issued"></div>
         <div class="col-md-6"><label class="form-label fw-semibold">Status</label>
@@ -2745,7 +2745,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
       ? '<i class="fas fa-check-circle text-success me-2"></i>Upload Complete'
       : '<i class="fas fa-exclamation-circle text-danger me-2"></i>Upload Failed';
 
-    const docPages = { resolutions: 'resolutions.php', minutes: 'minutes_of_meeting.php', ordinances: 'ordinances.php' };
+    const docPages = { resolutions: 'resolutions.php', minutes: 'minutes_of_meeting.php', executive_orders: 'executive_orders.php' };
     const resultEl = document.getElementById('ud-upload-result');
     if (success) {
       resultEl.innerHTML = `

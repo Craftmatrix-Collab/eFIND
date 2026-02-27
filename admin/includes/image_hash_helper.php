@@ -4,8 +4,8 @@ if (!function_exists('normalizeImageHashDocumentType')) {
     {
         $type = strtolower(trim((string)$documentType));
         $map = [
-            'ordinance' => 'ordinance',
-            'ordinances' => 'ordinance',
+            'executive_order' => 'executive_order',
+            'executive_orders' => 'executive_order',
             'resolution' => 'resolution',
             'resolutions' => 'resolution',
             'minute' => 'minutes',
@@ -21,8 +21,8 @@ if (!function_exists('getImageHashDocumentConfig')) {
     function getImageHashDocumentConfig($documentType)
     {
         $type = normalizeImageHashDocumentType($documentType);
-        if ($type === 'ordinance') {
-            return ['type' => 'ordinance', 'table' => 'ordinances', 'title_column' => 'title', 'image_column' => 'image_path'];
+        if ($type === 'executive_order') {
+            return ['type' => 'executive_order', 'table' => 'executive_orders', 'title_column' => 'title', 'image_column' => 'image_path'];
         }
         if ($type === 'resolution') {
             return ['type' => 'resolution', 'table' => 'resolutions', 'title_column' => 'title', 'image_column' => 'image_path'];

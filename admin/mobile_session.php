@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $body    = json_decode(file_get_contents('php://input'), true) ?? [];
     $docType = preg_replace('/[^a-z_]/', '', $body['doc_type'] ?? '');
-    $allowedTypes = ['resolutions', 'minutes', 'ordinances'];
+    $allowedTypes = ['resolutions', 'minutes', 'executive_orders'];
     if (!in_array($docType, $allowedTypes, true)) {
         http_response_code(400);
         echo json_encode(['success' => false, 'error' => 'Invalid doc_type']);

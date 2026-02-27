@@ -109,7 +109,7 @@ class BarangayChatbotAPI {
     
     private function getCategories() {
         $categories = [
-            "Barangay Ordinances",
+            "Barangay Executive Orders",
             "Resolutions", 
             "Meeting Minutes",
             "Public Safety",

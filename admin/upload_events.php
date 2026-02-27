@@ -41,7 +41,7 @@ sendEvent('connected', ['message' => 'Listening for uploads…']);
 $tables = [
     'resolutions'      => ['label' => 'Resolution',        'page' => 'resolutions.php'],
     'minutes_of_meeting' => ['label' => 'Minutes of Meeting', 'page' => 'minutes_of_meeting.php'],
-    'ordinances'       => ['label' => 'Ordinance',         'page' => 'ordinances.php'],
+    'executive_orders'       => ['label' => 'Executive Order',         'page' => 'executive_orders.php'],
 ];
 
 $startTime = time();
@@ -63,7 +63,7 @@ while (true) {
         $col = match($table) {
             'resolutions'       => 'date_posted',
             'minutes_of_meeting'=> 'date_posted',
-            'ordinances'        => 'date_posted',
+            'executive_orders'        => 'date_posted',
         };
         // Use a narrow time window to avoid duplicate notifications
         $sql = "SELECT id, title, uploaded_by FROM `$table`

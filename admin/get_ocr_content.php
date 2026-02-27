@@ -20,7 +20,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id']) || !isset($_GET['type'])) {
 // Sanitize input
 $id = (int)$_GET['id'];
 $type = trim($_GET['type']);
-$validTypes = ['ordinance', 'resolution', 'meeting'];
+$validTypes = ['executive_order', 'resolution', 'meeting'];
 
 if (!in_array($type, $validTypes)) {
     header('Content-Type: application/json');

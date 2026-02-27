@@ -490,15 +490,15 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
     $details = '';
     $docId = intval($documentId);
 
-    if ($documentType === 'ordinances') {
-        $q = "SELECT title, ordinance_number, ordinance_date FROM ordinances WHERE id = ? LIMIT 1";
+    if ($documentType === 'executive_orders') {
+        $q = "SELECT title, executive_order_number, executive_order_date FROM executive_orders WHERE id = ? LIMIT 1";
         if ($stmt = $conn->prepare($q)) {
             $stmt->bind_param("i", $docId);
             $stmt->execute();
             $r = $stmt->get_result();
             if ($row = $r->fetch_assoc()) {
-                $documentTitle = $row['title'] ?? 'Ordinance';
-                $details = 'Ordinance #: ' . ($row['ordinance_number'] ?? 'N/A') . ' | Date: ' . ($row['ordinance_date'] ?? 'N/A');
+                $documentTitle = $row['title'] ?? 'Executive Order';
+                $details = 'Executive Order #: ' . ($row['executive_order_number'] ?? 'N/A') . ' | Date: ' . ($row['executive_order_date'] ?? 'N/A');
             }
             $stmt->close();
         }
