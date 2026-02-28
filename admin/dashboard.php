@@ -97,7 +97,7 @@ $base_query = "
             m.date_posted as date,
             m.reference_number,
             m.session_number as document_number,
-            NULL as document_status,
+            m.status as document_status,
             NULL as document_description,
             m.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
@@ -1323,6 +1323,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                         <div class="search-box">
                             <i class="fas fa-search"></i>
                             <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="<?php echo htmlspecialchars($dashboard_search_placeholder); ?>" value="<?php echo htmlspecialchars($search_query); ?>">
+                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="<?php echo htmlspecialchars($dashboard_search_placeholder); ?>" value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-md-1">
@@ -1563,7 +1564,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
     <!-- Chatbot Container -->
     <div class="chatbot-container" id="chatbotContainer">
         <div class="chatbot-header">
-            <span>eFIND AI Assistant</span>
+            <span>eFindBot</span>
             <button class="btn btn-sm btn-light" id="closeChatbot">
                 <i class="fas fa-times"></i>
             </button>
@@ -1572,6 +1573,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
             <!-- Chat messages will appear here -->
             <div class="chat-message bot-message">
                 <div class="message-content">
+                    <strong>eFIND Assistant:</strong> Hello! I'm your eFIND AI Assistant. How can I help you with documents, executive_orders, resolutions, or meeting minutes today?
                     <strong>eFIND Assistant:</strong> Hello! I'm your eFIND AI Assistant. How can I help you with documents, executive_orders, resolutions, or meeting minutes today?
                 </div>
             </div>
@@ -1670,7 +1672,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
 <!-- <div class="chat-widget">
     <div class="chat-container" id="chatContainer">
         <div class="chat-header">
-            <div class="chat-title">eFIND Assistant</div>
+            <div class="chat-title">eFindBot</div>
             <button class="chat-close" id="closeChat">×</button>
         </div>
         <div class="chat-messages" id="chatMessages">
@@ -1680,7 +1682,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
         </div>
         <div class="typing-indicator" id="typingIndicator">
             <span class="typing-dots">
-                Assistant is typing<span>.</span><span>.</span><span>.</span>
+                eFindBot is typing<span>.</span><span>.</span><span>.</span>
             </span>
         </div>
         <div class="chat-input-area">
@@ -1850,6 +1852,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     // Show error message
                     addMessageToChat(
                         'Sorry, I\'m having trouble connecting to the assistant right now. Please check your connection and try again.',
+                        'Sorry, I\'m having trouble connecting to the assistant right now. Please check your connection and try again.',
                         'bot'
                     );
                 }
@@ -1864,7 +1867,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                 messageContent.className = 'message-content';
                 
                 if (sender === 'bot') {
-                    messageContent.innerHTML = `<strong>eFIND Assistant:</strong> ${message}`;
+                    messageContent.innerHTML = `<strong>eFindBot:</strong> ${message}`;
                 } else {
                     messageContent.innerHTML = `<strong>You:</strong> ${message}`;
                 }
@@ -1884,7 +1887,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                 
                 typingDiv.innerHTML = `
                     <div class="message-content">
-                        <strong>eFIND Assistant:</strong> 
+                        <strong>eFindBot:</strong> 
                         <div class="typing-dots">
                             <span></span>
                             <span></span>
