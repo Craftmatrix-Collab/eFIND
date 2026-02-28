@@ -78,6 +78,46 @@ if (!ensureDocumentImageHashTable($conn)) {
     error_log("Failed to ensure document_image_hashes table: " . $conn->error);
 }
 
+function ensureExecutiveOrderFullTextIndex($conn) {
+    $indexName = 'idx_executive_orders_fulltext';
+    $checkStmt = $conn->prepare("
+        SELECT 1
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = 'executive_orders'
+          AND index_name = ?
+        LIMIT 1
+    ");
+
+    if (!$checkStmt) {
+        error_log("Failed to prepare fulltext index check: " . $conn->error);
+        return false;
+    }
+
+    $checkStmt->bind_param("s", $indexName);
+    $checkStmt->execute();
+    $result = $checkStmt->get_result();
+    $indexExists = $result && $result->num_rows > 0;
+    $checkStmt->close();
+
+    if ($indexExists) {
+        return true;
+    }
+
+    $createIndexSql = "ALTER TABLE executive_orders
+        ADD FULLTEXT INDEX idx_executive_orders_fulltext
+        (title, description, reference_number, executive_order_number, status, content, uploaded_by)";
+
+    if (!$conn->query($createIndexSql)) {
+        error_log("Failed to create executive_orders fulltext index: " . $conn->error);
+        return false;
+    }
+
+    return true;
+}
+
+$hasExecutiveOrderFullTextIndex = null;
+
 // Function to generate reference number for executive_orders
 function generateReferenceNumber($conn, $executive_order_date = null) {
     if ($executive_order_date) {
@@ -737,6 +777,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_executive_order' && isset
 
 // Handle search, pagination, and sort functionality
 $search_query = isset($_GET['search_query']) ? trim($_GET['search_query']) : '';
+$search_query = preg_replace('/\s+/', ' ', $search_query) ?? '';
+$search_length = function_exists('mb_strlen') ? mb_strlen($search_query) : strlen($search_query);
+if ($search_length > 100) {
+    $search_query = function_exists('mb_substr') ? mb_substr($search_query, 0, 100) : substr($search_query, 0, 100);
+    $search_length = function_exists('mb_strlen') ? mb_strlen($search_query) : strlen($search_query);
+}
 $year = isset($_GET['year']) ? $_GET['year'] : '';
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'executive_order_date_desc';
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
@@ -757,41 +803,71 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
 // Initialize parameters and types for search
 $params = [];
 $types = '';
+$selectParams = [];
+$selectTypes = '';
+$whereParams = [];
+$whereTypes = '';
 $where_clauses = [];
+$searchUsesFullText = false;
+$relevanceSelectSql = "0 AS relevance_score";
+$fullTextMatchSql = "MATCH(title, description, reference_number, executive_order_number, status, content, uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
 
 // Add search condition if search query is provided
 if (!empty($search_query)) {
-    $search_like = "%" . $search_query . "%";
-    $searchFields = [
-        "CAST(id AS CHAR) LIKE ?",
-        "title LIKE ?",
-        "COALESCE(description, '') LIKE ?",
-        "COALESCE(reference_number, '') LIKE ?",
-        "COALESCE(executive_order_number, '') LIKE ?",
-        "COALESCE(date_posted, '') LIKE ?",
-        "COALESCE(executive_order_date, '') LIKE ?",
-        "COALESCE(status, '') LIKE ?",
-        "COALESCE(content, '') LIKE ?",
-        "COALESCE(image_path, '') LIKE ?",
-        "COALESCE(date_issued, '') LIKE ?",
-        "COALESCE(file_path, '') LIKE ?",
-        "COALESCE(uploaded_by, '') LIKE ?"
-    ];
-    $where_clauses[] = "(" . implode(" OR ", $searchFields) . ")";
-    $searchParams = array_fill(0, count($searchFields), $search_like);
-    $params = array_merge($params, $searchParams);
-    $types .= str_repeat('s', count($searchFields));
+    $hasSearchToken = preg_match('/[\p{L}\p{N}]/u', $search_query) === 1;
+    if ($search_length >= 2 && $hasSearchToken) {
+        if ($hasExecutiveOrderFullTextIndex === null) {
+            $hasExecutiveOrderFullTextIndex = ensureExecutiveOrderFullTextIndex($conn);
+        }
+        if ($hasExecutiveOrderFullTextIndex) {
+            $searchUsesFullText = true;
+            $relevanceSelectSql = "$fullTextMatchSql AS relevance_score";
+            $selectParams[] = $search_query;
+            $selectTypes .= 's';
+            $where_clauses[] = "$fullTextMatchSql > 0";
+            $whereParams[] = $search_query;
+            $whereTypes .= 's';
+        } else {
+            $search_like = "%" . $search_query . "%";
+            $searchFields = [
+                "CAST(id AS CHAR) LIKE ?",
+                "title LIKE ?",
+                "COALESCE(description, '') LIKE ?",
+                "COALESCE(reference_number, '') LIKE ?",
+                "COALESCE(executive_order_number, '') LIKE ?",
+                "COALESCE(date_posted, '') LIKE ?",
+                "COALESCE(executive_order_date, '') LIKE ?",
+                "COALESCE(status, '') LIKE ?",
+                "COALESCE(content, '') LIKE ?",
+                "COALESCE(image_path, '') LIKE ?",
+                "COALESCE(date_issued, '') LIKE ?",
+                "COALESCE(file_path, '') LIKE ?",
+                "COALESCE(uploaded_by, '') LIKE ?"
+            ];
+            $where_clauses[] = "(" . implode(" OR ", $searchFields) . ")";
+            $searchParams = array_fill(0, count($searchFields), $search_like);
+            $whereParams = array_merge($whereParams, $searchParams);
+            $whereTypes .= str_repeat('s', count($searchFields));
+        }
+    } else {
+        $search_query = '';
+    }
 }
 
 // Add year condition if year is provided
 if (!empty($year)) {
-    $where_clauses[] = "YEAR(executive_order_date) = ?";
-    $params[] = $year;
-    $types .= 's';
+    if (preg_match('/^\d{4}$/', (string)$year)) {
+        $where_clauses[] = "YEAR(executive_order_date) = ?";
+        $whereParams[] = intval($year);
+        $whereTypes .= 'i';
+    } else {
+        $year = '';
+    }
 }
 
 // Build the query
 $query = "SELECT id, title, description, executive_order_number, date_posted, executive_order_date, status, content, image_path, date_issued, file_path, uploaded_by,
+    $relevanceSelectSql,
     CASE WHEN EXISTS (
         SELECT 1
         FROM document_image_hashes dih
@@ -824,10 +900,16 @@ $valid_sorts = [
 $sort_clause = $valid_sorts[$sort_by] ?? 'executive_order_date DESC';
 
 // Add sorting
-$query .= " ORDER BY " . $sort_clause;
+if ($searchUsesFullText) {
+    $query .= " ORDER BY relevance_score DESC, " . $sort_clause;
+} else {
+    $query .= " ORDER BY " . $sort_clause;
+}
 
 // Add pagination parameters (always present)
 $query .= " LIMIT ? OFFSET ?";
+$params = array_merge($selectParams, $whereParams);
+$types = $selectTypes . $whereTypes;
 $params[] = $table_limit;
 $params[] = $offset;
 $types .= 'ii';
@@ -849,18 +931,8 @@ if (!empty($where_clauses)) {
 }
 
 $count_stmt = $conn->prepare($count_query);
-if (!empty($params) && !empty($types)) {
-    // For count query, we need to remove the LIMIT parameters but keep search parameters
-    $countParams = [];
-    $countTypes = '';
-    // Only include search parameters (not pagination parameters)
-    for ($i = 0; $i < count($params) - 2; $i++) {
-        $countParams[] = $params[$i];
-        $countTypes .= substr($types, $i, 1);
-    }
-    if (!empty($countParams)) {
-        $count_stmt->bind_param($countTypes, ...$countParams);
-    }
+if (!empty($whereParams) && !empty($whereTypes)) {
+    $count_stmt->bind_param($whereTypes, ...$whereParams);
 }
 
 $count_stmt->execute();
