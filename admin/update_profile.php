@@ -41,6 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    $redirectUrl = 'edit_profile.php';
+
     // CSRF token validation
     if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || 
         $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
@@ -50,20 +52,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $_SESSION['error'] = 'Invalid security token. Please refresh and try again.';
-        header("Location: edit_profile.php");
+        header("Location: $redirectUrl");
         exit;
     }
 
+    // Resolve actor/target profile context
+    $actorId = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($_SESSION['user_id'] ?? 0);
+    $actorType = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
+    $isActorAdmin = isset($_SESSION['admin_id']);
+    $isActorSuperadmin = function_exists('isSuperAdmin') && isSuperAdmin();
+
+    $requestedUserId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : $actorId;
+    $requestedUserType = trim((string)($_POST['user_type'] ?? $actorType));
+    if ($requestedUserType === '') {
+        $requestedUserType = $actorType;
+    }
+    if ($requestedUserId <= 0 || !in_array($requestedUserType, ['users', 'admin_users'], true)) {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
+            exit;
+        }
+        $_SESSION['error'] = 'Invalid user context.';
+        header("Location: $redirectUrl");
+        exit;
+    }
+    if (!$isActorSuperadmin && ($requestedUserId !== $actorId || $requestedUserType !== $actorType)) {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'You can only edit your own profile.']);
+            exit;
+        }
+        $_SESSION['error'] = 'You can only edit your own profile.';
+        header("Location: $redirectUrl");
+        exit;
+    }
+
+    if ($isActorSuperadmin && ($requestedUserId !== $actorId || $requestedUserType !== $actorType)) {
+        $redirectUrl .= '?user_id=' . $requestedUserId . '&user_type=' . $requestedUserType;
+    }
+
+    $userId = $requestedUserId;
+    $table = $requestedUserType;
+    $isEditingOwnProfile = $userId === $actorId && $table === $actorType;
+
     // Validate and sanitize input
-    $userId = intval($_SESSION['admin_id'] ?? $_SESSION['user_id']);
     $fullName = trim($_POST['full_name'] ?? '');
     $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $contactNumber = trim($_POST['contact_number'] ?? '');
-    $isAdmin = isset($_SESSION['admin_id']);
-    $userRole = $isAdmin ? 'admin' : 'staff';
-    $userName = $fullName ?: ($username ?: 'Unknown');
-    $table = $isAdmin ? 'admin_users' : 'users';
+    $userRole = $isActorSuperadmin ? 'superadmin' : ($isActorAdmin ? 'admin' : 'staff');
+    $userName = trim((string)($_SESSION['full_name'] ?? $_SESSION['admin_username'] ?? $_SESSION['staff_username'] ?? $_SESSION['username'] ?? 'Unknown'));
     $action = trim((string)($_POST['action'] ?? ''));
 
     // ── AJAX: Send profile email verification OTP ──────────────────────────────
@@ -222,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $_SESSION['error'] = 'Full name, username and email are required.';
-        header("Location: edit_profile.php");
+        header("Location: $redirectUrl");
         exit;
     }
 
@@ -234,7 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $_SESSION['error'] = 'Invalid email address.';
-        header("Location: edit_profile.php");
+        header("Location: $redirectUrl");
         exit;
     }
 
@@ -255,7 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
             $_SESSION['error'] = 'User not found.';
-            header("Location: edit_profile.php");
+            header("Location: $redirectUrl");
             exit;
         }
         $currentEmail = trim((string)($oldData['email'] ?? ''));
@@ -267,7 +306,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $_SESSION['error'] = 'Database error. Please try again later.';
-        header("Location: edit_profile.php");
+        header("Location: $redirectUrl");
         exit;
     }
 
@@ -285,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $_SESSION['error'] = 'Please verify your updated email address before saving changes.';
-        header("Location: edit_profile.php");
+        header("Location: $redirectUrl");
         exit;
     }
 
@@ -333,7 +372,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $_SESSION['error'] = $uploadError;
-        header("Location: edit_profile.php");
+        header("Location: $redirectUrl");
         exit;
     }
 
@@ -352,16 +391,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if (isset($stmt) && $stmt->execute()) {
         // Log the profile update
-        $description = "User updated their profile information.";
-        logProfileUpdate($userId, $userName, $userRole, 'profile_update', $description, $conn);
+        $description = $isEditingOwnProfile
+            ? "User updated their profile information."
+            : "Superadmin updated profile information for {$table} ID {$userId}.";
+        logProfileUpdate($actorId, $userName, $userRole, 'profile_update', $description, $conn);
 
-        // Update session values so UI reflects changes immediately
-        $_SESSION['full_name'] = $fullName;
-        $_SESSION['username'] = $username;
-        
-        // Update profile picture in session if a new one was uploaded
-        if ($profilePicture) {
-            $_SESSION['profile_picture'] = $profilePicture;
+        // Update session values only when editing the current account
+        if ($isEditingOwnProfile) {
+            $_SESSION['full_name'] = $fullName;
+            $_SESSION['username'] = $username;
+            if ($profilePicture) {
+                $_SESSION['profile_picture'] = $profilePicture;
+            }
         }
         unset(
             $_SESSION['profile_edit_verify_otp'],
@@ -388,7 +429,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         $_SESSION['success'] = "Profile updated successfully!";
-        header("Location: edit_profile.php");
+        header("Location: $redirectUrl");
         exit;
     } else {
         if (isset($stmt)) $stmt->close();
@@ -400,7 +441,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         $_SESSION['error'] = "Failed to update profile: " . $conn->error;
-        header("Location: edit_profile.php");
+        header("Location: $redirectUrl");
         exit;
     }
 } else {

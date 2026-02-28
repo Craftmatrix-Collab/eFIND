@@ -21,6 +21,23 @@ if (!isAdmin() && !(function_exists('isSuperAdmin') && isSuperAdmin())) {
     exit();
 }
 $is_superadmin_users_page = function_exists('isSuperAdmin') && isSuperAdmin();
+$current_users_page_actor_id = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($_SESSION['user_id'] ?? 0);
+$current_users_page_actor_type = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
+
+function canEditManagedProfile(int $targetId, string $targetType, bool $isSuperadmin, int $currentActorId, string $currentActorType): bool
+{
+    if ($targetId <= 0 || !in_array($targetType, ['users', 'admin_users'], true)) {
+        return false;
+    }
+
+    if ($isSuperadmin) {
+        return true;
+    }
+
+    return $currentActorId > 0
+        && $targetId === $currentActorId
+        && $targetType === $currentActorType;
+}
 
 // ── AJAX: Send email verification OTP ────────────────────────────────────────
 if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
@@ -142,6 +159,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_edit_verify_otp') {
         echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
         exit();
     }
+    if (!canEditManagedProfile($userId, $userType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type)) {
+        echo json_encode(['success' => false, 'message' => 'You can only edit your own profile.']);
+        exit();
+    }
 
     $table = ($userType === 'admin_users') ? 'admin_users' : 'users';
     $targetStmt = $conn->prepare("SELECT email FROM $table WHERE id = ?");
@@ -244,6 +265,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'check_edit_verify_otp') {
 
     if ($userId <= 0 || !in_array($userType, ['users', 'admin_users'], true)) {
         echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
+        exit();
+    }
+    if (!canEditManagedProfile($userId, $userType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type)) {
+        echo json_encode(['success' => false, 'message' => 'You can only edit your own profile.']);
         exit();
     }
     if (!preg_match('/^\d{6}$/', $otp)) {
@@ -453,6 +478,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['error'] = "Invalid user type.";
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
+        } elseif (!canEditManagedProfile($id, $user_type, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type)) {
+            $_SESSION['error'] = "You can only edit your own profile.";
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit();
         } elseif (empty($full_name) || empty($email) || empty($username) || empty($role)) {
             $_SESSION['error'] = "Full Name, Email, Username, and Role are required fields.";
             header("Location: " . $_SERVER['PHP_SELF']);
@@ -559,6 +588,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             if ($stmt->execute()) {
+                if ($is_superadmin_users_page) {
+                    $resetLockStmt = $conn->prepare("UPDATE $table SET failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL WHERE id = ? LIMIT 1");
+                    if ($resetLockStmt) {
+                        $resetLockStmt->bind_param("i", $id);
+                        $resetLockStmt->execute();
+                        $resetLockStmt->close();
+                    }
+                }
                 $userRoleDisplay = ($user_type === 'admin_users') ? 'admin' : $role;
                 logActivity('user_update', "User updated: $username", "Role: $userRoleDisplay | Email: $email", $id);
                 unset(
@@ -594,6 +631,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
     if (!in_array($userType, ['users', 'admin_users'], true)) {
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Invalid user type']);
+        exit();
+    }
+    if (!canEditManagedProfile($id, $userType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type)) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'You can only edit your own profile.']);
         exit();
     }
     $table = ($userType === 'admin_users') ? 'admin_users' : 'users';
@@ -1475,24 +1517,28 @@ $count_stmt->close();
                                         <td>
                                             <?php
                                             $targetRole = strtolower((string)($user['role'] ?? ''));
-                                            if ($user['user_type'] === 'admin_users' && strtolower((string)($user['username'] ?? '')) === 'superadmin') {
+                                            $targetUserType = (string)($user['user_type'] ?? 'users');
+                                            $canEditRow = canEditManagedProfile((int)$user['id'], $targetUserType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type);
+                                            if ($targetUserType === 'admin_users' && strtolower((string)($user['username'] ?? '')) === 'superadmin') {
                                                 $targetRole = 'superadmin';
                                             }
                                             $canDeleteRow = $is_superadmin_users_page
                                                 ? in_array($targetRole, ['admin', 'staff'], true)
-                                                : ($user['user_type'] === 'users' && $targetRole === 'staff');
+                                                : ($targetUserType === 'users' && $targetRole === 'staff');
                                             ?>
                                             <div class="d-flex gap-1 justify-content-center">
-                                                <button class="btn btn-sm btn-outline-primary p-1 edit-btn"
-                                                        data-id="<?php echo $user['id']; ?>"
-                                                        data-user-type="<?php echo $user['user_type']; ?>"
-                                                        data-bs-toggle="tooltip"
-                                                        data-bs-placement="top"
-                                                        title="Edit">
-                                                    <i class="fas fa-edit"></i>
-                                                </button>
+                                                <?php if ($canEditRow): ?>
+                                                    <button class="btn btn-sm btn-outline-primary p-1 edit-btn"
+                                                            data-id="<?php echo $user['id']; ?>"
+                                                            data-user-type="<?php echo htmlspecialchars($targetUserType); ?>"
+                                                            data-bs-toggle="tooltip"
+                                                            data-bs-placement="top"
+                                                            title="Edit">
+                                                        <i class="fas fa-edit"></i>
+                                                    </button>
+                                                <?php endif; ?>
                                                 <?php if ($canDeleteRow): ?>
-                                                    <a href="?action=delete&id=<?php echo $user['id']; ?>&user_type=<?php echo $user['user_type']; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>"
+                                                    <a href="?action=delete&id=<?php echo $user['id']; ?>&user_type=<?php echo urlencode($targetUserType); ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>"
                                                        class="btn btn-sm btn-outline-danger p-1"
                                                        onclick="return confirm('Are you sure you want to delete this user?');"
                                                        data-bs-toggle="tooltip"

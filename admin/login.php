@@ -39,104 +39,179 @@ function getSafeRedirect() {
 }
 
 if (!defined('LOGIN_MAX_FAILED_ATTEMPTS')) {
-    define('LOGIN_MAX_FAILED_ATTEMPTS', 5);
+    define('LOGIN_MAX_FAILED_ATTEMPTS', 3);
 }
 
-if (!defined('LOGIN_LOCKOUT_WINDOW_MINUTES')) {
-    define('LOGIN_LOCKOUT_WINDOW_MINUTES', 15);
+function buildAccountLockedErrorMessage() {
+    $maxAttempts = (int)LOGIN_MAX_FAILED_ATTEMPTS;
+    return "Your account is locked after {$maxAttempts} failed login attempts. Please contact the superadmin to reset your account.";
 }
 
-function getWrongPasswordAttemptState($username, $ip_address) {
+function ensureLoginAccountLockColumns() {
+    global $conn;
+
+    static $initialized = false;
+    if ($initialized || !isset($conn) || !($conn instanceof mysqli)) {
+        return;
+    }
+
+    foreach (['admin_users', 'users'] as $table) {
+        $failedAttemptsCol = $conn->query("SHOW COLUMNS FROM {$table} LIKE 'failed_login_attempts'");
+        if (!$failedAttemptsCol || (int)$failedAttemptsCol->num_rows === 0) {
+            if (!$conn->query("ALTER TABLE {$table} ADD COLUMN failed_login_attempts INT NOT NULL DEFAULT 0")) {
+                error_log("Failed to add failed_login_attempts column on {$table}: " . $conn->error);
+            }
+        }
+
+        $accountLockedCol = $conn->query("SHOW COLUMNS FROM {$table} LIKE 'account_locked'");
+        if (!$accountLockedCol || (int)$accountLockedCol->num_rows === 0) {
+            if (!$conn->query("ALTER TABLE {$table} ADD COLUMN account_locked TINYINT(1) NOT NULL DEFAULT 0")) {
+                error_log("Failed to add account_locked column on {$table}: " . $conn->error);
+            }
+        }
+
+        $lockedAtCol = $conn->query("SHOW COLUMNS FROM {$table} LIKE 'account_locked_at'");
+        if (!$lockedAtCol || (int)$lockedAtCol->num_rows === 0) {
+            if (!$conn->query("ALTER TABLE {$table} ADD COLUMN account_locked_at DATETIME NULL")) {
+                error_log("Failed to add account_locked_at column on {$table}: " . $conn->error);
+            }
+        }
+    }
+
+    $initialized = true;
+}
+
+function getLoginAccountByUsername($username) {
+    global $conn;
+
+    $username = trim((string)$username);
+    if ($username === '' || !isset($conn) || !($conn instanceof mysqli)) {
+        return null;
+    }
+
+    ensureLoginAccountLockColumns();
+
+    $adminStmt = $conn->prepare("SELECT id, username, failed_login_attempts, account_locked FROM admin_users WHERE username = ? LIMIT 1");
+    if ($adminStmt) {
+        $adminStmt->bind_param("s", $username);
+        $adminStmt->execute();
+        $adminResult = $adminStmt->get_result();
+        if ($adminResult && $adminResult->num_rows === 1) {
+            $row = $adminResult->fetch_assoc();
+            $adminStmt->close();
+            return [
+                'id' => (int)($row['id'] ?? 0),
+                'username' => (string)($row['username'] ?? ''),
+                'user_role' => 'admin',
+                'user_type' => 'admin_users',
+                'failed_login_attempts' => (int)($row['failed_login_attempts'] ?? 0),
+                'account_locked' => (int)($row['account_locked'] ?? 0),
+            ];
+        }
+        $adminStmt->close();
+    }
+
+    $staffStmt = $conn->prepare("SELECT id, username, role, failed_login_attempts, account_locked FROM users WHERE username = ? LIMIT 1");
+    if ($staffStmt) {
+        $staffStmt->bind_param("s", $username);
+        $staffStmt->execute();
+        $staffResult = $staffStmt->get_result();
+        if ($staffResult && $staffResult->num_rows === 1) {
+            $row = $staffResult->fetch_assoc();
+            $staffStmt->close();
+            return [
+                'id' => (int)($row['id'] ?? 0),
+                'username' => (string)($row['username'] ?? ''),
+                'user_role' => (string)($row['role'] ?? 'staff'),
+                'user_type' => 'users',
+                'failed_login_attempts' => (int)($row['failed_login_attempts'] ?? 0),
+                'account_locked' => (int)($row['account_locked'] ?? 0),
+            ];
+        }
+        $staffStmt->close();
+    }
+
+    return null;
+}
+
+function resetFailedLoginAttempts($table, $userId) {
+    global $conn;
+
+    if (!in_array($table, ['admin_users', 'users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
+        return;
+    }
+
+    ensureLoginAccountLockColumns();
+
+    $stmt = $conn->prepare("UPDATE {$table} SET failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL WHERE id = ? LIMIT 1");
+    if ($stmt) {
+        $uid = (int)$userId;
+        $stmt->bind_param("i", $uid);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+function registerFailedLoginAttempt($table, $userId) {
     global $conn;
 
     $maxAttempts = (int)LOGIN_MAX_FAILED_ATTEMPTS;
     $state = [
         'is_locked' => false,
         'remaining_attempts' => $maxAttempts,
-        'retry_after_minutes' => 0,
     ];
 
-    $username = trim((string)$username);
-    $ip_address = trim((string)$ip_address);
-
-    if ($username === '' || $ip_address === '' || !isset($conn) || !($conn instanceof mysqli)) {
+    if (!in_array($table, ['admin_users', 'users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
         return $state;
     }
 
-    try {
-        $tableCheck = $conn->query("SHOW TABLES LIKE 'login_logs'");
-        if (!$tableCheck || (int)$tableCheck->num_rows === 0) {
-            return $state;
-        }
+    ensureLoginAccountLockColumns();
 
-        $windowMinutes = (int)LOGIN_LOCKOUT_WINDOW_MINUTES;
-        $query = "SELECT COUNT(*) AS failed_count, MAX(login_time) AS last_failed
-                  FROM login_logs
-                  WHERE username = ?
-                    AND ip_address = ?
-                    AND status = 'FAILED'
-                    AND login_time >= DATE_SUB(NOW(), INTERVAL {$windowMinutes} MINUTE)
-                    AND login_time > COALESCE(
-                        (SELECT MAX(login_time)
-                         FROM login_logs
-                         WHERE username = ?
-                           AND ip_address = ?
-                           AND status = 'SUCCESS'),
-                        '1970-01-01 00:00:00'
-                    )";
-
-        $stmt = $conn->prepare($query);
-        if (!$stmt) {
-            return $state;
-        }
-
-        $stmt->bind_param("ssss", $username, $ip_address, $username, $ip_address);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        $failedCount = (int)($row['failed_count'] ?? 0);
-        $state['remaining_attempts'] = max(0, $maxAttempts - $failedCount);
-
-        if ($failedCount >= $maxAttempts) {
-            $state['is_locked'] = true;
-
-            $retryAfterMinutes = $windowMinutes;
-            $lastFailed = (string)($row['last_failed'] ?? '');
-            if ($lastFailed !== '') {
-                $unlockTimestamp = strtotime($lastFailed . " +{$windowMinutes} minutes");
-                if ($unlockTimestamp !== false) {
-                    $secondsRemaining = $unlockTimestamp - time();
-                    if ($secondsRemaining > 0) {
-                        $retryAfterMinutes = (int)ceil($secondsRemaining / 60);
-                    }
-                }
-            }
-
-            $state['retry_after_minutes'] = max(1, $retryAfterMinutes);
-        }
-    } catch (Throwable $e) {
-        error_log("Failed to evaluate wrong-password attempt state: " . $e->getMessage());
+    $lookup = $conn->prepare("SELECT failed_login_attempts, account_locked FROM {$table} WHERE id = ? LIMIT 1");
+    if (!$lookup) {
+        return $state;
     }
 
-    return $state;
+    $uid = (int)$userId;
+    $lookup->bind_param("i", $uid);
+    $lookup->execute();
+    $row = $lookup->get_result()->fetch_assoc();
+    $lookup->close();
+
+    if (!$row) {
+        return $state;
+    }
+
+    if ((int)($row['account_locked'] ?? 0) === 1) {
+        return ['is_locked' => true, 'remaining_attempts' => 0];
+    }
+
+    $currentAttempts = (int)($row['failed_login_attempts'] ?? 0);
+    $newAttempts = $currentAttempts + 1;
+    $shouldLock = $newAttempts >= $maxAttempts;
+
+    $update = $conn->prepare("UPDATE {$table} SET failed_login_attempts = ?, account_locked = ?, account_locked_at = " . ($shouldLock ? "NOW()" : "NULL") . " WHERE id = ? LIMIT 1");
+    if ($update) {
+        $lockValue = $shouldLock ? 1 : 0;
+        $update->bind_param("iii", $newAttempts, $lockValue, $uid);
+        $update->execute();
+        $update->close();
+    }
+
+    return [
+        'is_locked' => $shouldLock,
+        'remaining_attempts' => max(0, $maxAttempts - $newAttempts),
+    ];
 }
 
-function buildWrongPasswordErrorMessage($username, $ip_address) {
-    $attemptState = getWrongPasswordAttemptState($username, $ip_address);
-
-    if (!empty($attemptState['is_locked'])) {
-        $minutes = max(1, (int)($attemptState['retry_after_minutes'] ?? 0));
-        return "Too many wrong password attempts. Please try again in {$minutes} minute(s).";
+function buildWrongPasswordErrorMessage($remainingAttempts) {
+    $remaining = max(0, (int)$remainingAttempts);
+    if ($remaining <= 0) {
+        return buildAccountLockedErrorMessage();
     }
 
-    $remaining = max(0, (int)($attemptState['remaining_attempts'] ?? 0));
-    if ($remaining > 0) {
-        $attemptWord = $remaining === 1 ? 'attempt' : 'attempts';
-        return "Invalid username or password. You have {$remaining} {$attemptWord} remaining.";
-    }
-
-    return "Invalid username or password.";
+    $attemptWord = $remaining === 1 ? 'attempt' : 'attempts';
+    return "Invalid username or password. You have {$remaining} {$attemptWord} remaining before your account is locked.";
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
@@ -152,16 +227,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
         logLoginAttempt($username, $user_ip, 'FAILED', 'Empty credentials');
         logActivity(null, 'failed_login', 'Login attempt with empty credentials', 'system', $user_ip, "Username: $username");
     } else {
-        $attemptState = getWrongPasswordAttemptState($username, $user_ip);
-        if (!empty($attemptState['is_locked'])) {
-            $minutes = max(1, (int)($attemptState['retry_after_minutes'] ?? 0));
-            $error = "Too many wrong password attempts. Please try again in {$minutes} minute(s).";
-            logActivity(null, 'failed_login', 'Login blocked due to too many failed attempts', 'system', $user_ip, "Username: $username");
+        ensureLoginAccountLockColumns();
+        $accountState = getLoginAccountByUsername($username);
+        if ($accountState && (int)($accountState['account_locked'] ?? 0) === 1) {
+            $error = buildAccountLockedErrorMessage();
+            logLoginAttempt($username, $user_ip, 'FAILED', 'Account locked', $accountState['id'], $accountState['user_role']);
+            logActivity($accountState['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $accountState['username'], $accountState['user_role']);
         } else {
             $loginSuccessful = false;
         
             // Try admin login first
-            $query = "SELECT id, username, password_hash, full_name, profile_picture, is_verified FROM admin_users WHERE username = ?";
+            $query = "SELECT id, username, password_hash, full_name, profile_picture, is_verified, failed_login_attempts, account_locked FROM admin_users WHERE username = ?";
             $stmt = $conn->prepare($query);
         
             if ($stmt) {
@@ -171,14 +247,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                 if ($result->num_rows == 1) {
                     $user = $result->fetch_assoc();
-                
-                    // Verify password
-                    if (password_verify($password, $user['password_hash'])) {
+
+                    if ((int)($user['account_locked'] ?? 0) === 1) {
+                        $error = buildAccountLockedErrorMessage();
+                        logLoginAttempt($username, $user_ip, 'FAILED', 'Account locked', $user['id'], 'admin');
+                        logActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                        $loginSuccessful = true; // Mark as processed to skip staff login
+                    } elseif (password_verify($password, $user['password_hash'])) {
+                        resetFailedLoginAttempts('admin_users', (int)$user['id']);
+
                         // Block login if email is not yet verified
                         if (!$user['is_verified']) {
                             $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
-                            logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified');
-                            logActivity(null, 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username");
+                            logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified', $user['id'], 'admin');
+                            logActivity($user['id'], 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
                             $loginSuccessful = true; // Mark as processed to skip staff login
                         } else {
                             // Regenerate session ID to prevent session fixation
@@ -219,9 +301,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                         }
                     } else {
                         // Admin account exists but password is wrong - stop here, don't try staff login
-                        logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid admin password');
-                        logActivity(null, 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username");
-                        $error = buildWrongPasswordErrorMessage($username, $user_ip);
+                        $attemptState = registerFailedLoginAttempt('admin_users', (int)$user['id']);
+                        $details = !empty($attemptState['is_locked']) ? 'Invalid admin password - account locked' : 'Invalid admin password';
+                        logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], 'admin');
+                        logActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                        $error = !empty($attemptState['is_locked'])
+                            ? buildAccountLockedErrorMessage()
+                            : buildWrongPasswordErrorMessage($attemptState['remaining_attempts']);
                         $loginSuccessful = true; // Mark as "processed" to skip staff login
                     }
                 }
@@ -230,7 +316,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
             // Only try staff login if username was NOT found in admin_users table
             if (!$loginSuccessful) {
-                $query = "SELECT id, username, password, full_name, profile_picture, role FROM users WHERE username = ?";
+                $query = "SELECT id, username, password, full_name, profile_picture, role, failed_login_attempts, account_locked FROM users WHERE username = ?";
                 $stmt = $conn->prepare($query);
             
                 if ($stmt) {
@@ -240,9 +326,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                     if ($result->num_rows == 1) {
                         $user = $result->fetch_assoc();
-                    
-                        // Verify password (using the 'password' column from your table)
-                        if (password_verify($password, $user['password'])) {
+
+                        if ((int)($user['account_locked'] ?? 0) === 1) {
+                            $error = buildAccountLockedErrorMessage();
+                            logLoginAttempt($username, $user_ip, 'FAILED', 'Account locked', $user['id'], $user['role']);
+                            logActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
+                        } elseif (password_verify($password, $user['password'])) {
+                            resetFailedLoginAttempts('users', (int)$user['id']);
+
                             // Regenerate session ID to prevent session fixation
                             session_regenerate_id(true);
 
@@ -279,14 +370,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                                 exit();
                             }
                         } else {
-                            logLoginAttempt($username, $user_ip, 'FAILED', 'Invalid password');
-                            logActivity(null, 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username");
-                            $error = buildWrongPasswordErrorMessage($username, $user_ip);
+                            $attemptState = registerFailedLoginAttempt('users', (int)$user['id']);
+                            $details = !empty($attemptState['is_locked']) ? 'Invalid password - account locked' : 'Invalid password';
+                            logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], $user['role']);
+                            logActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
+                            $error = !empty($attemptState['is_locked'])
+                                ? buildAccountLockedErrorMessage()
+                                : buildWrongPasswordErrorMessage($attemptState['remaining_attempts']);
                         }
                     } else {
                         logLoginAttempt($username, $user_ip, 'FAILED', 'Username not found');
                         logActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
-                        $error = buildWrongPasswordErrorMessage($username, $user_ip);
+                        $error = "Invalid username or password.";
                     }
                  
                     $stmt->close();
@@ -1178,7 +1273,7 @@ checkActivityLogsTable();
 
                 <div class="security-notice">
                     <i class="fas fa-shield-alt"></i>
-                    All login attempts are logged. Too many wrong passwords will trigger a temporary lockout.
+                    All login attempts are logged. After <?php echo (int)LOGIN_MAX_FAILED_ATTEMPTS; ?> wrong password attempts, your account is locked until a superadmin resets it.
                 </div>
 
                 <form method="post" action="login.php">

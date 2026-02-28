@@ -14,14 +14,31 @@ if (!isLoggedIn()) {
     exit();
 }
 
-// Fetch user details from the database
-$user_id = $_SESSION['user_id'] ?? $_SESSION['admin_id'];
-$is_admin = isset($_SESSION['admin_id']);
-$table = $is_admin ? 'admin_users' : 'users';
+// Resolve actor/target profile context
+$is_superadmin = function_exists('isSuperAdmin') && isSuperAdmin();
+$actor_id = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($_SESSION['user_id'] ?? 0);
+$actor_type = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
+$target_user_id = $actor_id;
+$target_user_type = $actor_type;
+
+if ($is_superadmin) {
+    $requested_user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
+    $requested_user_type = trim((string)($_GET['user_type'] ?? ''));
+    if ($requested_user_id > 0 && in_array($requested_user_type, ['users', 'admin_users'], true)) {
+        $target_user_id = $requested_user_id;
+        $target_user_type = $requested_user_type;
+    }
+} elseif (isset($_GET['user_id']) || isset($_GET['user_type'])) {
+    $_SESSION['error'] = 'You can only edit your own profile.';
+    header('Location: edit_profile.php');
+    exit();
+}
+
+$table = $target_user_type;
 
 $query = "SELECT * FROM $table WHERE id = ?";
 $stmt = $conn->prepare($query);
-$stmt->bind_param("i", $user_id);
+$stmt->bind_param("i", $target_user_id);
 $stmt->execute();
 $result = $stmt->get_result();
 $user = $result->fetch_assoc();
@@ -294,6 +311,7 @@ unset($_SESSION['success'], $_SESSION['error']);
             <!-- Profile Edit Form -->
             <form id="editProfileForm" action="update_profile.php" method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
+                <input type="hidden" name="user_type" value="<?php echo htmlspecialchars($target_user_type); ?>">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <input type="hidden" id="original_email" value="<?php echo htmlspecialchars($user['email']); ?>">
                 
@@ -462,6 +480,8 @@ unset($_SESSION['success'], $_SESSION['error']);
         // Email verification OTP for changed email
         (function () {
             const csrfToken = '<?php echo $_SESSION['csrf_token']; ?>';
+            const targetUserId = '<?php echo (int)$user['id']; ?>';
+            const targetUserType = '<?php echo htmlspecialchars($target_user_type, ENT_QUOTES, 'UTF-8'); ?>';
             const emailInput = document.getElementById('email');
             const originalEmailInput = document.getElementById('original_email');
             const sendOtpBtn = document.getElementById('profileSendOtpBtn');
@@ -582,6 +602,8 @@ unset($_SESSION['success'], $_SESSION['error']);
                     body: new URLSearchParams({
                         action: 'send_profile_verify_otp',
                         email: email,
+                        user_id: targetUserId,
+                        user_type: targetUserType,
                         csrf_token: csrfToken
                     })
                 })
@@ -634,6 +656,8 @@ unset($_SESSION['success'], $_SESSION['error']);
                         action: 'check_profile_verify_otp',
                         email: email,
                         otp: otp,
+                        user_id: targetUserId,
+                        user_type: targetUserType,
                         csrf_token: csrfToken
                     })
                 })
