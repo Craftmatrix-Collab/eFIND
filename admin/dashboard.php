@@ -1368,11 +1368,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-table me-2"></i>All Records Overview</h5>
                     <div class="table-controls">
-                        <form method="GET" action="dashboard.php" class="d-flex align-items-center">
-                            <input type="hidden" name="search_query" value="<?php echo htmlspecialchars($search_query); ?>">
-                            <input type="hidden" name="document_type" value="<?php echo htmlspecialchars($document_type); ?>">
-                            <input type="hidden" name="year" value="<?php echo htmlspecialchars($year); ?>">
-                            <input type="hidden" name="page" value="1">
+                        <form method="GET" action="dashboard.php?<?php echo htmlspecialchars(http_build_query(['search_query' => $search_query, 'document_type' => $document_type, 'year' => $year, 'page' => 1])); ?>" class="d-flex align-items-center">
                             <label for="sort_by" class="form-label mb-0 ms-3 me-2 small">Sort by:</label>
                             <select name="sort_by" id="sort_by" class="form-select form-select-sm" onchange="this.form.submit()">
                                 <option value="date_posted_desc" <?php echo $sort_by === 'date_posted_desc' ? 'selected' : ''; ?>>Date (Newest)</option>
