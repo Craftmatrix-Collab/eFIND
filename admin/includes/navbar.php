@@ -1,6 +1,7 @@
 <?php
 // Fetch profile data directly for the modal (no AJAX needed)
 $_navbar_profile = null;
+$_navbar_last_active = null;
 if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id']))) {
     $_navbar_uid   = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
     $_navbar_table = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
@@ -10,6 +11,17 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
         $_navbar_stmt->execute();
         $_navbar_profile = $_navbar_stmt->get_result()->fetch_assoc();
         $_navbar_stmt->close();
+    }
+
+    if ($_navbar_profile && function_exists('getAccountLastActiveTimestamp')) {
+        $_navbar_last_active = getAccountLastActiveTimestamp(
+            $conn,
+            isset($_SESSION['admin_id']) ? 'admin' : 'staff',
+            (int)$_navbar_profile['id'],
+            $_navbar_profile['last_login'] ?? null
+        );
+    } elseif (!empty($_navbar_profile['last_login'])) {
+        $_navbar_last_active = $_navbar_profile['last_login'];
     }
 }
 ?>
@@ -94,7 +106,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
             </div>
             <div class="modal-body" id="profileModalBody">
                 <?php if ($_navbar_profile): ?>
-                <?php $_np = $_navbar_profile; $_is_admin = isset($_SESSION['admin_id']); ?>
+                <?php $_np = $_navbar_profile; $_is_admin = isset($_SESSION['admin_id']); $_np_last_active = $_navbar_last_active; ?>
                 <div class="row">
                     <div class="col-lg-4">
                         <div class="card mb-4">
@@ -135,7 +147,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                                     </div>
                                     <div class="d-flex justify-content-between small">
                                         <span>Last active:</span>
-                                        <span class="text-primary"><?php echo !empty($_np['last_login']) ? date('M d, Y h:i A', strtotime($_np['last_login'])) : 'Never'; ?></span>
+                                        <span class="text-primary"><?php echo !empty($_np_last_active) ? date('M d, Y h:i A', strtotime($_np_last_active)) : 'Never'; ?></span>
                                     </div>
                                 </div>
                             </div>

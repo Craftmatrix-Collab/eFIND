@@ -263,6 +263,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                             logActivity($user['id'], 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
                             $loginSuccessful = true; // Mark as processed to skip staff login
                         } else {
+                            updateAccountLastLogin($conn, 'admin', (int)$user['id']);
+
                             // Regenerate session ID to prevent session fixation
                             session_regenerate_id(true);
 
@@ -333,6 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                             logActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
                         } elseif (password_verify($password, $user['password'])) {
                             resetFailedLoginAttempts('users', (int)$user['id']);
+                            updateAccountLastLogin($conn, 'staff', (int)$user['id']);
 
                             // Regenerate session ID to prevent session fixation
                             session_regenerate_id(true);

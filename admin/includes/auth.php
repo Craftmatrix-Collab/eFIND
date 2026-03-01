@@ -42,6 +42,84 @@ function buildPrimaryAccountKey($accountType, $accountId) {
     return strtolower((string)$accountType) . ':' . (int)$accountId;
 }
 
+function resolveAccountTable($accountType) {
+    $type = strtolower((string)$accountType);
+    if ($type === 'admin') {
+        return 'admin_users';
+    }
+    if ($type === 'staff') {
+        return 'users';
+    }
+    return null;
+}
+
+function updateAccountLastLogin(mysqli $conn, $accountType, $accountId) {
+    $table = resolveAccountTable($accountType);
+    $accountId = (int)$accountId;
+
+    if ($table === null || $accountId <= 0) {
+        return false;
+    }
+
+    $stmt = $conn->prepare("UPDATE {$table} SET last_login = NOW() WHERE id = ? LIMIT 1");
+    if (!$stmt) {
+        error_log("Failed to prepare last_login update for {$table}: " . $conn->error);
+        return false;
+    }
+
+    $stmt->bind_param('i', $accountId);
+    $ok = $stmt->execute();
+    if (!$ok) {
+        error_log("Failed to update last_login for {$table}#{$accountId}: " . $stmt->error);
+    }
+    $stmt->close();
+
+    return $ok;
+}
+
+function getAccountLastActiveTimestamp(mysqli $conn, $accountType, $accountId, $fallbackLastLogin = null) {
+    $accountId = (int)$accountId;
+    $fallbackValue = is_string($fallbackLastLogin) ? trim($fallbackLastLogin) : '';
+    if ($fallbackValue === '0000-00-00 00:00:00') {
+        $fallbackValue = '';
+    }
+
+    if ($accountId <= 0 || !ensurePrimaryLoginSessionTable($conn)) {
+        return $fallbackValue !== '' ? $fallbackValue : null;
+    }
+
+    $accountKey = buildPrimaryAccountKey($accountType, $accountId);
+    $stmt = $conn->prepare("SELECT updated_at FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1");
+    if (!$stmt) {
+        return $fallbackValue !== '' ? $fallbackValue : null;
+    }
+
+    $stmt->bind_param('s', $accountKey);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $sessionUpdatedAt = trim((string)($row['updated_at'] ?? ''));
+    if ($sessionUpdatedAt === '' || $sessionUpdatedAt === '0000-00-00 00:00:00') {
+        return $fallbackValue !== '' ? $fallbackValue : null;
+    }
+
+    if ($fallbackValue === '') {
+        return $sessionUpdatedAt;
+    }
+
+    $sessionTs = strtotime($sessionUpdatedAt);
+    $fallbackTs = strtotime($fallbackValue);
+    if ($sessionTs === false) {
+        return $fallbackValue;
+    }
+    if ($fallbackTs === false || $sessionTs > $fallbackTs) {
+        return $sessionUpdatedAt;
+    }
+
+    return $fallbackValue;
+}
+
 function getPrimaryAccountContext() {
     $isAdminSession = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
     if ($isAdminSession && isset($_SESSION['admin_id']) && is_numeric($_SESSION['admin_id'])) {

@@ -50,6 +50,18 @@ try {
         error_log("Profile NOT FOUND for user_id: $user_id in table: $table");
         throw new Exception("Profile not found. Your account may have been deleted.");
     }
+
+    $lastActiveAt = null;
+    if (function_exists('getAccountLastActiveTimestamp')) {
+        $lastActiveAt = getAccountLastActiveTimestamp(
+            $conn,
+            $is_admin ? 'admin' : 'staff',
+            (int)$user['id'],
+            $user['last_login'] ?? null
+        );
+    } elseif (!empty($user['last_login'])) {
+        $lastActiveAt = $user['last_login'];
+    }
     
     error_log("Profile loaded successfully for user: " . $user['username']);
     
@@ -99,10 +111,10 @@ try {
                         <span>Member since:</span>
                         <span class="text-primary"><?php echo date('F j, Y', strtotime($user['created_at'])); ?></span>
                     </div>
-                    <div class="d-flex justify-content-between small">
+<div class="d-flex justify-content-between small">
     <span>Last active:</span>
     <span class="text-primary">
-        <?php echo !empty($user['last_login']) ? date('M d, Y h:i A', strtotime($user['last_login'])) : 'Never logged in'; ?>
+        <?php echo !empty($lastActiveAt) ? date('M d, Y h:i A', strtotime($lastActiveAt)) : 'Never logged in'; ?>
     </span>
 </div>
                 </div>
