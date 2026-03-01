@@ -1802,7 +1802,6 @@ $count_stmt->close();
                     <?php endif; ?>
                 </div>
                 <div class="d-flex flex-column align-items-end gap-1">
-                    <small class="text-muted">Double-click/double-tap the first row, then single click/tap to add more.</small>
                     <div class="d-flex align-items-center gap-2">
                         <span class="badge bg-secondary" id="selectedRowsCount">0 selected</span>
                         <button type="button" class="btn btn-sm btn-danger disabled" id="bulkDeleteBtn" aria-disabled="true" disabled>
