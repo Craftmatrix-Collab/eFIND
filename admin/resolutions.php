@@ -1070,6 +1070,12 @@ $count_stmt->close();
         .table tr:hover td {
             background-color: rgba(67, 97, 238, 0.05);
         }
+        .table tbody tr[data-id] {
+            cursor: pointer;
+        }
+        .table tbody tr.selected-for-delete td {
+            background-color: rgba(220, 53, 69, 0.18) !important;
+        }
         .action-buttons {
             display: flex;
             gap: 8px;
@@ -1795,11 +1801,14 @@ $count_stmt->close();
                         <span class="text-muted ms-2">(Filtered results)</span>
                     <?php endif; ?>
                 </div>
-                <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-secondary" id="selectedRowsCount">0 selected</span>
-                    <button type="button" class="btn btn-sm btn-danger disabled" id="bulkDeleteBtn" aria-disabled="true" disabled>
-                        <i class="fas fa-trash me-1"></i>Delete Selected
-                    </button>
+                <div class="d-flex flex-column align-items-end gap-1">
+                    <small class="text-muted">Double-click or double-tap a row to select.</small>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary" id="selectedRowsCount">0 selected</span>
+                        <button type="button" class="btn btn-sm btn-danger disabled" id="bulkDeleteBtn" aria-disabled="true" disabled>
+                            <i class="fas fa-trash me-1"></i>Delete Selected
+                        </button>
+                    </div>
                 </div>
             </div>
             <!-- Resolutions Table -->
@@ -1808,9 +1817,6 @@ $count_stmt->close();
                     <table class="table table-bordered table-hover align-middle text-center">
                         <thead class="table-dark">
                             <tr>
-                                <th style="width:4%">
-                                    <input type="checkbox" class="form-check-input" id="selectAllRows" aria-label="Select all resolutions">
-                                </th>
                                 <th style="width:5%">ID</th>
                                 <!-- <th>Reference No.</th> -->
                                 <th style="width:20%">Title</th>
@@ -1825,15 +1831,12 @@ $count_stmt->close();
                         <tbody id="resolutionsTableBody">
                             <?php if (empty($resolutions)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-4">No resolutions found</td>
+                                    <td colspan="8" class="text-center py-4">No resolutions found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($resolutions as $resolution): ?>
                                     <tr data-id="<?php echo $resolution['id']; ?>"<?php echo !empty($resolution['has_duplicate_image']) ? ' style="background-color: #ffd8a8;"' : ''; ?>>
-                                        <td>
-                                            <input type="checkbox" class="form-check-input row-checkbox" value="<?php echo $resolution['id']; ?>" aria-label="Select resolution <?php echo htmlspecialchars($resolution['title']); ?>">
-                                        </td>
                                         <td><?php echo $row_num++; ?></td>
                                         <!-- <td>
                                             <span class="reference-number">
@@ -1895,7 +1898,7 @@ $count_stmt->close();
                                 <?php
                                 $filled = count($resolutions);
                                 for ($i = $filled; $i < $table_limit; $i++): ?>
-                                    <tr class="filler-row"><td colspan="9">&nbsp;</td></tr>
+                                    <tr class="filler-row"><td colspan="8">&nbsp;</td></tr>
                                 <?php endfor; ?>
                             <?php endif; ?>
                         </tbody>
@@ -2704,8 +2707,8 @@ $count_stmt->close();
             const deleteConfirmLabel = document.getElementById('deleteConfirmLabel');
             const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
             const selectedRowsCount = document.getElementById('selectedRowsCount');
-            const selectAllRows = document.getElementById('selectAllRows');
-            const rowCheckboxes = Array.from(document.querySelectorAll('.row-checkbox'));
+            const selectedRowIds = new Set();
+            const selectableRows = Array.from(document.querySelectorAll('#resolutionsTableBody tr[data-id]'));
 
             const setDeleteButtonState = (enabled) => {
                 if (enabled) {
@@ -2720,7 +2723,7 @@ $count_stmt->close();
             };
 
             const updateBulkDeleteState = () => {
-                const selectedCount = rowCheckboxes.filter((checkbox) => checkbox.checked).length;
+                const selectedCount = selectedRowIds.size;
                 selectedRowsCount.textContent = `${selectedCount} selected`;
                 const hasSelection = selectedCount > 0;
                 bulkDeleteBtn.classList.toggle('disabled', !hasSelection);
@@ -2729,12 +2732,6 @@ $count_stmt->close();
                     bulkDeleteBtn.removeAttribute('aria-disabled');
                 } else {
                     bulkDeleteBtn.setAttribute('aria-disabled', 'true');
-                }
-
-                if (selectAllRows) {
-                    const allSelected = rowCheckboxes.length > 0 && selectedCount === rowCheckboxes.length;
-                    selectAllRows.checked = allSelected;
-                    selectAllRows.indeterminate = selectedCount > 0 && !allSelected;
                 }
             };
 
@@ -2774,6 +2771,24 @@ $count_stmt->close();
                 deleteModal.show();
             };
 
+            const toggleRowSelection = (row) => {
+                const id = parseInt(row.getAttribute('data-id'), 10);
+                if (!Number.isFinite(id) || id <= 0) return;
+
+                if (selectedRowIds.has(id)) {
+                    selectedRowIds.delete(id);
+                    row.classList.remove('selected-for-delete');
+                } else {
+                    selectedRowIds.add(id);
+                    row.classList.add('selected-for-delete');
+                }
+                updateBulkDeleteState();
+            };
+
+            const isInteractiveTarget = (target) => {
+                return target instanceof Element && Boolean(target.closest('a, button, input, textarea, select, label, .modal'));
+            };
+
             // Delete button handlers
             document.querySelectorAll('.delete-btn').forEach(button => {
                 button.addEventListener('click', function() {
@@ -2784,27 +2799,40 @@ $count_stmt->close();
                 });
             });
 
-            rowCheckboxes.forEach((checkbox) => {
-                checkbox.addEventListener('change', updateBulkDeleteState);
+            selectableRows.forEach((row) => {
+                row.addEventListener('dblclick', function(e) {
+                    if (isInteractiveTarget(e.target)) return;
+                    toggleRowSelection(this);
+                });
+
+                row.addEventListener('touchend', function(e) {
+                    if (isInteractiveTarget(e.target)) return;
+                    const now = Date.now();
+                    const lastTap = Number(this.dataset.lastTapAt || 0);
+                    if (now - lastTap < 350) {
+                        e.preventDefault();
+                        this.dataset.lastTapAt = '0';
+                        toggleRowSelection(this);
+                    } else {
+                        this.dataset.lastTapAt = String(now);
+                    }
+                }, { passive: false });
             });
 
-            if (selectAllRows) {
-                selectAllRows.addEventListener('change', function() {
-                    rowCheckboxes.forEach((checkbox) => {
-                        checkbox.checked = this.checked;
-                    });
-                    updateBulkDeleteState();
-                });
-            }
-
             bulkDeleteBtn.addEventListener('click', function() {
-                const selectedIds = rowCheckboxes
-                    .filter((checkbox) => checkbox.checked)
-                    .map((checkbox) => parseInt(checkbox.value, 10))
-                    .filter((id) => Number.isFinite(id) && id > 0);
-
+                const selectedIds = Array.from(selectedRowIds).filter((id) => Number.isFinite(id) && id > 0);
                 if (selectedIds.length === 0) return;
                 openDeleteModal(selectedIds, `${selectedIds.length} resolution(s) selected`);
+            });
+
+            document.getElementById('deleteConfirmModal').addEventListener('hide.bs.modal', function () {
+                resetDeleteModal();
+            });
+
+            document.getElementById('deleteConfirmModal').addEventListener('shown.bs.modal', function () {
+                if (deleteConfirmInput) {
+                    setTimeout(() => deleteConfirmInput.focus(), 0);
+                }
             });
 
             updateBulkDeleteState();
@@ -2814,10 +2842,6 @@ $count_stmt->close();
                 setDeleteButtonState(this.value === deleteConfirmKeyword);
             });
 
-            // Reset input when modal is hidden
-            document.getElementById('deleteConfirmModal').addEventListener('hide.bs.modal', function () {
-                resetDeleteModal();
-            });
             // Auto-hide alerts after 5 seconds
             const alerts = document.querySelectorAll('.alert');
             alerts.forEach(alert => {
