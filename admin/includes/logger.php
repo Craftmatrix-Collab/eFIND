@@ -162,28 +162,40 @@ if (!function_exists('logActivity')) {
     function logActivity($action, $description = '', $details = '', $user_id = null, $document_id = null, $document_type = null) {
         global $conn;
 
-        // If user_id not provided, get from session (prefer admin_id for admins)
+        // Resolve user_id for activity_logs FK(users.id): only keep IDs from users table.
         if ($user_id === null) {
-            $user_id = $_SESSION['admin_id'] ?? $_SESSION['user_id'] ?? null;
+            $isStaffSession = (isset($_SESSION['staff_logged_in']) && $_SESSION['staff_logged_in'] === true)
+                || (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true);
+
+            if ($isStaffSession) {
+                $user_id = $_SESSION['user_id'] ?? $_SESSION['staff_id'] ?? null;
+            } else {
+                // Admin actions are logged via user_name/user_role and keep user_id NULL
+                // because activity_logs.user_id has a FK to users(id).
+                $user_id = null;
+            }
         }
 
-        // Validate user_id exists in users OR admin_users (prevents nullifying valid admin IDs)
         if ($user_id !== null) {
-            $found = false;
-            foreach (['users', 'admin_users'] as $tbl) {
-                $chk = $conn->prepare("SELECT id FROM $tbl WHERE id = ?");
-                if ($chk) {
-                    $chk->bind_param("i", $user_id);
-                    $chk->execute();
-                    if ($chk->get_result()->num_rows > 0) {
-                        $found = true;
-                    }
-                    $chk->close();
-                    if ($found) break;
-                }
+            if (!is_numeric($user_id)) {
+                $user_id = null;
+            } else {
+                $user_id = (int)$user_id;
             }
-            if (!$found) {
-                error_log("User ID $user_id not found in users or admin_users, setting to NULL");
+        }
+
+        // Validate resolved ID against users table only (FK target).
+        if ($user_id !== null) {
+            $chk = $conn->prepare("SELECT id FROM users WHERE id = ? LIMIT 1");
+            if ($chk) {
+                $chk->bind_param("i", $user_id);
+                $chk->execute();
+                $exists = $chk->get_result()->num_rows > 0;
+                $chk->close();
+                if (!$exists) {
+                    $user_id = null;
+                }
+            } else {
                 $user_id = null;
             }
         }
