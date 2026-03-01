@@ -9,6 +9,7 @@ const PAGE_LABELS = {
 
 const editorRegistry = new Map();
 let latestDuplicateComparison = null;
+const DUPLICATE_BLOCK_MESSAGE = 'This file has already been uploaded. Please upload a different file.';
 
 function ensureEditorStyles() {
   if (document.getElementById('efind-tiptap-style')) return;
@@ -235,7 +236,7 @@ function getDuplicateConfirmModal() {
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <p class="mb-0" data-duplicate-message>This image is already upploaded.</p>
+          <p class="mb-0" data-duplicate-message>This image is already uploaded.</p>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-duplicate-cancel>Cancel</button>
@@ -249,9 +250,18 @@ function getDuplicateConfirmModal() {
   return modal;
 }
 
-window.efindConfirmDuplicateImage = function (message) {
-  const text = String(message || 'This image is already upploaded.');
+window.efindConfirmDuplicateImage = function (message, options = {}) {
+  const {
+    allowProceed = true,
+    cancelLabel = 'Cancel',
+    proceedLabel = 'Proceed anyway',
+  } = options || {};
+  const text = String(message || 'This image is already uploaded.');
   if (!window.bootstrap || typeof window.bootstrap.Modal !== 'function') {
+    if (!allowProceed) {
+      window.alert(text);
+      return Promise.resolve(false);
+    }
     return Promise.resolve(window.confirm(text));
   }
 
@@ -261,6 +271,14 @@ window.efindConfirmDuplicateImage = function (message) {
   const proceedBtn = modalEl.querySelector('[data-duplicate-proceed]');
   if (messageEl) {
     messageEl.textContent = text;
+  }
+  if (cancelBtn) {
+    cancelBtn.textContent = allowProceed ? String(cancelLabel || 'Cancel') : 'OK';
+  }
+  if (proceedBtn) {
+    proceedBtn.textContent = String(proceedLabel || 'Proceed anyway');
+    proceedBtn.classList.toggle('d-none', !allowProceed);
+    proceedBtn.disabled = !allowProceed;
   }
 
   return new Promise((resolve) => {
@@ -294,7 +312,7 @@ window.efindConfirmDuplicateImage = function (message) {
     };
 
     if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
-    if (proceedBtn) proceedBtn.addEventListener('click', onProceed);
+    if (proceedBtn && allowProceed) proceedBtn.addEventListener('click', onProceed);
     modalEl.addEventListener('hidden.bs.modal', onHidden);
     modal.show();
   });
@@ -536,6 +554,75 @@ function initDuplicateCompareButtons() {
   });
 }
 
+function ensureDuplicateSelectionSubmitGuard(formEl) {
+  if (!(formEl instanceof HTMLFormElement) || formEl.dataset.efindDuplicateSubmitGuard === '1') {
+    return;
+  }
+  formEl.dataset.efindDuplicateSubmitGuard = '1';
+  formEl.addEventListener('submit', (event) => {
+    if (formEl.dataset.efindDuplicateBlocked !== '1') return;
+    event.preventDefault();
+    const message = String(formEl.dataset.efindDuplicateBlockedMessage || DUPLICATE_BLOCK_MESSAGE);
+    window.alert(message);
+  });
+}
+
+function setDuplicateSelectionBlockedState(formEl, submitEl, blocked, message = DUPLICATE_BLOCK_MESSAGE) {
+  const shouldBlock = !!blocked;
+
+  if (formEl instanceof HTMLFormElement) {
+    ensureDuplicateSelectionSubmitGuard(formEl);
+    formEl.dataset.efindDuplicateBlocked = shouldBlock ? '1' : '0';
+    if (shouldBlock) {
+      formEl.dataset.efindDuplicateBlockedMessage = String(message || DUPLICATE_BLOCK_MESSAGE);
+    } else {
+      delete formEl.dataset.efindDuplicateBlockedMessage;
+    }
+  }
+
+  if (submitEl instanceof HTMLButtonElement || submitEl instanceof HTMLInputElement) {
+    submitEl.disabled = shouldBlock;
+    submitEl.classList.toggle('disabled', shouldBlock);
+    if (shouldBlock) {
+      submitEl.setAttribute('aria-disabled', 'true');
+    } else {
+      submitEl.removeAttribute('aria-disabled');
+    }
+  }
+}
+
+function getDuplicateSelectionTargets(fileInput, options = {}) {
+  const { formId = '', submitButtonId = '' } = options || {};
+  const formCandidate = formId
+    ? document.getElementById(String(formId))
+    : (fileInput ? fileInput.closest('form') : null);
+  const formEl = formCandidate instanceof HTMLFormElement ? formCandidate : null;
+
+  let submitCandidate = submitButtonId ? document.getElementById(String(submitButtonId)) : null;
+  if (!submitCandidate && formEl) {
+    submitCandidate = formEl.querySelector('button[type="submit"], input[type="submit"]');
+  }
+  const submitEl = (submitCandidate instanceof HTMLButtonElement || submitCandidate instanceof HTMLInputElement)
+    ? submitCandidate
+    : null;
+
+  return { formEl, submitEl };
+}
+
+window.efindResetDuplicateSubmitState = function (formId) {
+  const formCandidate = formId ? document.getElementById(String(formId)) : null;
+  if (!(formCandidate instanceof HTMLFormElement)) return;
+  const submitCandidate = formCandidate.querySelector('button[type="submit"], input[type="submit"]');
+  setDuplicateSelectionBlockedState(formCandidate, submitCandidate, false);
+};
+
+document.addEventListener('reset', (event) => {
+  const formEl = event.target;
+  if (!(formEl instanceof HTMLFormElement)) return;
+  const submitCandidate = formEl.querySelector('button[type="submit"], input[type="submit"]');
+  setDuplicateSelectionBlockedState(formEl, submitCandidate, false);
+}, true);
+
 window.efindCheckImageDuplicate = async function (file, documentType = 'document') {
   if (!(file instanceof File)) {
     throw new Error('Image file is required for duplicate checking.');
@@ -563,15 +650,97 @@ window.efindCheckImageDuplicate = async function (file, documentType = 'document
   };
 };
 
+window.efindCheckExtractedTextDuplicate = async function (text, documentType = 'document') {
+  const content = String(text || '').trim();
+  if (!content) {
+    return { isDuplicate: false, matches: [] };
+  }
+
+  const formData = new FormData();
+  formData.append('content', content);
+  formData.append('document_type', String(documentType || 'document'));
+
+  const response = await fetch('check_text_duplicate.php', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result || !result.success) {
+    const message = (result && result.error) ? result.error : `Text duplicate check failed (HTTP ${response.status})`;
+    throw new Error(message);
+  }
+
+  return {
+    isDuplicate: !!result.is_duplicate,
+    matches: Array.isArray(result.matches) ? result.matches : [],
+  };
+};
+
+window.efindHandleExtractedTextDuplicate = async function (text, options = {}) {
+  const content = String(text || '').trim();
+  const {
+    documentType = 'document',
+    formId = '',
+    submitButtonId = '',
+  } = options || {};
+
+  const { formEl, submitEl } = getDuplicateSelectionTargets(null, { formId, submitButtonId });
+  setDuplicateSelectionBlockedState(formEl, submitEl, false);
+
+  if (!content || content.length < 80) {
+    return {
+      proceed: true,
+      isDuplicate: false,
+      duplicateCount: 0,
+      matches: [],
+    };
+  }
+
+  const duplicateResult = await window.efindCheckExtractedTextDuplicate(content, documentType);
+  if (!duplicateResult.isDuplicate) {
+    setDuplicateSelectionBlockedState(formEl, submitEl, false);
+    return {
+      proceed: true,
+      isDuplicate: false,
+      duplicateCount: 0,
+      matches: [],
+    };
+  }
+
+  const firstMatch = duplicateResult.matches[0];
+  const duplicateLabel = firstMatch && firstMatch.title ? ` (matches: ${firstMatch.title})` : '';
+  await window.efindConfirmDuplicateImage(
+    `This file has already been uploaded${duplicateLabel}.`,
+    {
+      allowProceed: false,
+      cancelLabel: 'OK',
+    }
+  );
+
+  setDuplicateSelectionBlockedState(formEl, submitEl, true, DUPLICATE_BLOCK_MESSAGE);
+  return {
+    proceed: false,
+    isDuplicate: true,
+    duplicateCount: duplicateResult.matches.length,
+    matches: duplicateResult.matches,
+  };
+};
+
 window.efindHandleDuplicateImageSelection = async function (input, options = {}) {
   const fileInput = input instanceof HTMLInputElement ? input : null;
   const files = fileInput ? Array.from(fileInput.files || []) : [];
   const {
     documentType = 'document',
     allowFieldId = '',
+    strictNoDuplicates = false,
+    formId = '',
+    submitButtonId = '',
   } = options || {};
 
   const allowField = allowFieldId ? document.getElementById(allowFieldId) : null;
+  const { formEl, submitEl } = getDuplicateSelectionTargets(fileInput, { formId, submitButtonId });
+  setDuplicateSelectionBlockedState(formEl, submitEl, false);
   if (allowField) {
     allowField.value = '0';
   }
@@ -604,6 +773,7 @@ window.efindHandleDuplicateImageSelection = async function (input, options = {})
 
   if (duplicateEntries.length === 0) {
     latestDuplicateComparison = null;
+    setDuplicateSelectionBlockedState(formEl, submitEl, false);
     return { proceed: true, filesRemaining: files.length, duplicateCount: 0 };
   }
 
@@ -617,8 +787,27 @@ window.efindHandleDuplicateImageSelection = async function (input, options = {})
     updatedAt: Date.now(),
   };
   const duplicateLabel = firstMatch && firstMatch.title ? ` (matches: ${firstMatch.title})` : '';
+  const duplicateMessage = `This file has already been uploaded${duplicateLabel}.`;
+
+  if (strictNoDuplicates) {
+    await window.efindConfirmDuplicateImage(duplicateMessage, {
+      allowProceed: false,
+      cancelLabel: 'OK',
+    });
+    if (allowField) {
+      allowField.value = '0';
+    }
+    setDuplicateSelectionBlockedState(formEl, submitEl, true, DUPLICATE_BLOCK_MESSAGE);
+    return {
+      proceed: false,
+      filesRemaining: files.length,
+      duplicateCount: duplicateEntries.length,
+      duplicateBlocked: true,
+    };
+  }
+
   const proceedAnyway = await window.efindConfirmDuplicateImage(
-    `This image is already upploaded${duplicateLabel}.`
+    duplicateMessage
   );
 
   if (!proceedAnyway) {
@@ -633,6 +822,7 @@ window.efindHandleDuplicateImageSelection = async function (input, options = {})
     if (allowField) {
       allowField.value = '0';
     }
+    setDuplicateSelectionBlockedState(formEl, submitEl, false);
     return {
       proceed: retainedFiles.length > 0,
       filesRemaining: retainedFiles.length,
@@ -644,6 +834,7 @@ window.efindHandleDuplicateImageSelection = async function (input, options = {})
   if (allowField) {
     allowField.value = '1';
   }
+  setDuplicateSelectionBlockedState(formEl, submitEl, false);
   return {
     proceed: true,
     filesRemaining: files.length,

@@ -15,6 +15,7 @@ try {
     include(__DIR__ . '/includes/logger.php');
     include(__DIR__ . '/includes/minio_helper.php');
     include(__DIR__ . '/includes/image_hash_helper.php');
+    include(__DIR__ . '/includes/text_duplicate_helper.php');
 } catch (Exception $e) {
     error_log("Failed to include required files: " . $e->getMessage());
     die("System initialization error. Please contact the administrator.");
@@ -492,8 +493,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $date_posted = $_POST['date_posted'];
             $resolution_date = $_POST['resolution_date'];
             $content = trim($_POST['content']);
-            $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
             $uploadedImageHashEntries = [];
+            $textDuplicateMatches = findMatchingDocumentTextDuplicates($conn, 'resolution', $content);
+            if (!empty($textDuplicateMatches)) {
+                $_SESSION['error'] = "This file has already been uploaded. Please upload a different file.";
+                header("Location: resolutions.php");
+                exit();
+            }
             error_log("Form data received - Title: $title, Number: $resolution_number, Date: $resolution_date");
             
             $reference_number = generateReferenceNumber($conn, $resolution_date);
@@ -534,8 +540,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $imageHash = computeAverageImageHashFromFile($tmpName);
                         if ($imageHash !== null && $imageHash !== '') {
                             $duplicateMatches = findMatchingImageHashes($conn, 'resolution', $imageHash);
-                            if (!$allowDuplicateImages && !empty($duplicateMatches)) {
-                                $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                            if (!empty($duplicateMatches)) {
+                                $_SESSION['error'] = "This image has already been uploaded. Please upload a different file.";
                                 header("Location: resolutions.php");
                                 exit();
                             }
@@ -1704,9 +1710,6 @@ $count_stmt->close();
                     <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addResolutionModal">
                         <i class="fas fa-plus me-1"></i> Add Resolution
                     </button>
-                    <button type="button" class="btn btn-secondary-custom" data-efind-open-compare>
-                        <i class="fas fa-columns me-1"></i> Compare
-                    </button>
                     <button class="btn btn-secondary-custom" id="printButton">
                         <i class="fas fa-print me-1"></i> Print
                     </button>
@@ -1749,8 +1752,6 @@ $count_stmt->close();
                         </button>
                     </div>
                 </div>
-                <!-- Hidden input for sort_by -->
-                <input type="hidden" name="sort_by" id="hiddenSortBy" value="<?php echo htmlspecialchars($sort_by); ?>">
             </form>
             <!-- Table Info -->
             <div class="table-info d-flex justify-content-between align-items-center">
@@ -2729,8 +2730,6 @@ $count_stmt->close();
         // Function to update sort parameter and submit form
         function updateSort() {
             const sortBySelect = document.getElementById('sort_by');
-            const hiddenSortBy = document.getElementById('hiddenSortBy');
-            hiddenSortBy.value = sortBySelect.value;
             sortBySelect.closest('form').submit();
         }
         // Ensure pagination stays at bottom and is always visible
@@ -3445,15 +3444,6 @@ $count_stmt->close();
         }
         // Function to process multiple files with auto-fill feature
         async function processFilesWithAutoFill(input) {
-            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
-                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
-                    documentType: 'resolution',
-                    allowFieldId: 'allowDuplicateResolutionImages'
-                });
-                if (duplicateState && !duplicateState.proceed) {
-                    return;
-                }
-            }
             const files = input.files;
             if (!files || files.length === 0) return;
             const autoFillSection = document.getElementById('autoFillSection');
@@ -3575,6 +3565,25 @@ $count_stmt->close();
                     processedFiles++;
                     autoFillProgressBar.style.width = `${(processedFiles / files.length) * 100}%`;
                 }
+                if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                    const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                        documentType: 'resolution',
+                        allowFieldId: 'allowDuplicateResolutionImages',
+                        strictNoDuplicates: true,
+                        formId: 'addResolutionForm'
+                    });
+                    if (duplicateState && !duplicateState.proceed) {
+                        processingElement.innerHTML = `
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                This file has already been uploaded. Please upload a different file.
+                            </div>
+                        `;
+                        autoFillProgressBar.style.width = '100%';
+                        autoFillProgressBar.classList.remove('progress-bar-animated');
+                        return;
+                    }
+                }
                 if (combinedText.trim().length > 0) {
                     const detectedFields = analyzeDocumentContent(combinedText);
                     processingElement.innerHTML = `
@@ -3587,6 +3596,26 @@ $count_stmt->close();
                         const finalizedMarkdown = await window.efindFinalizeOcrMarkdown(detectedFields.content, 'resolution');
                         if (finalizedMarkdown) {
                             detectedFields.content = finalizedMarkdown;
+                        }
+                    }
+                    if (typeof window.efindHandleExtractedTextDuplicate === 'function') {
+                        const contentForDuplicateCheck = (detectedFields.content && detectedFields.content.trim())
+                            ? detectedFields.content
+                            : combinedText;
+                        const textDuplicateState = await window.efindHandleExtractedTextDuplicate(contentForDuplicateCheck, {
+                            documentType: 'resolution',
+                            formId: 'addResolutionForm'
+                        });
+                        if (textDuplicateState && !textDuplicateState.proceed) {
+                            processingElement.innerHTML = `
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    This file has already been uploaded. Please upload a different file.
+                                </div>
+                            `;
+                            autoFillProgressBar.style.width = '100%';
+                            autoFillProgressBar.classList.remove('progress-bar-animated');
+                            return;
                         }
                     }
                     updateFormWithDetectedData(detectedFields);
@@ -4037,6 +4066,9 @@ $count_stmt->close();
             const form = document.getElementById('addResolutionForm');
             if (form) {
                 form.reset();
+                if (typeof window.efindResetDuplicateSubmitState === 'function') {
+                    window.efindResetDuplicateSubmitState('addResolutionForm');
+                }
                 // Clear file input specifically
                 const fileInput = document.getElementById('image_file');
                 if (fileInput) {

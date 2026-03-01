@@ -15,6 +15,7 @@ try {
     include(__DIR__ . '/includes/logger.php');
     include(__DIR__ . '/includes/minio_helper.php');
     include(__DIR__ . '/includes/image_hash_helper.php');
+    include(__DIR__ . '/includes/text_duplicate_helper.php');
 } catch (Exception $e) {
     error_log("Failed to include required files: " . $e->getMessage());
     die("System initialization error. Please contact the administrator.");
@@ -564,8 +565,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $executive_order_date = $_POST['executive_order_date'];
             $status = $_POST['status'];
             $content = trim($_POST['content']);
-            $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
             $uploadedImageHashEntries = [];
+            $textDuplicateMatches = findMatchingDocumentTextDuplicates($conn, 'executive_order', $content);
+            if (!empty($textDuplicateMatches)) {
+                $_SESSION['error'] = "This file has already been uploaded. Please upload a different file.";
+                header("Location: executive_orders.php");
+                exit();
+            }
             error_log("Form data received - Title: $title, Number: $executive_order_number, Date: $executive_order_date");
             
             $reference_number = generateReferenceNumber($conn, $executive_order_date);
@@ -592,8 +598,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $imageHash = computeAverageImageHashFromFile($tmpName);
                 if ($imageHash !== null && $imageHash !== '') {
                     $duplicateMatches = findMatchingImageHashes($conn, 'executive_order', $imageHash);
-                    if (!$allowDuplicateImages && !empty($duplicateMatches)) {
-                        $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                    if (!empty($duplicateMatches)) {
+                        $_SESSION['error'] = "This image has already been uploaded. Please upload a different file.";
                         header("Location: executive_orders.php");
                         exit();
                     }
@@ -1709,9 +1715,6 @@ $count_stmt->close();
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addExecutiveOrderModal">
                         <i class="fas fa-plus me-1"></i> Add Executive Order
-                    </button>
-                    <button type="button" class="btn btn-secondary-custom" data-efind-open-compare>
-                        <i class="fas fa-columns me-1"></i> Compare
                     </button>
                     <button class="btn btn-secondary-custom" id="printButton">
                         <i class="fas fa-print me-1"></i> Print
@@ -3401,15 +3404,6 @@ $count_stmt->close();
         
         // NEW FUNCTION: Process multiple files with auto-fill feature
         async function processFilesWithAutoFill(input) {
-            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
-                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
-                    documentType: 'executive_order',
-                    allowFieldId: 'allowDuplicateExecutiveOrderImages'
-                });
-                if (duplicateState && !duplicateState.proceed) {
-                    return;
-                }
-            }
             const files = input.files;
              
             // Show file count
@@ -3542,6 +3536,25 @@ $count_stmt->close();
                     processedFiles++;
                     autoFillProgressBar.style.width = `${(processedFiles / files.length) * 100}%`;
                 }
+                if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                    const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                        documentType: 'executive_order',
+                        allowFieldId: 'allowDuplicateExecutiveOrderImages',
+                        strictNoDuplicates: true,
+                        formId: 'addExecutiveOrderForm'
+                    });
+                    if (duplicateState && !duplicateState.proceed) {
+                        processingElement.innerHTML = `
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                This file has already been uploaded. Please upload a different file.
+                            </div>
+                        `;
+                        autoFillProgressBar.style.width = '100%';
+                        autoFillProgressBar.classList.remove('progress-bar-animated');
+                        return;
+                    }
+                }
                 if (combinedText.trim().length > 0) {
                     const detectedFields = analyzeDocumentContent(combinedText);
                     processingElement.innerHTML = `
@@ -3554,6 +3567,26 @@ $count_stmt->close();
                         const finalizedMarkdown = await window.efindFinalizeOcrMarkdown(detectedFields.content, 'executive_order');
                         if (finalizedMarkdown) {
                             detectedFields.content = finalizedMarkdown;
+                        }
+                    }
+                    if (typeof window.efindHandleExtractedTextDuplicate === 'function') {
+                        const contentForDuplicateCheck = (detectedFields.content && detectedFields.content.trim())
+                            ? detectedFields.content
+                            : combinedText;
+                        const textDuplicateState = await window.efindHandleExtractedTextDuplicate(contentForDuplicateCheck, {
+                            documentType: 'executive_order',
+                            formId: 'addExecutiveOrderForm'
+                        });
+                        if (textDuplicateState && !textDuplicateState.proceed) {
+                            processingElement.innerHTML = `
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    This file has already been uploaded. Please upload a different file.
+                                </div>
+                            `;
+                            autoFillProgressBar.style.width = '100%';
+                            autoFillProgressBar.classList.remove('progress-bar-animated');
+                            return;
                         }
                     }
                     updateFormWithDetectedData(detectedFields);
@@ -4189,6 +4222,9 @@ $count_stmt->close();
             const form = document.getElementById('addExecutiveOrderForm');
             if (form) {
                 form.reset();
+                if (typeof window.efindResetDuplicateSubmitState === 'function') {
+                    window.efindResetDuplicateSubmitState('addExecutiveOrderForm');
+                }
                 // Clear file input specifically
                 const fileInput = document.getElementById('image_file');
                 if (fileInput) {

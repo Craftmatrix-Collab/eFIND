@@ -15,6 +15,7 @@ try {
     include(__DIR__ . '/includes/logger.php');
     include(__DIR__ . '/includes/minio_helper.php');
     include(__DIR__ . '/includes/image_hash_helper.php');
+    include(__DIR__ . '/includes/text_duplicate_helper.php');
 } catch (Exception $e) {
     error_log("Failed to include required files: " . $e->getMessage());
     die("System initialization error. Please contact the administrator.");
@@ -457,8 +458,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $date_posted = $_POST['date_posted'];
             $meeting_date = $_POST['meeting_date'];
             $content = trim($_POST['content']);
-            $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
             $uploadedImageHashEntries = [];
+            $textDuplicateMatches = findMatchingDocumentTextDuplicates($conn, 'minutes', $content);
+            if (!empty($textDuplicateMatches)) {
+                $_SESSION['error'] = "This file has already been uploaded. Please upload a different file.";
+                header("Location: minutes_of_meeting.php");
+                exit();
+            }
             error_log("Form data received - Title: $title, Session: $session_number, Date: $meeting_date");
             
             $reference_number = generateReferenceNumber($conn, $meeting_date);
@@ -500,8 +506,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $imageHash = computeAverageImageHashFromFile($tmpName);
                         if ($imageHash !== null && $imageHash !== '') {
                             $duplicateMatches = findMatchingImageHashes($conn, 'minutes', $imageHash);
-                            if (!$allowDuplicateImages && !empty($duplicateMatches)) {
-                                $_SESSION['error'] = "This image is already upploaded. Please remove it or click Proceed anyway.";
+                            if (!empty($duplicateMatches)) {
+                                $_SESSION['error'] = "This image has already been uploaded. Please upload a different file.";
                                 header("Location: minutes_of_meeting.php");
                                 exit();
                             }
@@ -1662,9 +1668,6 @@ $count_stmt->close();
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addMinuteModal">
                         <i class="fas fa-plus me-1"></i> Add Minute
-                    </button>
-                    <button type="button" class="btn btn-secondary-custom" data-efind-open-compare>
-                        <i class="fas fa-columns me-1"></i> Compare
                     </button>
                     <button class="btn btn-secondary-custom" id="printButton">
                         <i class="fas fa-print me-1"></i> Print
@@ -3362,15 +3365,6 @@ $count_stmt->close();
 
         // Function to process files with auto-fill
         async function processFilesWithAutoFill(input) {
-            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
-                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
-                    documentType: 'minutes',
-                    allowFieldId: 'allowDuplicateMinuteImages'
-                });
-                if (duplicateState && !duplicateState.proceed) {
-                    return;
-                }
-            }
             const files = input.files;
             if (!files || files.length === 0) return;
 
@@ -3489,6 +3483,24 @@ $count_stmt->close();
                     processedFiles++;
                 }
 
+                if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                    const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                        documentType: 'minutes',
+                        allowFieldId: 'allowDuplicateMinuteImages',
+                        strictNoDuplicates: true,
+                        formId: 'addMinuteForm'
+                    });
+                    if (duplicateState && !duplicateState.proceed) {
+                        processingElement.innerHTML = `
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                This file has already been uploaded. Please upload a different file.
+                            </div>
+                        `;
+                        return;
+                    }
+                }
+
                 if (combinedText.trim().length > 0) {
                     const detectedFields = analyzeDocumentContent(combinedText);
                     processingElement.innerHTML = `
@@ -3501,6 +3513,24 @@ $count_stmt->close();
                         const finalizedMarkdown = await window.efindFinalizeOcrMarkdown(detectedFields.content, 'minutes');
                         if (finalizedMarkdown) {
                             detectedFields.content = finalizedMarkdown;
+                        }
+                    }
+                    if (typeof window.efindHandleExtractedTextDuplicate === 'function') {
+                        const contentForDuplicateCheck = (detectedFields.content && detectedFields.content.trim())
+                            ? detectedFields.content
+                            : combinedText;
+                        const textDuplicateState = await window.efindHandleExtractedTextDuplicate(contentForDuplicateCheck, {
+                            documentType: 'minutes',
+                            formId: 'addMinuteForm'
+                        });
+                        if (textDuplicateState && !textDuplicateState.proceed) {
+                            processingElement.innerHTML = `
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    This file has already been uploaded. Please upload a different file.
+                                </div>
+                            `;
+                            return;
                         }
                     }
                     updateFormWithDetectedData(detectedFields);
@@ -3901,6 +3931,9 @@ $count_stmt->close();
             const form = document.getElementById('addMinuteForm');
             if (form) {
                 form.reset();
+                if (typeof window.efindResetDuplicateSubmitState === 'function') {
+                    window.efindResetDuplicateSubmitState('addMinuteForm');
+                }
                 // Clear file input specifically
                 const fileInput = document.getElementById('image_file');
                 if (fileInput) {
