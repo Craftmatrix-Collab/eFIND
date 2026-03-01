@@ -74,11 +74,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (move_uploaded_file($_FILES["document_file"]["tmp_name"], $target_file)) {
         // Insert into appropriate table based on document type
         try {
+            $hasExecutiveOrderUpdatedByColumn = false;
             switch ($document_type) {
                 case 'executive_order':
+                    $updatedByColumnCheck = $conn->query("SHOW COLUMNS FROM executive_orders LIKE 'updated_by'");
+                    if ($updatedByColumnCheck && $updatedByColumnCheck->num_rows > 0) {
+                        $hasExecutiveOrderUpdatedByColumn = true;
+                    }
                     // executive_order_number is NOT NULL; use reference_number as fallback
-                    $sql = "INSERT INTO executive_orders (title, executive_order_number, reference_number, date_issued, description, file_path, uploaded_by) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?)";
+                    if ($hasExecutiveOrderUpdatedByColumn) {
+                        $sql = "INSERT INTO executive_orders (title, executive_order_number, reference_number, date_issued, description, file_path, uploaded_by, updated_by) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                    } else {
+                        $sql = "INSERT INTO executive_orders (title, executive_order_number, reference_number, date_issued, description, file_path, uploaded_by) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?)";
+                    }
                     break;
                 case 'resolution':
                     // resolution_number, content, image_path are NOT NULL
@@ -99,7 +109,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare($sql);
 
             if ($document_type === 'executive_order') {
-                $stmt->bind_param("sssssss", $title, $reference_number, $reference_number, $date_issued, $description, $target_file, $updated_by);
+                if ($hasExecutiveOrderUpdatedByColumn) {
+                    $stmt->bind_param("ssssssss", $title, $reference_number, $reference_number, $date_issued, $description, $target_file, $updated_by, $updated_by);
+                } else {
+                    $stmt->bind_param("sssssss", $title, $reference_number, $reference_number, $date_issued, $description, $target_file, $updated_by);
+                }
             } elseif ($document_type === 'resolution') {
                 $stmt->bind_param("ssssssss", $title, $reference_number, $reference_number, $date_issued, $description, $description, $target_file, $updated_by);
             } else {

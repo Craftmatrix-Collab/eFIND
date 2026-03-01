@@ -566,6 +566,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $status = $_POST['status'];
             $content = trim($_POST['content']);
             $uploadedImageHashEntries = [];
+            $uploadedDocumentLogs = [];
             $textDuplicateMatches = findMatchingDocumentTextDuplicates($conn, 'executive_order', $content);
             if (!empty($textDuplicateMatches)) {
                 $_SESSION['error'] = "This file has already been uploaded. Please upload a different file.";
@@ -621,7 +622,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'path' => $uploadResult['url'],
                     ];
                     error_log("File uploaded successfully: " . $uploadResult['url']);
-                    logDocumentUpload('executive_order', $fileName, $uniqueFileName);
+                    $uploadedDocumentLogs[] = [
+                        'file_name' => $fileName,
+                        'stored_name' => $uniqueFileName,
+                    ];
                 } else {
                     error_log("MinIO upload failed: " . $uploadResult['error']);
                     $_SESSION['error'] = "Failed to upload file: $fileName. " . $uploadResult['error'];
@@ -641,12 +645,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $date_issued = $executive_order_date; // Use executive_order_date as date_issued
         $file_path = $image_path ? $image_path : ''; // Use image_path or empty string
         $uploaded_by = $_SESSION['username'] ?? $_SESSION['staff_username'] ?? 'admin';
-        $stmt = $conn->prepare("INSERT INTO executive_orders (title, description, executive_order_number, date_posted, executive_order_date, status, content, image_path, reference_number, date_issued, file_path, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $updated_by = $uploaded_by;
+        $hasUpdatedByColumn = false;
+        $updatedByColumnCheck = $conn->query("SHOW COLUMNS FROM executive_orders LIKE 'updated_by'");
+        if ($updatedByColumnCheck && $updatedByColumnCheck->num_rows > 0) {
+            $hasUpdatedByColumn = true;
+        }
+
+        if ($hasUpdatedByColumn) {
+            $stmt = $conn->prepare("INSERT INTO executive_orders (title, description, executive_order_number, date_posted, executive_order_date, status, content, image_path, reference_number, date_issued, file_path, uploaded_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        } else {
+            $stmt = $conn->prepare("INSERT INTO executive_orders (title, description, executive_order_number, date_posted, executive_order_date, status, content, image_path, reference_number, date_issued, file_path, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        }
         if (!$stmt) {
             error_log("Failed to prepare statement: " . $conn->error);
             throw new Exception("Database prepare failed: " . $conn->error);
         }
-        $stmt->bind_param("ssssssssssss", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $status, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by);
+
+        if ($hasUpdatedByColumn) {
+            $stmt->bind_param("sssssssssssss", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $status, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by, $updated_by);
+        } else {
+            $stmt->bind_param("ssssssssssss", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $status, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by);
+        }
         if ($stmt->execute()) {
             $new_executive_order_id = $conn->insert_id;
             if (!empty($uploadedImageHashEntries)) {
@@ -654,6 +674,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             error_log("Executive Order inserted successfully with ID: $new_executive_order_id");
             logDocumentAction('create', 'executive_order', $title, $new_executive_order_id, "New executive_order created with reference number: $reference_number");
+            foreach ($uploadedDocumentLogs as $uploadedDocumentLog) {
+                logDocumentUpload('executive_order', $uploadedDocumentLog['file_name'], $uploadedDocumentLog['stored_name']);
+            }
             $_SESSION['success'] = "Executive Order added successfully!";
         } else {
             error_log("Failed to execute statement: " . $stmt->error);

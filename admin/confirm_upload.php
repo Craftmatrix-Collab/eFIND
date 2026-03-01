@@ -349,19 +349,39 @@ try {
         $dateIssued       = normalizeOptionalDate($body['date_issued'] ?? null, 'date_issued');
         $content          = $body['content']           ?? '';
         $filePath         = $imagePath; // executive_orders also stores as file_path
+        $hasUpdatedByColumn = false;
+        $updatedByColumnCheck = $conn->query("SHOW COLUMNS FROM `executive_orders` LIKE 'updated_by'");
+        if ($updatedByColumnCheck && $updatedByColumnCheck->num_rows > 0) {
+            $hasUpdatedByColumn = true;
+        }
 
-        $stmt = $conn->prepare(
-            "INSERT INTO executive_orders
-             (title, description, executive_order_number, date_posted, executive_order_date,
-              status, content, image_path, reference_number, date_issued,
-              file_path, uploaded_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        );
-        $stmt->bind_param('ssssssssssss',
-            $title, $description, $executive_orderNumber, $datePosted, $executive_orderDate,
-            $status, $content, $imagePath, $referenceNumber, $dateIssued,
-            $filePath, $uploadedBy
-        );
+        if ($hasUpdatedByColumn) {
+            $stmt = $conn->prepare(
+                "INSERT INTO executive_orders
+                 (title, description, executive_order_number, date_posted, executive_order_date,
+                  status, content, image_path, reference_number, date_issued,
+                  file_path, uploaded_by, updated_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $stmt->bind_param('sssssssssssss',
+                $title, $description, $executive_orderNumber, $datePosted, $executive_orderDate,
+                $status, $content, $imagePath, $referenceNumber, $dateIssued,
+                $filePath, $uploadedBy, $uploadedBy
+            );
+        } else {
+            $stmt = $conn->prepare(
+                "INSERT INTO executive_orders
+                 (title, description, executive_order_number, date_posted, executive_order_date,
+                  status, content, image_path, reference_number, date_issued,
+                  file_path, uploaded_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $stmt->bind_param('ssssssssssss',
+                $title, $description, $executive_orderNumber, $datePosted, $executive_orderDate,
+                $status, $content, $imagePath, $referenceNumber, $dateIssued,
+                $filePath, $uploadedBy
+            );
+        }
         $stmt->execute();
         $newId = $conn->insert_id;
         $stmt->close();
