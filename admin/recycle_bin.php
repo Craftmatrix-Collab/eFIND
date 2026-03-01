@@ -173,6 +173,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
     exit();
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'permanent_delete') {
+    $return_page = max(1, intval($_POST['return_page'] ?? 1));
+    $return_limit = intval($_POST['return_limit'] ?? 10);
+    if (!in_array($return_limit, $valid_limits, true)) {
+        $return_limit = 10;
+    }
+
+    if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
+        $_SESSION['error'] = "CSRF token validation failed.";
+        header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+        exit();
+    }
+
+    $recycle_id = intval($_POST['recycle_id'] ?? 0);
+    if ($recycle_id <= 0) {
+        $_SESSION['error'] = "Invalid recycle entry.";
+        header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+        exit();
+    }
+
+    try {
+        $conn->begin_transaction();
+
+        $entryStmt = $conn->prepare("SELECT id FROM recycle_bin WHERE id = ? FOR UPDATE");
+        if (!$entryStmt) {
+            throw new Exception("Failed to prepare recycle lookup.");
+        }
+        $entryStmt->bind_param("i", $recycle_id);
+        $entryStmt->execute();
+        $entry = $entryStmt->get_result()->fetch_assoc();
+        $entryStmt->close();
+
+        if (!$entry) {
+            throw new Exception("Recycle entry not found.");
+        }
+
+        $deleteStmt = $conn->prepare("DELETE FROM recycle_bin WHERE id = ? LIMIT 1");
+        if (!$deleteStmt) {
+            throw new Exception("Failed to prepare permanent delete statement.");
+        }
+        $deleteStmt->bind_param("i", $recycle_id);
+        if (!$deleteStmt->execute()) {
+            $error = $deleteStmt->error;
+            $deleteStmt->close();
+            throw new Exception("Failed to permanently delete record: " . $error);
+        }
+        if ($deleteStmt->affected_rows < 1) {
+            $deleteStmt->close();
+            throw new Exception("Recycle entry was not deleted.");
+        }
+        $deleteStmt->close();
+
+        $conn->commit();
+        $_SESSION['success'] = "Record permanently deleted.";
+    } catch (Throwable $e) {
+        $conn->rollback();
+        error_log("Recycle permanent delete failed: " . $e->getMessage());
+        $_SESSION['error'] = $e->getMessage();
+    }
+
+    header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+    exit();
+}
+
 $offset = ($page - 1) * $table_limit;
 
 $total_entries = 0;
@@ -644,20 +708,32 @@ unset($_SESSION['error'], $_SESSION['success']);
                                             </span>
                                         </td>
                                         <td>
-                                            <?php if (empty($entry['restored_at'])): ?>
-                                                <form method="POST" action="" onsubmit="return confirm('Restore this record?');" class="d-inline">
-                                                    <input type="hidden" name="action" value="restore">
+                                            <div class="d-flex flex-column gap-1 align-items-center">
+                                                <?php if (empty($entry['restored_at'])): ?>
+                                                    <form method="POST" action="" onsubmit="return confirm('Restore this record?');" class="d-inline">
+                                                        <input type="hidden" name="action" value="restore">
+                                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                                                        <input type="hidden" name="recycle_id" value="<?php echo (int)$entry['id']; ?>">
+                                                        <input type="hidden" name="return_page" value="<?php echo (int)$page; ?>">
+                                                        <input type="hidden" name="return_limit" value="<?php echo (int)$table_limit; ?>">
+                                                        <button type="submit" class="btn btn-sm btn-primary">
+                                                            <i class="fas fa-undo me-1"></i>Restore
+                                                        </button>
+                                                    </form>
+                                                <?php else: ?>
+                                                    <span class="badge bg-success">Restored</span>
+                                                <?php endif; ?>
+                                                <form method="POST" action="" onsubmit="return confirm('Permanently delete this record? This cannot be undone.');" class="d-inline">
+                                                    <input type="hidden" name="action" value="permanent_delete">
                                                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                                                     <input type="hidden" name="recycle_id" value="<?php echo (int)$entry['id']; ?>">
                                                     <input type="hidden" name="return_page" value="<?php echo (int)$page; ?>">
                                                     <input type="hidden" name="return_limit" value="<?php echo (int)$table_limit; ?>">
-                                                    <button type="submit" class="btn btn-sm btn-primary">
-                                                        <i class="fas fa-undo me-1"></i>Restore
+                                                    <button type="submit" class="btn btn-sm btn-danger">
+                                                        <i class="fas fa-trash-alt me-1"></i>Delete
                                                     </button>
                                                 </form>
-                                            <?php else: ?>
-                                                <span class="badge bg-success">Restored</span>
-                                            <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
