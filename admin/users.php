@@ -754,12 +754,12 @@ if (!empty($search_query)) {
 }
 
 // Build the query - UNION both admin_users and users tables
-$query = "SELECT id, full_name, contact_number, email, username, role, profile_picture, last_login, created_at, updated_at, 'users' as user_type FROM users";
+$query = "SELECT id, full_name, contact_number, email, username, role, profile_picture, last_login, created_at, updated_at, COALESCE(email_verified, 1) AS email_verified_status, 'users' as user_type FROM users";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
 }
 $query .= " UNION ALL ";
-$query .= "SELECT id, full_name, contact_number, email, username, 'admin' as role, profile_picture, last_login, created_at, updated_at, 'admin_users' as user_type FROM admin_users";
+$query .= "SELECT id, full_name, contact_number, email, username, 'admin' as role, profile_picture, last_login, created_at, updated_at, COALESCE(is_verified, 0) AS email_verified_status, 'admin_users' as user_type FROM admin_users";
 if (!empty($where_clauses)) {
     $query .= " WHERE " . implode(" AND ", $where_clauses);
     // Add parameters for second query (admin_users table)
@@ -1011,6 +1011,11 @@ $count_stmt->close();
         }
         .table tr:hover td {
             background-color: rgba(67, 97, 238, 0.05);
+        }
+        .email-unverified {
+            color: #dc3545 !important;
+            text-decoration: underline;
+            text-decoration-color: #dc3545;
         }
         .action-buttons {
             display: flex;
@@ -1545,7 +1550,8 @@ $count_stmt->close();
                                         <td><?php echo $row_num++; ?></td>
                                         <td class="full-name text-start"><?php echo htmlspecialchars($user['full_name']); ?></td>
                                         <td class="contact-number"><?php echo htmlspecialchars($user['contact_number']); ?></td>
-                                        <td class="email"><?php echo htmlspecialchars($user['email']); ?></td>
+                                        <?php $isEmailVerified = ((int)($user['email_verified_status'] ?? 1) === 1); ?>
+                                        <td class="email<?php echo $isEmailVerified ? '' : ' email-unverified'; ?>"><?php echo htmlspecialchars($user['email']); ?></td>
                                         <td class="username"><?php echo htmlspecialchars($user['username']); ?></td>
                                         <td class="role">
                                             <span class="badge bg-<?php

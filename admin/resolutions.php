@@ -411,63 +411,96 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     exit;
 }
 
-// Handle delete action
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete' && isset($_POST['id'])) {
+// Handle delete actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array($_POST['action'], ['delete', 'bulk_delete'], true)) {
     if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
         $_SESSION['error'] = "CSRF token validation failed.";
         header("Location: resolutions.php");
         exit();
     }
 
-    $id = intval($_POST['id']);
+    $isBulkDelete = $_POST['action'] === 'bulk_delete';
+    $ids = [];
+
+    if ($isBulkDelete) {
+        $submittedIds = $_POST['ids'] ?? [];
+        if (!is_array($submittedIds)) {
+            $_SESSION['error'] = "Invalid bulk delete request.";
+            header("Location: resolutions.php");
+            exit();
+        }
+
+        $ids = array_filter(array_map('intval', $submittedIds), function ($value) {
+            return $value > 0;
+        });
+    } elseif (isset($_POST['id'])) {
+        $id = intval($_POST['id']);
+        if ($id > 0) {
+            $ids = [$id];
+        }
+    }
+
+    $ids = array_values(array_unique($ids));
+
+    if (empty($ids)) {
+        $_SESSION['error'] = "No resolutions selected for deletion.";
+        header("Location: resolutions.php");
+        exit();
+    }
 
     try {
         $conn->begin_transaction();
+        $deletedCount = 0;
 
-        $stmt = $conn->prepare("SELECT * FROM resolutions WHERE id = ?");
-        if (!$stmt) {
-            throw new Exception("Failed to prepare resolution lookup.");
-        }
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $resolution = $result->fetch_assoc();
-        $stmt->close();
-
-        if (!$resolution) {
-            throw new Exception("Resolution not found.");
-        }
-
-        if (function_exists('logDocumentDelete')) {
-            try {
-                logDocumentDelete('resolution', $resolution['title'], $id);
-            } catch (Exception $e) {
-                error_log("Logger error: " . $e->getMessage());
+        foreach ($ids as $id) {
+            $stmt = $conn->prepare("SELECT * FROM resolutions WHERE id = ?");
+            if (!$stmt) {
+                throw new Exception("Failed to prepare resolution lookup.");
             }
-        }
-
-        if (!archiveToRecycleBin('resolutions', $id, $resolution)) {
-            throw new Exception("Failed to archive resolution to recycle bin.");
-        }
-
-        $stmt = $conn->prepare("DELETE FROM resolutions WHERE id = ?");
-        if (!$stmt) {
-            throw new Exception("Failed to prepare delete query.");
-        }
-        $stmt->bind_param("i", $id);
-        if (!$stmt->execute()) {
-            $error = $stmt->error;
+            $stmt->bind_param("i", $id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $resolution = $result->fetch_assoc();
             $stmt->close();
-            throw new Exception("Failed to delete resolution: " . $error);
-        }
-        if ($stmt->affected_rows < 1) {
+
+            if (!$resolution) {
+                throw new Exception("Resolution not found.");
+            }
+
+            if (function_exists('logDocumentDelete')) {
+                try {
+                    logDocumentDelete('resolution', $resolution['title'], $id);
+                } catch (Exception $e) {
+                    error_log("Logger error: " . $e->getMessage());
+                }
+            }
+
+            if (!archiveToRecycleBin('resolutions', $id, $resolution)) {
+                throw new Exception("Failed to archive resolution to recycle bin.");
+            }
+
+            $stmt = $conn->prepare("DELETE FROM resolutions WHERE id = ?");
+            if (!$stmt) {
+                throw new Exception("Failed to prepare delete query.");
+            }
+            $stmt->bind_param("i", $id);
+            if (!$stmt->execute()) {
+                $error = $stmt->error;
+                $stmt->close();
+                throw new Exception("Failed to delete resolution: " . $error);
+            }
+            if ($stmt->affected_rows < 1) {
+                $stmt->close();
+                throw new Exception("Resolution was not deleted.");
+            }
             $stmt->close();
-            throw new Exception("Resolution was not deleted.");
+            $deletedCount++;
         }
-        $stmt->close();
 
         $conn->commit();
-        $_SESSION['success'] = "Resolution deleted successfully!";
+        $_SESSION['success'] = $deletedCount === 1
+            ? "Resolution deleted successfully!"
+            : $deletedCount . " Resolutions deleted successfully!";
     } catch (Throwable $e) {
         $conn->rollback();
         error_log("Resolution delete failed: " . $e->getMessage());
@@ -1762,6 +1795,12 @@ $count_stmt->close();
                         <span class="text-muted ms-2">(Filtered results)</span>
                     <?php endif; ?>
                 </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary" id="selectedRowsCount">0 selected</span>
+                    <button type="button" class="btn btn-sm btn-danger disabled" id="bulkDeleteBtn" aria-disabled="true" disabled>
+                        <i class="fas fa-trash me-1"></i>Delete Selected
+                    </button>
+                </div>
             </div>
             <!-- Resolutions Table -->
             <div class="table-container">
@@ -1769,6 +1808,9 @@ $count_stmt->close();
                     <table class="table table-bordered table-hover align-middle text-center">
                         <thead class="table-dark">
                             <tr>
+                                <th style="width:4%">
+                                    <input type="checkbox" class="form-check-input" id="selectAllRows" aria-label="Select all resolutions">
+                                </th>
                                 <th style="width:5%">ID</th>
                                 <!-- <th>Reference No.</th> -->
                                 <th style="width:20%">Title</th>
@@ -1783,12 +1825,15 @@ $count_stmt->close();
                         <tbody id="resolutionsTableBody">
                             <?php if (empty($resolutions)): ?>
                                 <tr>
-                                    <td colspan="8" class="text-center py-4">No resolutions found</td>
+                                    <td colspan="9" class="text-center py-4">No resolutions found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($resolutions as $resolution): ?>
                                     <tr data-id="<?php echo $resolution['id']; ?>"<?php echo !empty($resolution['has_duplicate_image']) ? ' style="background-color: #ffd8a8;"' : ''; ?>>
+                                        <td>
+                                            <input type="checkbox" class="form-check-input row-checkbox" value="<?php echo $resolution['id']; ?>" aria-label="Select resolution <?php echo htmlspecialchars($resolution['title']); ?>">
+                                        </td>
                                         <td><?php echo $row_num++; ?></td>
                                         <!-- <td>
                                             <span class="reference-number">
@@ -1850,7 +1895,7 @@ $count_stmt->close();
                                 <?php
                                 $filled = count($resolutions);
                                 for ($i = $filled; $i < $table_limit; $i++): ?>
-                                    <tr class="filler-row"><td colspan="8">&nbsp;</td></tr>
+                                    <tr class="filler-row"><td colspan="9">&nbsp;</td></tr>
                                 <?php endfor; ?>
                             <?php endif; ?>
                         </tbody>
@@ -1942,13 +1987,13 @@ $count_stmt->close();
                     <div class="mb-3">
                         <i class="fas fa-trash-alt text-danger" style="font-size: 3rem;"></i>
                     </div>
-                    <h6 class="fw-bold mb-2">Are you sure you want to delete this resolution?</h6>
+                    <h6 class="fw-bold mb-2" id="deleteConfirmMessage">Are you sure you want to delete this resolution?</h6>
                     <p class="text-muted mb-3" id="deleteItemTitle">Item Title</p>
                     <div class="alert alert-warning mb-3">
                         <small><i class="fas fa-info-circle me-1"></i>This action cannot be undone.</small>
                     </div>
                     <div class="text-start">
-                        <label for="deleteConfirmInput" class="form-label text-muted small">Type <strong class="text-danger">RESOLUTION</strong> to confirm:</label>
+                        <label for="deleteConfirmInput" class="form-label text-muted small" id="deleteConfirmLabel">Type <strong class="text-danger">RESOLUTION</strong> to confirm:</label>
                         <input type="text" class="form-control" id="deleteConfirmInput" placeholder="Type RESOLUTION" autocomplete="off">
                     </div>
                 </div>
@@ -1957,8 +2002,9 @@ $count_stmt->close();
                         <i class="fas fa-times me-1"></i>Cancel
                     </button>
                     <form method="POST" action="" class="d-inline">
-                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="action" id="deleteActionInput" value="delete">
                         <input type="hidden" name="id" id="deleteItemId">
+                        <div id="bulkDeleteIdsContainer"></div>
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                         <button type="submit" class="btn btn-danger disabled" id="confirmDeleteBtn" aria-disabled="true" disabled>
                             <i class="fas fa-trash me-1"></i>Delete Resolution
@@ -2647,50 +2693,130 @@ $count_stmt->close();
     <script>
         // Delete confirmation functionality
         document.addEventListener('DOMContentLoaded', function() {
+            const deleteConfirmKeyword = 'RESOLUTION';
+            const deleteConfirmInput = document.getElementById('deleteConfirmInput');
+            const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+            const deleteActionInput = document.getElementById('deleteActionInput');
+            const deleteItemIdInput = document.getElementById('deleteItemId');
+            const bulkDeleteIdsContainer = document.getElementById('bulkDeleteIdsContainer');
+            const deleteItemTitle = document.getElementById('deleteItemTitle');
+            const deleteConfirmMessage = document.getElementById('deleteConfirmMessage');
+            const deleteConfirmLabel = document.getElementById('deleteConfirmLabel');
+            const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+            const selectedRowsCount = document.getElementById('selectedRowsCount');
+            const selectAllRows = document.getElementById('selectAllRows');
+            const rowCheckboxes = Array.from(document.querySelectorAll('.row-checkbox'));
+
+            const setDeleteButtonState = (enabled) => {
+                if (enabled) {
+                    confirmDeleteBtn.classList.remove('disabled');
+                    confirmDeleteBtn.removeAttribute('aria-disabled');
+                    confirmDeleteBtn.disabled = false;
+                } else {
+                    confirmDeleteBtn.classList.add('disabled');
+                    confirmDeleteBtn.setAttribute('aria-disabled', 'true');
+                    confirmDeleteBtn.disabled = true;
+                }
+            };
+
+            const updateBulkDeleteState = () => {
+                const selectedCount = rowCheckboxes.filter((checkbox) => checkbox.checked).length;
+                selectedRowsCount.textContent = `${selectedCount} selected`;
+                const hasSelection = selectedCount > 0;
+                bulkDeleteBtn.classList.toggle('disabled', !hasSelection);
+                bulkDeleteBtn.disabled = !hasSelection;
+                if (hasSelection) {
+                    bulkDeleteBtn.removeAttribute('aria-disabled');
+                } else {
+                    bulkDeleteBtn.setAttribute('aria-disabled', 'true');
+                }
+
+                if (selectAllRows) {
+                    const allSelected = rowCheckboxes.length > 0 && selectedCount === rowCheckboxes.length;
+                    selectAllRows.checked = allSelected;
+                    selectAllRows.indeterminate = selectedCount > 0 && !allSelected;
+                }
+            };
+
+            const resetDeleteModal = () => {
+                deleteConfirmInput.value = '';
+                setDeleteButtonState(false);
+                deleteActionInput.value = 'delete';
+                deleteItemIdInput.value = '';
+                bulkDeleteIdsContainer.innerHTML = '';
+                deleteConfirmMessage.textContent = 'Are you sure you want to delete this resolution?';
+                deleteConfirmLabel.innerHTML = 'Type <strong class="text-danger">RESOLUTION</strong> to confirm:';
+                deleteConfirmInput.placeholder = 'Type RESOLUTION';
+                confirmDeleteBtn.innerHTML = '<i class="fas fa-trash me-1"></i>Delete Resolution';
+            };
+
+            const openDeleteModal = (ids, label) => {
+                resetDeleteModal();
+
+                if (ids.length === 1) {
+                    deleteItemTitle.textContent = label;
+                    deleteItemIdInput.value = ids[0];
+                } else {
+                    deleteActionInput.value = 'bulk_delete';
+                    deleteConfirmMessage.textContent = 'Are you sure you want to delete the selected resolutions?';
+                    deleteItemTitle.textContent = `${ids.length} resolution(s) selected`;
+                    confirmDeleteBtn.innerHTML = `<i class="fas fa-trash me-1"></i>Delete Selected (${ids.length})`;
+                    ids.forEach((id) => {
+                        const hiddenInput = document.createElement('input');
+                        hiddenInput.type = 'hidden';
+                        hiddenInput.name = 'ids[]';
+                        hiddenInput.value = id;
+                        bulkDeleteIdsContainer.appendChild(hiddenInput);
+                    });
+                }
+
+                const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+                deleteModal.show();
+            };
+
             // Delete button handlers
             document.querySelectorAll('.delete-btn').forEach(button => {
                 button.addEventListener('click', function() {
-                    
-                    const id = this.getAttribute('data-id');
+                    const id = parseInt(this.getAttribute('data-id'), 10);
                     const title = this.getAttribute('data-title');
-                    document.getElementById('deleteItemTitle').textContent = title;
-                    document.getElementById('deleteItemId').value = id;
-
-                    // Reset confirm input and disable button
-                    const confirmInput = document.getElementById('deleteConfirmInput');
-                    const confirmBtn = document.getElementById('confirmDeleteBtn');
-                    confirmInput.value = '';
-                    confirmBtn.classList.add('disabled');
-                    confirmBtn.setAttribute('aria-disabled', 'true');
-                    confirmBtn.disabled = true;
-
-                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
-                    deleteModal.show();
+                    if (!Number.isFinite(id) || id <= 0) return;
+                    openDeleteModal([id], title);
                 });
             });
 
+            rowCheckboxes.forEach((checkbox) => {
+                checkbox.addEventListener('change', updateBulkDeleteState);
+            });
+
+            if (selectAllRows) {
+                selectAllRows.addEventListener('change', function() {
+                    rowCheckboxes.forEach((checkbox) => {
+                        checkbox.checked = this.checked;
+                    });
+                    updateBulkDeleteState();
+                });
+            }
+
+            bulkDeleteBtn.addEventListener('click', function() {
+                const selectedIds = rowCheckboxes
+                    .filter((checkbox) => checkbox.checked)
+                    .map((checkbox) => parseInt(checkbox.value, 10))
+                    .filter((id) => Number.isFinite(id) && id > 0);
+
+                if (selectedIds.length === 0) return;
+                openDeleteModal(selectedIds, `${selectedIds.length} resolution(s) selected`);
+            });
+
+            updateBulkDeleteState();
+
             // Enable delete button only when "RESOLUTION" is typed
-            document.getElementById('deleteConfirmInput').addEventListener('input', function() {
-                const confirmBtn = document.getElementById('confirmDeleteBtn');
-                if (this.value === 'RESOLUTION') {
-                    confirmBtn.classList.remove('disabled');
-                    confirmBtn.removeAttribute('aria-disabled');
-                    confirmBtn.disabled = false;
-                } else {
-                    confirmBtn.classList.add('disabled');
-                    confirmBtn.setAttribute('aria-disabled', 'true');
-                    confirmBtn.disabled = true;
-                }
+            deleteConfirmInput.addEventListener('input', function() {
+                setDeleteButtonState(this.value === deleteConfirmKeyword);
             });
 
             // Reset input when modal is hidden
             document.getElementById('deleteConfirmModal').addEventListener('hide.bs.modal', function () {
-                const confirmInput = document.getElementById('deleteConfirmInput');
-                const confirmBtn = document.getElementById('confirmDeleteBtn');
-                confirmInput.value = '';
-                confirmBtn.classList.add('disabled');
-                confirmBtn.setAttribute('aria-disabled', 'true');
-                confirmBtn.disabled = true;
+                resetDeleteModal();
             });
             // Auto-hide alerts after 5 seconds
             const alerts = document.querySelectorAll('.alert');
