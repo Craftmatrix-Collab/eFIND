@@ -77,6 +77,105 @@ function updateAccountLastLogin(mysqli $conn, $accountType, $accountId) {
     return $ok;
 }
 
+function ensurePasswordChangedAtColumn(mysqli $conn, $table) {
+    static $checkedTables = [];
+
+    if (!in_array($table, ['admin_users', 'users'], true)) {
+        return false;
+    }
+
+    if (array_key_exists($table, $checkedTables)) {
+        return $checkedTables[$table];
+    }
+
+    $columnCheck = $conn->query("SHOW COLUMNS FROM {$table} LIKE 'password_changed_at'");
+    if ($columnCheck && (int)$columnCheck->num_rows > 0) {
+        $checkedTables[$table] = true;
+        return true;
+    }
+
+    $addColumn = $conn->query("ALTER TABLE {$table} ADD COLUMN password_changed_at DATETIME NULL DEFAULT NULL");
+    if (!$addColumn) {
+        error_log("Failed to ensure password_changed_at on {$table}: " . $conn->error);
+        $checkedTables[$table] = false;
+        return false;
+    }
+
+    $checkedTables[$table] = true;
+    return true;
+}
+
+function updateAccountPasswordChangedAt(mysqli $conn, $accountType, $accountId) {
+    $table = resolveAccountTable($accountType);
+    $accountId = (int)$accountId;
+
+    if ($table === null || $accountId <= 0) {
+        return false;
+    }
+
+    if (!ensurePasswordChangedAtColumn($conn, $table)) {
+        return false;
+    }
+
+    $stmt = $conn->prepare("UPDATE {$table} SET password_changed_at = NOW() WHERE id = ? LIMIT 1");
+    if (!$stmt) {
+        error_log("Failed to prepare password_changed_at update for {$table}: " . $conn->error);
+        return false;
+    }
+
+    $stmt->bind_param('i', $accountId);
+    $ok = $stmt->execute();
+    if (!$ok) {
+        error_log("Failed to update password_changed_at for {$table}#{$accountId}: " . $stmt->error);
+    }
+    $stmt->close();
+
+    return $ok;
+}
+
+function getAccountPasswordChangedTimestamp(mysqli $conn, $accountType, $accountId, $fallbackCreatedAt = null) {
+    $table = resolveAccountTable($accountType);
+    $accountId = (int)$accountId;
+    $fallbackValue = is_string($fallbackCreatedAt) ? trim($fallbackCreatedAt) : '';
+    if ($fallbackValue === '0000-00-00 00:00:00') {
+        $fallbackValue = '';
+    }
+
+    if ($table === null || $accountId <= 0 || !ensurePasswordChangedAtColumn($conn, $table)) {
+        return $fallbackValue !== '' ? $fallbackValue : null;
+    }
+
+    $stmt = $conn->prepare("SELECT password_changed_at FROM {$table} WHERE id = ? LIMIT 1");
+    if (!$stmt) {
+        return $fallbackValue !== '' ? $fallbackValue : null;
+    }
+
+    $stmt->bind_param('i', $accountId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $passwordChangedAt = trim((string)($row['password_changed_at'] ?? ''));
+    if ($passwordChangedAt === '' || $passwordChangedAt === '0000-00-00 00:00:00') {
+        return $fallbackValue !== '' ? $fallbackValue : null;
+    }
+
+    if ($fallbackValue === '') {
+        return $passwordChangedAt;
+    }
+
+    $passwordChangedTs = strtotime($passwordChangedAt);
+    $fallbackTs = strtotime($fallbackValue);
+    if ($passwordChangedTs === false) {
+        return $fallbackValue;
+    }
+    if ($fallbackTs === false || $passwordChangedTs >= $fallbackTs) {
+        return $passwordChangedAt;
+    }
+
+    return $fallbackValue;
+}
+
 function getAccountLastActiveTimestamp(mysqli $conn, $accountType, $accountId, $fallbackLastLogin = null) {
     $accountId = (int)$accountId;
     $fallbackValue = is_string($fallbackLastLogin) ? trim($fallbackLastLogin) : '';

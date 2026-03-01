@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once __DIR__ . '/includes/auth.php';
 include('includes/config.php');
 
 $error = '';
@@ -77,6 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
             $stmt->bind_param("si", $hashed_password, $reset_user_id);
             
             if ($stmt->execute()) {
+                if (function_exists('updateAccountPasswordChangedAt')) {
+                    updateAccountPasswordChangedAt(
+                        $conn,
+                        $user_table_param === 'admin_users' ? 'admin' : 'staff',
+                        (int)$reset_user_id
+                    );
+                }
                 // Clear OTP session vars
                 unset($_SESSION['otp_verified'], $_SESSION['reset_user_id'], $_SESSION['user_table'], $_SESSION['reset_email']);
                 $_SESSION['password_reset_success'] = true;

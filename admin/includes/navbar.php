@@ -2,6 +2,7 @@
 // Fetch profile data directly for the modal (no AJAX needed)
 $_navbar_profile = null;
 $_navbar_last_active = null;
+$_navbar_password_changed = null;
 if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id']))) {
     $_navbar_uid   = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
     $_navbar_table = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
@@ -22,6 +23,17 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
         );
     } elseif (!empty($_navbar_profile['last_login'])) {
         $_navbar_last_active = $_navbar_profile['last_login'];
+    }
+
+    if ($_navbar_profile && function_exists('getAccountPasswordChangedTimestamp')) {
+        $_navbar_password_changed = getAccountPasswordChangedTimestamp(
+            $conn,
+            isset($_SESSION['admin_id']) ? 'admin' : 'staff',
+            (int)$_navbar_profile['id'],
+            $_navbar_profile['created_at'] ?? null
+        );
+    } elseif (!empty($_navbar_profile['created_at'])) {
+        $_navbar_password_changed = $_navbar_profile['created_at'];
     }
 }
 ?>
@@ -106,7 +118,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
             </div>
             <div class="modal-body" id="profileModalBody">
                 <?php if ($_navbar_profile): ?>
-                <?php $_np = $_navbar_profile; $_is_admin = isset($_SESSION['admin_id']); $_np_last_active = $_navbar_last_active; ?>
+                <?php $_np = $_navbar_profile; $_is_admin = isset($_SESSION['admin_id']); $_np_last_active = $_navbar_last_active; $_np_password_changed = $_navbar_password_changed; ?>
                 <div class="row">
                     <div class="col-lg-4">
                         <div class="card mb-4">
@@ -199,7 +211,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                                 <div class="row align-items-center mb-3">
                                     <div class="col-md-8">
                                         <h6 class="mb-1">Password</h6>
-                                        <p class="small text-muted mb-0">Last changed: N/A</p>
+                                        <p class="small text-muted mb-0">Last changed: <?php echo !empty($_np_password_changed) ? date('M d, Y h:i A', strtotime($_np_password_changed)) : 'Not available'; ?></p>
                                     </div>
                                     <div class="col-md-4 text-end">
                                         <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#changePasswordModal" data-bs-dismiss="modal">

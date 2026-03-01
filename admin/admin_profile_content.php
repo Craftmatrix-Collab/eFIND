@@ -62,6 +62,22 @@ try {
     } elseif (!empty($user['last_login'])) {
         $lastActiveAt = $user['last_login'];
     }
+
+    $passwordChangedAt = null;
+    if (function_exists('getAccountPasswordChangedTimestamp')) {
+        $passwordChangedAt = getAccountPasswordChangedTimestamp(
+            $conn,
+            $is_admin ? 'admin' : 'staff',
+            (int)$user['id'],
+            $user['created_at'] ?? null
+        );
+    } elseif (!empty($user['created_at'])) {
+        $passwordChangedAt = $user['created_at'];
+    }
+
+    if (!isset($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
     
     error_log("Profile loaded successfully for user: " . $user['username']);
     
@@ -171,7 +187,7 @@ try {
                     <div class="col-md-8">
                         <h6 class="mb-1">Password</h6>
                         <p class="small text-muted mb-0">Last changed:
-                            N/A
+                            <?php echo !empty($passwordChangedAt) ? date('M d, Y h:i A', strtotime($passwordChangedAt)) : 'Not available'; ?>
                         </p>
                     </div>
                     <div class="col-md-4 text-end">
@@ -196,6 +212,8 @@ try {
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="passwordChangeForm" action="update_password.php" method="post">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_SERVER['HTTP_REFERER'] ?? ($_SERVER['REQUEST_URI'] ?? 'dashboard.php')); ?>">
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="currentPassword" class="form-label">Current Password</label>
