@@ -1323,7 +1323,6 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                         <div class="search-box">
                             <i class="fas fa-search"></i>
                             <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="<?php echo htmlspecialchars($dashboard_search_placeholder); ?>" value="<?php echo htmlspecialchars($search_query); ?>">
-                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="<?php echo htmlspecialchars($dashboard_search_placeholder); ?>" value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-md-1">
