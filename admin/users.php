@@ -391,6 +391,73 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     exit();
 }
 
+// Handle reset login attempts action (superadmin only)
+if (isset($_GET['action']) && $_GET['action'] === 'reset_attempts' && isset($_GET['id'])) {
+    if (!isset($_GET['csrf_token']) || $_GET['csrf_token'] !== $_SESSION['csrf_token']) {
+        die("CSRF token validation failed.");
+    }
+    if (!$is_superadmin_users_page) {
+        $_SESSION['error'] = "Only superadmin can reset login attempts.";
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
+
+    $id = (int)$_GET['id'];
+    $user_type = isset($_GET['user_type']) ? $_GET['user_type'] : '';
+    if (!in_array($user_type, ['users', 'admin_users'], true)) {
+        $_SESSION['error'] = "Invalid user type.";
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
+
+    $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
+    $targetLookupSql = $table === 'admin_users'
+        ? "SELECT username, CASE WHEN LOWER(username) = 'superadmin' THEN 'superadmin' ELSE 'admin' END AS role FROM $table WHERE id = ?"
+        : "SELECT username, role FROM $table WHERE id = ?";
+    $targetStmt = $conn->prepare($targetLookupSql);
+    if (!$targetStmt) {
+        $_SESSION['error'] = "Error checking reset permission: " . $conn->error;
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
+    $targetStmt->bind_param("i", $id);
+    $targetStmt->execute();
+    $targetRow = $targetStmt->get_result()->fetch_assoc();
+    $targetStmt->close();
+
+    if (!$targetRow) {
+        $_SESSION['error'] = "User not found.";
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
+
+    $targetRole = strtolower((string)($targetRow['role'] ?? ''));
+    if (!in_array($targetRole, ['admin', 'staff'], true)) {
+        $_SESSION['error'] = "You do not have permission to reset this account.";
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
+
+    $resetStmt = $conn->prepare("UPDATE $table SET failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL WHERE id = ? LIMIT 1");
+    if (!$resetStmt) {
+        $_SESSION['error'] = "Error preparing reset: " . $conn->error;
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+    }
+    $resetStmt->bind_param("i", $id);
+    if ($resetStmt->execute()) {
+        $targetUsername = $targetRow['username'] ?? ("ID:" . $id);
+        logActivity('login_attempts_reset', "Login attempts reset: {$targetUsername}", "Table: {$table} | ID: {$id}");
+        $_SESSION['success'] = "Login attempts reset successfully.";
+    } else {
+        $_SESSION['error'] = "Error resetting login attempts: " . $resetStmt->error;
+    }
+    $resetStmt->close();
+
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit();
+}
+
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Validate CSRF token
@@ -1525,6 +1592,7 @@ $count_stmt->close();
                                             $canDeleteRow = $is_superadmin_users_page
                                                 ? in_array($targetRole, ['admin', 'staff'], true)
                                                 : ($targetUserType === 'users' && $targetRole === 'staff');
+                                            $canResetAttemptsRow = $is_superadmin_users_page && in_array($targetRole, ['admin', 'staff'], true);
                                             ?>
                                             <div class="d-flex gap-1 justify-content-center">
                                                 <?php if ($canEditRow): ?>
@@ -1536,6 +1604,16 @@ $count_stmt->close();
                                                             title="Edit">
                                                         <i class="fas fa-edit"></i>
                                                     </button>
+                                                <?php endif; ?>
+                                                <?php if ($canResetAttemptsRow): ?>
+                                                    <a href="?action=reset_attempts&id=<?php echo $user['id']; ?>&user_type=<?php echo urlencode($targetUserType); ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>"
+                                                       class="btn btn-sm btn-outline-warning p-1"
+                                                       onclick="return confirm('Reset login attempts and unlock this account?');"
+                                                       data-bs-toggle="tooltip"
+                                                       data-bs-placement="top"
+                                                       title="Reset Login Attempts">
+                                                        <i class="fas fa-rotate-left"></i>
+                                                    </a>
                                                 <?php endif; ?>
                                                 <?php if ($canDeleteRow): ?>
                                                     <a href="?action=delete&id=<?php echo $user['id']; ?>&user_type=<?php echo urlencode($targetUserType); ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>"
