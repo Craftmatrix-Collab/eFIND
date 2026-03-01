@@ -1802,7 +1802,7 @@ $count_stmt->close();
                     <?php endif; ?>
                 </div>
                 <div class="d-flex flex-column align-items-end gap-1">
-                    <small class="text-muted">Double-click or double-tap a row to select.</small>
+                    <small class="text-muted">Double-click/double-tap the first row, then single click/tap to add more.</small>
                     <div class="d-flex align-items-center gap-2">
                         <span class="badge bg-secondary" id="selectedRowsCount">0 selected</span>
                         <button type="button" class="btn btn-sm btn-danger disabled" id="bulkDeleteBtn" aria-disabled="true" disabled>
@@ -2709,6 +2709,7 @@ $count_stmt->close();
             const selectedRowsCount = document.getElementById('selectedRowsCount');
             const selectedRowIds = new Set();
             const selectableRows = Array.from(document.querySelectorAll('#resolutionsTableBody tr[data-id]'));
+            let selectionModeActive = false;
 
             const setDeleteButtonState = (enabled) => {
                 if (enabled) {
@@ -2724,6 +2725,7 @@ $count_stmt->close();
 
             const updateBulkDeleteState = () => {
                 const selectedCount = selectedRowIds.size;
+                selectionModeActive = selectedCount > 0;
                 selectedRowsCount.textContent = `${selectedCount} selected`;
                 const hasSelection = selectedCount > 0;
                 bulkDeleteBtn.classList.toggle('disabled', !hasSelection);
@@ -2800,18 +2802,36 @@ $count_stmt->close();
             });
 
             selectableRows.forEach((row) => {
+                row.addEventListener('click', function(e) {
+                    if (isInteractiveTarget(e.target)) return;
+                    const ignoreClickUntil = Number(this.dataset.ignoreClickUntil || 0);
+                    if (Date.now() < ignoreClickUntil) return;
+                    if (!selectionModeActive) return;
+                    toggleRowSelection(this);
+                });
+
                 row.addEventListener('dblclick', function(e) {
                     if (isInteractiveTarget(e.target)) return;
+                    if (selectionModeActive) return;
                     toggleRowSelection(this);
                 });
 
                 row.addEventListener('touchend', function(e) {
                     if (isInteractiveTarget(e.target)) return;
                     const now = Date.now();
+                    if (selectionModeActive) {
+                        e.preventDefault();
+                        this.dataset.lastTapAt = '0';
+                        this.dataset.ignoreClickUntil = String(now + 400);
+                        toggleRowSelection(this);
+                        return;
+                    }
+
                     const lastTap = Number(this.dataset.lastTapAt || 0);
                     if (now - lastTap < 350) {
                         e.preventDefault();
                         this.dataset.lastTapAt = '0';
+                        this.dataset.ignoreClickUntil = String(now + 400);
                         toggleRowSelection(this);
                     } else {
                         this.dataset.lastTapAt = String(now);
