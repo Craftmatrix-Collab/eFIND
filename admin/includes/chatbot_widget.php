@@ -633,6 +633,13 @@ function persistChatHistory() {
     localStorage.setItem(chatbotHistoryStorageKey, JSON.stringify(chatbotHistory));
 }
 
+function scrollChatbotToLatestMessage() {
+    const messagesContainer = document.getElementById('chatbotMessages');
+    if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+}
+
 // Toggle chatbot visibility
 function toggleChatbot() {
     const widget = document.getElementById('chatbotWidget');
@@ -647,6 +654,7 @@ function toggleChatbot() {
         
         // Focus input
         setTimeout(() => {
+            scrollChatbotToLatestMessage();
             document.getElementById('chatbotInput').focus();
         }, 300);
     } else {
