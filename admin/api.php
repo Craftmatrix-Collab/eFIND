@@ -81,6 +81,9 @@ class BarangayChatbotAPI {
             case '/categories':
             case '/api/categories':
                 return $this->getCategories();
+            case '/document-image':
+            case '/api/document-image':
+                return $this->getDocumentImage();
             case '/chat':
             case '/api/chat':
             case '':
@@ -122,6 +125,144 @@ class BarangayChatbotAPI {
         ];
         
         return $this->jsonResponse(['categories' => $categories]);
+    }
+
+    private function getDocumentImage() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            return $this->jsonResponse(['error' => 'Method not allowed. Use GET.'], 405);
+        }
+
+        if (!$this->db) {
+            return $this->jsonResponse(['error' => 'Database connection unavailable'], 500);
+        }
+
+        $documentNumber = trim((string)($_GET['number'] ?? ''));
+        $requestedType = strtolower(trim((string)($_GET['type'] ?? '')));
+
+        if ($documentNumber === '') {
+            return $this->jsonResponse(['error' => 'Document number is required'], 400);
+        }
+
+        $typeAliases = [
+            'resolution' => 'resolution',
+            'resolutions' => 'resolution',
+            'executive_order' => 'executive_order',
+            'executive_orders' => 'executive_order',
+            'executive-order' => 'executive_order',
+            'executiveorder' => 'executive_order',
+            'minutes' => 'minutes',
+            'minute' => 'minutes',
+            'meeting_minutes' => 'minutes',
+            'meeting-minutes' => 'minutes',
+            'minutes_of_meeting' => 'minutes'
+        ];
+
+        $normalizedType = $typeAliases[$requestedType] ?? '';
+        $searchTypes = $normalizedType !== '' ? [$normalizedType] : ['resolution', 'executive_order', 'minutes'];
+
+        foreach ($searchTypes as $documentType) {
+            $document = $this->findDocumentByNumber($documentType, $documentNumber);
+            if (!$document) {
+                continue;
+            }
+
+            $imagePaths = $this->splitImagePaths($document['image_path'] ?? '');
+            if (empty($imagePaths)) {
+                return $this->jsonResponse([
+                    'status' => 'not_found',
+                    'error' => 'Document found, but no image is available.',
+                    'document' => [
+                        'id' => (int)$document['id'],
+                        'type' => $documentType,
+                        'title' => $document['title'] ?? '',
+                        'number' => $document['document_number'] ?? $documentNumber
+                    ]
+                ], 404);
+            }
+
+            return $this->jsonResponse([
+                'status' => 'success',
+                'document' => [
+                    'id' => (int)$document['id'],
+                    'type' => $documentType,
+                    'title' => $document['title'] ?? '',
+                    'number' => $document['document_number'] ?? $documentNumber,
+                    'image_path' => $document['image_path'] ?? '',
+                    'image_paths' => $imagePaths
+                ]
+            ]);
+        }
+
+        return $this->jsonResponse([
+            'status' => 'not_found',
+            'error' => 'Document not found for the provided number.'
+        ], 404);
+    }
+
+    private function findDocumentByNumber($documentType, $documentNumber) {
+        $lookupConfig = [
+            'resolution' => ['table' => 'resolutions', 'number_column' => 'resolution_number'],
+            'executive_order' => ['table' => 'executive_orders', 'number_column' => 'executive_order_number'],
+            'minutes' => ['table' => 'minutes_of_meeting', 'number_column' => 'session_number']
+        ];
+
+        if (!isset($lookupConfig[$documentType])) {
+            return null;
+        }
+
+        $table = $lookupConfig[$documentType]['table'];
+        $numberColumn = $lookupConfig[$documentType]['number_column'];
+        $normalizedNumber = $this->normalizeDocumentNumber($documentNumber);
+
+        if ($normalizedNumber === '') {
+            return null;
+        }
+
+        $normalizedColumnExpression = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(TRIM(COALESCE($numberColumn, ''))), '-', ''), ' ', ''), '/', ''), '.', ''), '#', '')";
+
+        $sql = "SELECT id, title, $numberColumn AS document_number, image_path
+                FROM $table
+                WHERE UPPER(TRIM(COALESCE($numberColumn, ''))) = UPPER(?)
+                   OR $normalizedColumnExpression = ?
+                ORDER BY id DESC
+                LIMIT 1";
+
+        $stmt = $this->db->prepare($sql);
+        if (!$stmt) {
+            $this->log("Failed to prepare document lookup query for type: $documentType");
+            return null;
+        }
+
+        $stmt->bind_param("ss", $documentNumber, $normalizedNumber);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $stmt->close();
+
+        return $row ?: null;
+    }
+
+    private function normalizeDocumentNumber($value) {
+        $upperValue = strtoupper(trim((string)$value));
+        return preg_replace('/[^A-Z0-9]/', '', $upperValue);
+    }
+
+    private function splitImagePaths($imagePath) {
+        if (!is_string($imagePath) || trim($imagePath) === '') {
+            return [];
+        }
+
+        $parts = preg_split('/[|,]/', $imagePath);
+        $cleanParts = [];
+
+        foreach ($parts as $part) {
+            $trimmed = trim((string)$part);
+            if ($trimmed !== '') {
+                $cleanParts[] = $trimmed;
+            }
+        }
+
+        return $cleanParts;
     }
     
     private function handleChat() {

@@ -250,6 +250,39 @@ if ($chatbot_profile_picture_raw !== '') {
         color: #333;
     }
 
+    .chatbot-doc-link {
+        color: #0d6efd;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        background: rgba(13, 110, 253, 0.12);
+        border-radius: 3px;
+        padding: 0 2px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .chatbot-doc-link:hover {
+        color: #0a58ca;
+    }
+
+    .chatbot-doc-modal-body {
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
+    .chatbot-doc-preview-image {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin: 0 auto 12px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+    }
+
+    .chatbot-doc-preview-image:last-child {
+        margin-bottom: 0;
+    }
+
     .typing-indicator {
         display: flex;
         gap: 4px;
@@ -467,6 +500,19 @@ if ($chatbot_profile_picture_raw !== '') {
     </div>
 </div>
 
+<!-- Chatbot Document Image Modal -->
+<div class="modal fade" id="chatbotDocumentImageModal" tabindex="-1" aria-labelledby="chatbotDocumentImageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="chatbotDocumentImageModalLabel"><i class="fas fa-image me-2"></i><span id="chatbotDocumentImageTitle">Document Image</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body chatbot-doc-modal-body" id="chatbotDocumentImageBody"></div>
+        </div>
+    </div>
+</div>
+
 <script>
 // Chatbot Widget JavaScript
 let chatbotIsOpen = false;
@@ -477,6 +523,33 @@ const chatbotUserId = '<?php echo isset($_SESSION["user_id"]) ? $_SESSION["user_
 const chatbotUserAvatarUrl = <?php echo json_encode($chatbot_profile_picture_path); ?>;
 const chatbotSessionStorageKey = `efind_chatbot_session_${chatbotUserId}`;
 const chatbotHistoryStorageKey = `efind_chatbot_history_${chatbotUserId}`;
+const chatbotDocumentMentionMatchers = [
+    {
+        type: 'resolution',
+        regex: /\b(resolution(?:\s*(?:no\.?|number|#))?)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]*\d[A-Za-z0-9\-\/]*)\b/gi,
+        numberGroup: 2
+    },
+    {
+        type: 'executive_order',
+        regex: /\b(executive\s+order(?:\s*(?:no\.?|number|#))?)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]*\d[A-Za-z0-9\-\/]*)\b/gi,
+        numberGroup: 2
+    },
+    {
+        type: 'minutes',
+        regex: /\b((?:(?:minutes?\s+of\s+meeting|meeting\s+minutes)(?:\s*(?:no\.?|number|#))?|session\s*(?:no\.?|number|#)))\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]*\d[A-Za-z0-9\-\/]*)\b/gi,
+        numberGroup: 2
+    },
+    {
+        type: 'executive_order',
+        regex: /\b(EO[-\s]?\d{4}[-\/]\d+)\b/gi,
+        numberGroup: 1
+    },
+    {
+        type: 'resolution',
+        regex: /\b(RES[-\s]?\d{4}[-\/]\d+)\b/gi,
+        numberGroup: 1
+    }
+];
 
 // Initialize chatbot session
 function initChatbotSession() {
@@ -565,6 +638,152 @@ function sendQuickMessage(message) {
     sendMessage();
 }
 
+function getChatbotApiBasePath() {
+    return window.location.pathname.includes('/admin/') ? 'api.php' : '/admin/api.php';
+}
+
+function collectDocumentMentions(message) {
+    if (typeof message !== 'string' || message.length === 0) {
+        return [];
+    }
+    
+    const matches = [];
+    chatbotDocumentMentionMatchers.forEach((matcher) => {
+        matcher.regex.lastIndex = 0;
+        let match;
+        while ((match = matcher.regex.exec(message)) !== null) {
+            const matchedNumber = (match[matcher.numberGroup] || '').trim();
+            if (!matchedNumber) {
+                continue;
+            }
+            
+            matches.push({
+                start: match.index,
+                end: match.index + match[0].length,
+                label: match[0].trim(),
+                type: matcher.type,
+                number: matchedNumber
+            });
+        }
+    });
+    
+    if (matches.length === 0) {
+        return [];
+    }
+    
+    matches.sort((a, b) => (a.start - b.start) || (b.end - a.end));
+    
+    const dedupedMatches = [];
+    let currentEnd = -1;
+    matches.forEach((match) => {
+        if (match.start < currentEnd) {
+            return;
+        }
+        dedupedMatches.push(match);
+        currentEnd = match.end;
+    });
+    
+    return dedupedMatches;
+}
+
+function formatMessageWithDocumentLinks(message, sender) {
+    const safeMessage = typeof message === 'string' ? message : String(message ?? '');
+    if (sender !== 'bot') {
+        return escapeHtml(safeMessage);
+    }
+    
+    const mentions = collectDocumentMentions(safeMessage);
+    if (mentions.length === 0) {
+        return escapeHtml(safeMessage);
+    }
+    
+    let html = '';
+    let cursor = 0;
+    
+    mentions.forEach((mention) => {
+        html += escapeHtml(safeMessage.slice(cursor, mention.start));
+        html += `<a href="#" class="chatbot-doc-link" data-doc-type="${mention.type}" data-doc-number="${encodeURIComponent(mention.number)}">${escapeHtml(mention.label)}</a>`;
+        cursor = mention.end;
+    });
+    
+    html += escapeHtml(safeMessage.slice(cursor));
+    return html;
+}
+
+async function handleChatbotDocumentLinkClick(event) {
+    const link = event.target.closest('.chatbot-doc-link');
+    if (!link) {
+        return;
+    }
+    
+    event.preventDefault();
+    
+    const documentType = (link.getAttribute('data-doc-type') || '').trim();
+    const encodedNumber = link.getAttribute('data-doc-number') || '';
+    const documentNumber = decodeURIComponent(encodedNumber);
+    
+    if (!documentType || !documentNumber) {
+        return;
+    }
+    
+    const lookupPath = `${getChatbotApiBasePath()}/document-image?type=${encodeURIComponent(documentType)}&number=${encodeURIComponent(documentNumber)}`;
+    
+    try {
+        const response = await fetch(lookupPath, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+        const data = await response.json();
+        
+        if (!response.ok || !data || data.status !== 'success' || !data.document) {
+            throw new Error(data && data.error ? data.error : 'Document image not found.');
+        }
+        
+        showChatbotDocumentImageModal(data.document, link.textContent.trim());
+    } catch (error) {
+        console.error('Document image preview error:', error);
+        addMessageToChat("I couldn't load that document image.", 'bot');
+    }
+}
+
+function showChatbotDocumentImageModal(documentData, fallbackLabel) {
+    const modalElement = document.getElementById('chatbotDocumentImageModal');
+    const modalTitle = document.getElementById('chatbotDocumentImageTitle');
+    const modalBody = document.getElementById('chatbotDocumentImageBody');
+    
+    if (!modalBody || !modalTitle) {
+        return;
+    }
+    
+    const imagePaths = (Array.isArray(documentData.image_paths) ? documentData.image_paths : [])
+        .map((path) => String(path).trim())
+        .filter(Boolean);
+    const displayTitle = (documentData.number || fallbackLabel || 'Document Image').toString();
+    
+    modalTitle.textContent = displayTitle;
+    modalBody.innerHTML = '';
+    
+    if (imagePaths.length === 0) {
+        modalBody.innerHTML = '<p class="text-muted mb-0">No image available for this document.</p>';
+    } else {
+        imagePaths.forEach((src, index) => {
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = `${displayTitle} page ${index + 1}`;
+            img.className = 'chatbot-doc-preview-image';
+            modalBody.appendChild(img);
+        });
+    }
+    
+    if (modalElement && window.bootstrap && window.bootstrap.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    } else if (imagePaths[0]) {
+        window.open(imagePaths[0], '_blank', 'noopener');
+    }
+}
+
 // Send message to chatbot
 async function sendMessage() {
     const input = document.getElementById('chatbotInput');
@@ -586,11 +805,7 @@ async function sendMessage() {
     sendBtn.disabled = true;
     
     try {
-        // Determine the correct API path based on current location
-        const currentPath = window.location.pathname;
-        const apiPath = currentPath.includes('/admin/') 
-            ? 'api.php/chat' 
-            : '/admin/api.php/chat';
+        const apiPath = `${getChatbotApiBasePath()}/chat`;
         
         console.log('Sending message to:', apiPath);
         
@@ -689,7 +904,7 @@ function addMessageToChat(message, sender, time = null, persist = true) {
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
     contentDiv.innerHTML = `
-        <div class="message-bubble">${escapeHtml(message)}</div>
+        <div class="message-bubble">${formatMessageWithDocumentLinks(message, sender)}</div>
         <span class="message-time">${messageTime}</span>
     `;
     
@@ -775,5 +990,9 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', function() {
     initChatbotSession();
     restoreChatHistory();
+    const messagesContainer = document.getElementById('chatbotMessages');
+    if (messagesContainer) {
+        messagesContainer.addEventListener('click', handleChatbotDocumentLinkClick);
+    }
 });
 </script>
