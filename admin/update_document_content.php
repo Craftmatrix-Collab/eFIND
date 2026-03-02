@@ -11,18 +11,23 @@ if (!isset($_POST['id']) || !isset($_POST['document_type']) || !isset($_POST['co
 }
 
 $id = intval($_POST['id']);
-$document_type = $_POST['document_type'];
+$document_type = strtolower(trim((string)($_POST['document_type'] ?? '')));
 $content = trim($_POST['content']);
 
 try {
+    $ocr_document_type = $document_type;
+
     // Update the main document table based on document type
-    if ($document_type === 'executive_order') {
+    if ($document_type === 'executive_order' || $document_type === 'executive_orders') {
         $stmt = $conn->prepare("UPDATE executive_orders SET content = ? WHERE id = ?");
-    } elseif ($document_type === 'resolution') {
+        $ocr_document_type = 'executive_order';
+    } elseif ($document_type === 'resolution' || $document_type === 'resolutions') {
         $stmt = $conn->prepare("UPDATE resolutions SET content = ? WHERE id = ?");
-    } elseif ($document_type === 'meeting_minutes' || $document_type === 'minute') {
-        // Handle both 'meeting_minutes' and 'minute' document types for minutes of meeting
+        $ocr_document_type = 'resolution';
+    } elseif (in_array($document_type, ['meeting', 'minutes', 'minute', 'meeting_minutes'], true)) {
+        // Handle meeting aliases for minutes_of_meeting documents
         $stmt = $conn->prepare("UPDATE minutes_of_meeting SET content = ? WHERE id = ?");
+        $ocr_document_type = 'meeting';
     } else {
         echo json_encode(['success' => false, 'error' => 'Invalid document type.']);
         exit;
@@ -40,20 +45,20 @@ try {
         if ($tableCheck && $tableCheck->num_rows > 0) {
             // Table exists, proceed with OCR content update
             $checkStmt = $conn->prepare("SELECT id FROM document_ocr_content WHERE document_id = ? AND document_type = ?");
-            $checkStmt->bind_param("is", $id, $document_type);
+            $checkStmt->bind_param("is", $id, $ocr_document_type);
             $checkStmt->execute();
             $checkResult = $checkStmt->get_result();
             
             if ($checkResult->num_rows > 0) {
                 // Update existing OCR record
                 $updateOcrStmt = $conn->prepare("UPDATE document_ocr_content SET ocr_content = ?, updated_at = CURRENT_TIMESTAMP WHERE document_id = ? AND document_type = ?");
-                $updateOcrStmt->bind_param("sis", $content, $id, $document_type);
+                $updateOcrStmt->bind_param("sis", $content, $id, $ocr_document_type);
                 $updateOcrStmt->execute();
                 $updateOcrStmt->close();
             } else {
                 // Insert new OCR record
                 $insertOcrStmt = $conn->prepare("INSERT INTO document_ocr_content (document_id, document_type, ocr_content, created_at, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
-                $insertOcrStmt->bind_param("iss", $id, $document_type, $content);
+                $insertOcrStmt->bind_param("iss", $id, $ocr_document_type, $content);
                 $insertOcrStmt->execute();
                 $insertOcrStmt->close();
             }

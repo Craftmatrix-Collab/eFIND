@@ -1465,7 +1465,6 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                                                 data-document-id="<?= $document['id'] ?>"
                                                                 data-bs-toggle="modal"
                                                                 data-bs-target="#ocrModal"
-                                                                data-bs-toggle="tooltip"
                                                                 data-bs-placement="top"
                                                                 title="Run OCR on Document">
                                                             <i class="fas fa-magnifying-glass"></i>
@@ -2000,6 +1999,383 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     
                     const imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
                     imageModal.show();
+                });
+            });
+        });
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const ocrLoading = document.getElementById('ocrLoading');
+            const ocrResult = document.getElementById('ocrResult');
+            const ocrActions = document.getElementById('ocrActions');
+            const formattedView = document.getElementById('formattedView');
+            const rawPre = document.querySelector('#rawView pre');
+            const editView = document.getElementById('editView');
+            const rawView = document.getElementById('rawView');
+            const textEditor = document.getElementById('ocrTextEditor');
+            const ocrDocumentId = document.getElementById('ocrDocumentId');
+            const ocrDocumentType = document.getElementById('ocrDocumentType');
+            const ocrImagePath = document.getElementById('ocrImagePath');
+
+            const getDocumentEndpointByType = {
+                executive_order: (id) => `executive_orders.php?action=get_executive_order&id=${id}`,
+                resolution: (id) => `resolutions.php?action=get_resolution&id=${id}`,
+                meeting: (id) => `minutes_of_meeting.php?action=get_minute&id=${id}`,
+            };
+
+            function escapeHtml(value) {
+                return String(value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            function formatOcrText(text) {
+                const normalizedText = String(text || '').trim();
+                if (normalizedText === '') {
+                    formattedView.innerHTML = '<p class="text-muted">No text content could be extracted.</p>';
+                    return;
+                }
+
+                const paragraphs = normalizedText.split(/\n\s*\n/).filter(paragraph => paragraph.trim() !== '');
+                const htmlContent = paragraphs.map(paragraph => {
+                    const trimmedParagraph = paragraph.trim();
+                    if (trimmedParagraph.length < 80 && !/[.!?]$/.test(trimmedParagraph)) {
+                        return `<h5 class="ocr-heading">${escapeHtml(trimmedParagraph).replace(/\n/g, '<br>')}</h5>`;
+                    }
+                    return `<p class="ocr-paragraph">${escapeHtml(trimmedParagraph).replace(/\n/g, '<br>')}</p>`;
+                }).join('');
+
+                formattedView.innerHTML = htmlContent || '<p class="text-muted">No text content could be extracted.</p>';
+            }
+
+            function cleanOcrText(text) {
+                return String(text || '')
+                    .replace(/(\r\n|\r|\n){3,}/g, '\n\n')
+                    .replace(/[ \t]{2,}/g, ' ')
+                    .replace(/[ \t]+\n/g, '\n')
+                    .replace(/\n[ \t]+/g, '\n')
+                    .trim();
+            }
+
+            function setOcrLoading(message) {
+                ocrLoading.innerHTML = `
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="spinner-border text-warning" role="status"></div>
+                        <div>
+                            <div>Extracting text from document...</div>
+                            <small class="text-muted" id="ocrProgress">${escapeHtml(message || 'Initializing...')}</small>
+                        </div>
+                    </div>
+                `;
+                ocrLoading.style.display = 'block';
+                ocrResult.style.display = 'none';
+                ocrActions.style.display = 'none';
+            }
+
+            function updateOcrProgress(message) {
+                const progressNode = document.getElementById('ocrProgress');
+                if (progressNode) {
+                    progressNode.textContent = message;
+                }
+            }
+
+            function prependOcrAlert(type, message) {
+                const existingAlerts = document.querySelectorAll('#ocrResult .alert');
+                existingAlerts.forEach(alert => alert.remove());
+
+                const alert = document.createElement('div');
+                alert.className = `alert alert-${type} alert-dismissible fade show mb-3`;
+                alert.innerHTML = `
+                    ${escapeHtml(message)}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                ocrResult.prepend(alert);
+            }
+
+            function showOcrText(text) {
+                const finalText = cleanOcrText(text);
+                ocrLoading.style.display = 'none';
+                ocrResult.style.display = 'block';
+                ocrActions.style.display = 'flex';
+                editView.style.display = 'none';
+                formattedView.style.display = 'block';
+                rawView.style.display = 'none';
+                textEditor.value = finalText;
+                rawPre.textContent = finalText;
+                formatOcrText(finalText);
+                document.querySelectorAll('[data-view]').forEach(btn => {
+                    btn.classList.toggle('active', btn.getAttribute('data-view') === 'formatted');
+                });
+            }
+
+            function showOcrError(message) {
+                ocrLoading.style.display = 'none';
+                ocrResult.style.display = 'block';
+                ocrActions.style.display = 'none';
+                formattedView.style.display = 'block';
+                rawView.style.display = 'none';
+                editView.style.display = 'none';
+                formattedView.innerHTML = `
+                    <div class="alert alert-danger mb-0">${escapeHtml(message)}</div>
+                `;
+                rawPre.textContent = '';
+                textEditor.value = '';
+            }
+
+            async function fetchJsonSafe(url, options) {
+                const response = await fetch(url, options || {});
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (error) {
+                    data = null;
+                }
+
+                if (!response.ok) {
+                    const message = data && data.error ? data.error : `Request failed (HTTP ${response.status})`;
+                    throw new Error(message);
+                }
+
+                return data;
+            }
+
+            async function fetchExistingDocumentContent(documentType, documentId) {
+                const endpointResolver = getDocumentEndpointByType[documentType];
+                if (typeof endpointResolver !== 'function') {
+                    return '';
+                }
+
+                try {
+                    const data = await fetchJsonSafe(endpointResolver(documentId));
+                    return typeof data.content === 'string' ? data.content.trim() : '';
+                } catch (error) {
+                    console.error('Unable to fetch existing document content:', error);
+                    return '';
+                }
+            }
+
+            async function fetchExistingOcrContent(documentType, documentId) {
+                try {
+                    const data = await fetchJsonSafe(`get_ocr_content.php?id=${encodeURIComponent(documentId)}&type=${encodeURIComponent(documentType)}`);
+                    if (data && data.success && typeof data.content === 'string') {
+                        return data.content.trim();
+                    }
+                    return '';
+                } catch (error) {
+                    console.error('Unable to fetch OCR content cache:', error);
+                    return '';
+                }
+            }
+
+            async function runComposerOcr(imageUrl, documentType) {
+                let absoluteUrl = '';
+                try {
+                    absoluteUrl = new URL(String(imageUrl || '').trim(), window.location.href).href;
+                } catch (error) {
+                    throw new Error('Invalid document image URL.');
+                }
+
+                const formData = new FormData();
+                formData.append('image_url', absoluteUrl);
+                formData.append('document_type', documentType);
+
+                const response = await fetch('composer_tesseract_ocr.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (error) {
+                    throw new Error(`Invalid OCR response (HTTP ${response.status})`);
+                }
+
+                if (!response.ok || !data || !data.success) {
+                    throw new Error((data && data.error) ? data.error : `OCR failed (HTTP ${response.status})`);
+                }
+
+                return typeof data.text === 'string' ? data.text : '';
+            }
+
+            async function extractOcrFromImages(imageSrcs, documentType) {
+                const combinedChunks = [];
+
+                for (let index = 0; index < imageSrcs.length; index++) {
+                    const imageSrc = imageSrcs[index];
+                    updateOcrProgress(`Processing image ${index + 1} of ${imageSrcs.length}...`);
+                    try {
+                        const text = await runComposerOcr(imageSrc, documentType);
+                        const cleaned = cleanOcrText(text);
+                        if (cleaned !== '') {
+                            combinedChunks.push(cleaned);
+                        }
+                    } catch (error) {
+                        console.error('OCR processing failed for image:', imageSrc, error);
+                    }
+                }
+
+                return combinedChunks.join('\n\n---\n\n').trim();
+            }
+
+            async function saveOcrContent(documentId, documentType, content) {
+                const formData = new FormData();
+                formData.append('id', String(documentId));
+                formData.append('document_type', documentType);
+                formData.append('content', content);
+
+                const data = await fetchJsonSafe('update_document_content.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!data || !data.success) {
+                    throw new Error((data && data.error) ? data.error : 'Failed to save OCR content.');
+                }
+                return data;
+            }
+
+            document.querySelectorAll('.ocr-btn').forEach(function(btn) {
+                btn.addEventListener('click', async function(event) {
+                    event.preventDefault();
+
+                    const imageSrcs = (btn.getAttribute('data-image-src') || '')
+                        .split(/[|,]/)
+                        .map(src => src.trim())
+                        .filter(Boolean);
+                    const documentId = parseInt(btn.getAttribute('data-document-id') || '0', 10);
+                    const documentType = (btn.getAttribute('data-document-type') || '').trim();
+
+                    if (!documentId || documentType === '' || imageSrcs.length === 0) {
+                        alert('Unable to start OCR for this document.');
+                        return;
+                    }
+
+                    ocrDocumentId.value = String(documentId);
+                    ocrDocumentType.value = documentType;
+                    ocrImagePath.value = btn.getAttribute('data-image-src') || '';
+                    formattedView.innerHTML = '';
+                    rawPre.textContent = '';
+                    textEditor.value = '';
+                    editView.style.display = 'none';
+                    formattedView.style.display = 'block';
+                    rawView.style.display = 'none';
+
+                    const ocrModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('ocrModal'));
+                    ocrModal.show();
+                    setOcrLoading('Checking existing OCR content...');
+
+                    try {
+                        const existingDocumentContent = await fetchExistingDocumentContent(documentType, documentId);
+                        if (existingDocumentContent !== '') {
+                            showOcrText(existingDocumentContent);
+                            return;
+                        }
+
+                        const existingOcrContent = await fetchExistingOcrContent(documentType, documentId);
+                        if (existingOcrContent !== '') {
+                            showOcrText(existingOcrContent);
+                            return;
+                        }
+
+                        setOcrLoading('Running OCR extraction...');
+                        const extractedText = await extractOcrFromImages(imageSrcs, documentType);
+                        if (extractedText === '') {
+                            showOcrError('No text could be extracted from this document image.');
+                            return;
+                        }
+
+                        showOcrText(extractedText);
+                    } catch (error) {
+                        console.error('Dashboard OCR error:', error);
+                        showOcrError(`OCR processing failed: ${error.message}`);
+                    }
+                });
+            });
+
+            document.getElementById('editOcrText').addEventListener('click', function() {
+                textEditor.value = rawPre.textContent;
+                formattedView.style.display = 'none';
+                rawView.style.display = 'none';
+                editView.style.display = 'block';
+            });
+
+            document.getElementById('cancelEdit').addEventListener('click', function() {
+                editView.style.display = 'none';
+                formattedView.style.display = 'block';
+                rawView.style.display = 'none';
+                document.querySelectorAll('[data-view]').forEach(btn => {
+                    btn.classList.toggle('active', btn.getAttribute('data-view') === 'formatted');
+                });
+            });
+
+            document.getElementById('saveOcrText').addEventListener('click', async function() {
+                const saveButton = this;
+                const editedText = cleanOcrText(textEditor.value);
+                const documentId = parseInt(ocrDocumentId.value || '0', 10);
+                const documentType = (ocrDocumentType.value || '').trim();
+                const originalLabel = saveButton.innerHTML;
+
+                if (!documentId || documentType === '') {
+                    alert('Invalid document context.');
+                    return;
+                }
+                if (editedText === '') {
+                    alert('OCR text cannot be empty.');
+                    return;
+                }
+
+                saveButton.disabled = true;
+                saveButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+
+                try {
+                    const data = await saveOcrContent(documentId, documentType, editedText);
+                    showOcrText(editedText);
+                    prependOcrAlert('success', data.message || 'OCR content updated successfully.');
+                } catch (error) {
+                    console.error('Failed to save OCR content:', error);
+                    prependOcrAlert('danger', `Error updating OCR content: ${error.message}`);
+                } finally {
+                    saveButton.disabled = false;
+                    saveButton.innerHTML = originalLabel;
+                }
+            });
+
+            document.querySelectorAll('[data-view]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const viewType = this.getAttribute('data-view');
+                    document.querySelectorAll('[data-view]').forEach(button => {
+                        button.classList.toggle('active', button === this);
+                    });
+
+                    formattedView.style.display = viewType === 'formatted' ? 'block' : 'none';
+                    rawView.style.display = viewType === 'raw' ? 'block' : 'none';
+                    editView.style.display = 'none';
+                });
+            });
+
+            document.getElementById('copyOcrText').addEventListener('click', function() {
+                const text = rawPre.textContent;
+                if (!text.trim()) {
+                    return;
+                }
+
+                if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+                    alert('Clipboard access is unavailable in this browser.');
+                    return;
+                }
+
+                navigator.clipboard.writeText(text).then(() => {
+                    const originalHtml = this.innerHTML;
+                    this.innerHTML = '<i class="fas fa-check"></i>';
+                    setTimeout(() => {
+                        this.innerHTML = originalHtml;
+                    }, 1200);
+                }).catch(error => {
+                    console.error('Failed to copy OCR text:', error);
+                    alert('Failed to copy text to clipboard.');
                 });
             });
         });
