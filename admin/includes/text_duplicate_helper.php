@@ -307,19 +307,20 @@ if (!function_exists('buildTypoTolerantSearchVariants')) {
         $baseQuery = preg_replace('/\s+/u', ' ', $baseQuery) ?? $baseQuery;
         $variants = [$baseQuery];
 
-        if (!($conn instanceof mysqli)) {
-            return $variants;
-        }
+        try {
+            if (!($conn instanceof mysqli)) {
+                return $variants;
+            }
 
-        $config = getTypoSearchDocumentConfig($documentType);
-        if (!$config) {
-            return $variants;
-        }
+            $config = getTypoSearchDocumentConfig($documentType);
+            if (!$config) {
+                return $variants;
+            }
 
-        $queryTokens = tokenizeTypoSearchText($baseQuery);
-        if (empty($queryTokens)) {
-            return $variants;
-        }
+            $queryTokens = tokenizeTypoSearchText($baseQuery);
+            if (empty($queryTokens)) {
+                return $variants;
+            }
 
         $eligibleQueryTokens = [];
         foreach ($queryTokens as $index => $token) {
@@ -522,10 +523,14 @@ if (!function_exists('buildTypoTolerantSearchVariants')) {
             $correctedQuery = preg_replace('/\s+/u', ' ', $correctedQuery) ?? $correctedQuery;
         }
 
-        if ($correctedQuery !== '' && !in_array($correctedQuery, $variants, true)) {
-            $variants[] = $correctedQuery;
-        }
+            if ($correctedQuery !== '' && !in_array($correctedQuery, $variants, true)) {
+                $variants[] = $correctedQuery;
+            }
 
-        return array_slice($variants, 0, 3);
+            return array_slice($variants, 0, 3);
+        } catch (Throwable $e) {
+            error_log("Typo search variant generation failed for " . (string)$documentType . ": " . $e->getMessage());
+            return $variants;
+        }
     }
 }
