@@ -253,34 +253,12 @@ if ($chatbot_profile_picture_raw !== '') {
     .chatbot-doc-link {
         color: #0d6efd;
         text-decoration: underline;
-        text-underline-offset: 2px;
-        background: rgba(13, 110, 253, 0.12);
-        border-radius: 3px;
-        padding: 0 2px;
-        font-weight: 600;
         cursor: pointer;
     }
 
-    .chatbot-doc-link:hover {
-        color: #0a58ca;
-    }
-
-    .chatbot-doc-modal-body {
-        max-height: 70vh;
-        overflow-y: auto;
-    }
-
-    .chatbot-doc-preview-image {
-        display: block;
-        max-width: 100%;
-        height: auto;
-        margin: 0 auto 12px;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
-    }
-
-    .chatbot-doc-preview-image:last-child {
-        margin-bottom: 0;
+    .chatbot-doc-link:hover,
+    .chatbot-doc-link:focus {
+        color: #0d6efd;
     }
 
     .typing-indicator {
@@ -497,19 +475,6 @@ if ($chatbot_profile_picture_raw !== '') {
             onkeypress="handleChatKeyPress(event)"
         >
         <button class="chatbot-send-btn" id="chatbotSendBtn" onclick="sendMessage()">Send</button>
-    </div>
-</div>
-
-<!-- Chatbot Document Image Modal -->
-<div class="modal fade" id="chatbotDocumentImageModal" tabindex="-1" aria-labelledby="chatbotDocumentImageModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="chatbotDocumentImageModalLabel"><i class="fas fa-image me-2"></i><span id="chatbotDocumentImageTitle">Document Image</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body chatbot-doc-modal-body" id="chatbotDocumentImageBody"></div>
-        </div>
     </div>
 </div>
 
@@ -741,46 +706,20 @@ async function handleChatbotDocumentLinkClick(event) {
             throw new Error(data && data.error ? data.error : 'Document image not found.');
         }
         
-        showChatbotDocumentImageModal(data.document, link.textContent.trim());
+        openChatbotDocumentImage(data.document);
     } catch (error) {
         console.error('Document image preview error:', error);
         addMessageToChat("I couldn't load that document image.", 'bot');
     }
 }
 
-function showChatbotDocumentImageModal(documentData, fallbackLabel) {
-    const modalElement = document.getElementById('chatbotDocumentImageModal');
-    const modalTitle = document.getElementById('chatbotDocumentImageTitle');
-    const modalBody = document.getElementById('chatbotDocumentImageBody');
-    
-    if (!modalBody || !modalTitle) {
-        return;
-    }
-    
+function openChatbotDocumentImage(documentData) {
     const imagePaths = (Array.isArray(documentData.image_paths) ? documentData.image_paths : [])
         .map((path) => String(path).trim())
         .filter(Boolean);
-    const displayTitle = (documentData.number || fallbackLabel || 'Document Image').toString();
-    
-    modalTitle.textContent = displayTitle;
-    modalBody.innerHTML = '';
-    
-    if (imagePaths.length === 0) {
-        modalBody.innerHTML = '<p class="text-muted mb-0">No image available for this document.</p>';
-    } else {
-        imagePaths.forEach((src, index) => {
-            const img = document.createElement('img');
-            img.src = src;
-            img.alt = `${displayTitle} page ${index + 1}`;
-            img.className = 'chatbot-doc-preview-image';
-            modalBody.appendChild(img);
-        });
-    }
-    
-    if (modalElement && window.bootstrap && window.bootstrap.Modal) {
-        bootstrap.Modal.getOrCreateInstance(modalElement).show();
-    } else if (imagePaths[0]) {
-        window.open(imagePaths[0], '_blank', 'noopener');
+
+    if (imagePaths[0]) {
+        window.open(imagePaths[0], '_blank', 'noopener,noreferrer');
     }
 }
 
