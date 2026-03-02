@@ -261,6 +261,41 @@ if ($chatbot_profile_picture_raw !== '') {
         color: #0d6efd;
     }
 
+    #chatbotDocumentImageModal .modal-body {
+        background: #f8f9fb;
+        padding: 0;
+    }
+
+    #chatbotDocumentImageModal .carousel-inner {
+        max-height: 70vh;
+    }
+
+    #chatbotDocumentImageModal .carousel-item {
+        height: 70vh;
+        padding: 16px;
+    }
+
+    #chatbotDocumentImageModal .carousel-item img {
+        max-height: 100%;
+        max-width: 100%;
+        width: auto;
+        object-fit: contain;
+        display: block;
+        margin: 0 auto;
+        border-radius: 8px;
+    }
+
+    #chatbotDocumentImageModal .carousel-indicators [data-bs-target] {
+        background-color: #4a90d9;
+    }
+
+    #chatbotDocumentImageModal .chatbot-doc-empty {
+        margin: 0;
+        padding: 24px;
+        text-align: center;
+        color: #6c757d;
+    }
+
     .typing-indicator {
         display: flex;
         gap: 4px;
@@ -403,6 +438,11 @@ if ($chatbot_profile_picture_raw !== '') {
             right: 12px;
             bottom: 18px;
         }
+
+        #chatbotDocumentImageModal .carousel-item {
+            height: 55vh;
+            padding: 12px;
+        }
     }
 
     .chatbot-messages::-webkit-scrollbar {
@@ -486,7 +526,20 @@ if ($chatbot_profile_picture_raw !== '') {
                 <h5 class="modal-title" id="chatbotDocumentImageModalLabel">Document Image</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" id="chatbotDocumentImageBody"></div>
+            <div class="modal-body">
+                <div id="chatbotDocumentImageCarousel" class="carousel slide" data-bs-interval="false">
+                    <div class="carousel-indicators" id="chatbotDocumentImageIndicators"></div>
+                    <div class="carousel-inner" id="chatbotDocumentImageBody"></div>
+                    <button class="carousel-control-prev" id="chatbotDocumentImagePrev" type="button" data-bs-target="#chatbotDocumentImageCarousel" data-bs-slide="prev">
+                        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                        <span class="visually-hidden">Previous</span>
+                    </button>
+                    <button class="carousel-control-next" id="chatbotDocumentImageNext" type="button" data-bs-target="#chatbotDocumentImageCarousel" data-bs-slide="next">
+                        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                        <span class="visually-hidden">Next</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -738,25 +791,53 @@ function openChatbotDocumentImage(documentData) {
     const modalElement = document.getElementById('chatbotDocumentImageModal');
     const modalTitle = document.getElementById('chatbotDocumentImageModalLabel');
     const modalBody = document.getElementById('chatbotDocumentImageBody');
+    const modalIndicators = document.getElementById('chatbotDocumentImageIndicators');
+    const prevControl = document.getElementById('chatbotDocumentImagePrev');
+    const nextControl = document.getElementById('chatbotDocumentImageNext');
+    const carouselElement = document.getElementById('chatbotDocumentImageCarousel');
 
-    if (!modalElement || !modalBody) {
+    if (!modalElement || !modalBody || !modalIndicators || !prevControl || !nextControl || !carouselElement) {
         window.open(imagePaths[0], '_blank', 'noopener,noreferrer');
         return;
     }
 
     modalBody.innerHTML = '';
+    modalIndicators.innerHTML = '';
     if (modalTitle) {
         const numberText = (documentData && documentData.number) ? String(documentData.number).trim() : '';
         modalTitle.textContent = numberText ? `Document Image - ${numberText}` : 'Document Image';
     }
 
     imagePaths.forEach((src, index) => {
+        const item = document.createElement('div');
+        item.className = `carousel-item${index === 0 ? ' active' : ''}`;
+
         const img = document.createElement('img');
         img.src = src;
         img.alt = `Document image ${index + 1}`;
-        img.className = 'img-fluid rounded mb-2';
-        modalBody.appendChild(img);
+        item.appendChild(img);
+        modalBody.appendChild(item);
+
+        const indicator = document.createElement('button');
+        indicator.type = 'button';
+        indicator.setAttribute('data-bs-target', '#chatbotDocumentImageCarousel');
+        indicator.setAttribute('data-bs-slide-to', String(index));
+        indicator.setAttribute('aria-label', `Slide ${index + 1}`);
+        if (index === 0) {
+            indicator.className = 'active';
+            indicator.setAttribute('aria-current', 'true');
+        }
+        modalIndicators.appendChild(indicator);
     });
+
+    const hasMultipleImages = imagePaths.length > 1;
+    prevControl.style.display = hasMultipleImages ? '' : 'none';
+    nextControl.style.display = hasMultipleImages ? '' : 'none';
+    modalIndicators.style.display = hasMultipleImages ? '' : 'none';
+
+    if (window.bootstrap && window.bootstrap.Carousel) {
+        bootstrap.Carousel.getOrCreateInstance(carouselElement).to(0);
+    }
 
     if (window.bootstrap && window.bootstrap.Modal) {
         bootstrap.Modal.getOrCreateInstance(modalElement).show();
