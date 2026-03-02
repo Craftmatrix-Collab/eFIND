@@ -478,6 +478,19 @@ if ($chatbot_profile_picture_raw !== '') {
     </div>
 </div>
 
+<!-- Chatbot Document Image Modal -->
+<div class="modal fade" id="chatbotDocumentImageModal" tabindex="-1" aria-labelledby="chatbotDocumentImageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="chatbotDocumentImageModalLabel">Document Image</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="chatbotDocumentImageBody"></div>
+        </div>
+    </div>
+</div>
+
 <script>
 // Chatbot Widget JavaScript
 let chatbotIsOpen = false;
@@ -718,7 +731,36 @@ function openChatbotDocumentImage(documentData) {
         .map((path) => String(path).trim())
         .filter(Boolean);
 
-    if (imagePaths[0]) {
+    if (!imagePaths.length) {
+        return;
+    }
+
+    const modalElement = document.getElementById('chatbotDocumentImageModal');
+    const modalTitle = document.getElementById('chatbotDocumentImageModalLabel');
+    const modalBody = document.getElementById('chatbotDocumentImageBody');
+
+    if (!modalElement || !modalBody) {
+        window.open(imagePaths[0], '_blank', 'noopener,noreferrer');
+        return;
+    }
+
+    modalBody.innerHTML = '';
+    if (modalTitle) {
+        const numberText = (documentData && documentData.number) ? String(documentData.number).trim() : '';
+        modalTitle.textContent = numberText ? `Document Image - ${numberText}` : 'Document Image';
+    }
+
+    imagePaths.forEach((src, index) => {
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = `Document image ${index + 1}`;
+        img.className = 'img-fluid rounded mb-2';
+        modalBody.appendChild(img);
+    });
+
+    if (window.bootstrap && window.bootstrap.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    } else {
         window.open(imagePaths[0], '_blank', 'noopener,noreferrer');
     }
 }
