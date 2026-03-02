@@ -201,9 +201,9 @@ class BarangayChatbotAPI {
 
     private function findDocumentByNumber($documentType, $documentNumber) {
         $lookupConfig = [
-            'resolution' => ['table' => 'resolutions', 'number_column' => 'resolution_number'],
-            'executive_order' => ['table' => 'executive_orders', 'number_column' => 'executive_order_number'],
-            'minutes' => ['table' => 'minutes_of_meeting', 'number_column' => 'session_number']
+            'resolution' => ['table' => 'resolutions', 'number_column' => 'resolution_number', 'reference_column' => 'reference_number'],
+            'executive_order' => ['table' => 'executive_orders', 'number_column' => 'executive_order_number', 'reference_column' => 'reference_number'],
+            'minutes' => ['table' => 'minutes_of_meeting', 'number_column' => 'session_number', 'reference_column' => 'reference_number']
         ];
 
         if (!isset($lookupConfig[$documentType])) {
@@ -212,6 +212,7 @@ class BarangayChatbotAPI {
 
         $table = $lookupConfig[$documentType]['table'];
         $numberColumn = $lookupConfig[$documentType]['number_column'];
+        $referenceColumn = $lookupConfig[$documentType]['reference_column'];
         $normalizedNumber = $this->normalizeDocumentNumber($documentNumber);
 
         if ($normalizedNumber === '') {
@@ -219,11 +220,14 @@ class BarangayChatbotAPI {
         }
 
         $normalizedColumnExpression = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(TRIM(COALESCE($numberColumn, ''))), '-', ''), ' ', ''), '/', ''), '.', ''), '#', '')";
+        $normalizedReferenceExpression = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(TRIM(COALESCE($referenceColumn, ''))), '-', ''), ' ', ''), '/', ''), '.', ''), '#', '')";
 
-        $sql = "SELECT id, title, $numberColumn AS document_number, image_path
+        $sql = "SELECT id, title, $numberColumn AS document_number, $referenceColumn AS reference_number, image_path
                 FROM $table
                 WHERE UPPER(TRIM(COALESCE($numberColumn, ''))) = UPPER(?)
+                   OR UPPER(TRIM(COALESCE($referenceColumn, ''))) = UPPER(?)
                    OR $normalizedColumnExpression = ?
+                   OR $normalizedReferenceExpression = ?
                 ORDER BY id DESC
                 LIMIT 1";
 
@@ -233,18 +237,108 @@ class BarangayChatbotAPI {
             return null;
         }
 
-        $stmt->bind_param("ss", $documentNumber, $normalizedNumber);
+        $stmt->bind_param("ssss", $documentNumber, $documentNumber, $normalizedNumber, $normalizedNumber);
         $stmt->execute();
         $result = $stmt->get_result();
         $row = $result ? $result->fetch_assoc() : null;
         $stmt->close();
 
-        return $row ?: null;
+        if ($row) {
+            return $row;
+        }
+
+        // Fallback matching for format variants (e.g., EO-2025-001 vs 2025-001)
+        $fallbackSql = "SELECT id, title, $numberColumn AS document_number, $referenceColumn AS reference_number, image_path
+                        FROM $table
+                        ORDER BY id DESC
+                        LIMIT 500";
+        $fallbackStmt = $this->db->prepare($fallbackSql);
+        if (!$fallbackStmt) {
+            $this->log("Failed to prepare fallback lookup query for type: $documentType");
+            return null;
+        }
+
+        $fallbackStmt->execute();
+        $fallbackResult = $fallbackStmt->get_result();
+        if ($fallbackResult) {
+            while ($candidate = $fallbackResult->fetch_assoc()) {
+                if ($this->isDocumentNumberMatch($documentNumber, $candidate['document_number'] ?? '', $documentType)) {
+                    $fallbackStmt->close();
+                    return $candidate;
+                }
+
+                if ($this->isDocumentNumberMatch($documentNumber, $candidate['reference_number'] ?? '', $documentType)) {
+                    $fallbackStmt->close();
+                    return $candidate;
+                }
+            }
+        }
+
+        $fallbackStmt->close();
+        return null;
     }
 
     private function normalizeDocumentNumber($value) {
         $upperValue = strtoupper(trim((string)$value));
         return preg_replace('/[^A-Z0-9]/', '', $upperValue);
+    }
+
+    private function stripDocumentPrefix($normalizedValue, $documentType) {
+        $prefixesByType = [
+            'resolution' => ['RESOLUTION', 'RES'],
+            'executive_order' => ['EXECUTIVEORDER', 'EO'],
+            'minutes' => ['MINUTESOFMEETING', 'MEETINGMINUTES', 'MINUTES', 'SESSION']
+        ];
+
+        if (!isset($prefixesByType[$documentType])) {
+            return $normalizedValue;
+        }
+
+        foreach ($prefixesByType[$documentType] as $prefix) {
+            if (str_starts_with($normalizedValue, $prefix)) {
+                $stripped = substr($normalizedValue, strlen($prefix));
+                return $stripped !== '' ? $stripped : $normalizedValue;
+            }
+        }
+
+        return $normalizedValue;
+    }
+
+    private function isDocumentNumberMatch($requestedNumber, $storedNumber, $documentType) {
+        $requestedNormalized = $this->normalizeDocumentNumber($requestedNumber);
+        $storedNormalized = $this->normalizeDocumentNumber($storedNumber);
+
+        if ($requestedNormalized === '' || $storedNormalized === '') {
+            return false;
+        }
+
+        if ($requestedNormalized === $storedNormalized) {
+            return true;
+        }
+
+        $requestedStripped = $this->stripDocumentPrefix($requestedNormalized, $documentType);
+        $storedStripped = $this->stripDocumentPrefix($storedNormalized, $documentType);
+
+        if ($requestedStripped !== '' && $requestedStripped === $storedStripped) {
+            return true;
+        }
+
+        $requestedDigits = preg_replace('/[^0-9]/', '', $requestedNormalized);
+        $storedDigits = preg_replace('/[^0-9]/', '', $storedNormalized);
+
+        if (strlen($requestedDigits) >= 4 && $requestedDigits === $storedDigits) {
+            return true;
+        }
+
+        if (strlen($requestedStripped) >= 6 && str_contains($storedStripped, $requestedStripped)) {
+            return true;
+        }
+
+        if (strlen($storedStripped) >= 6 && str_contains($requestedStripped, $storedStripped)) {
+            return true;
+        }
+
+        return false;
     }
 
     private function splitImagePaths($imagePath) {
