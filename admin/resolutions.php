@@ -765,6 +765,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_resolution' && isset($_GE
 
 // Handle search, pagination, and sort functionality
 $search_query = isset($_GET['search_query']) ? trim($_GET['search_query']) : '';
+$search_query = preg_replace('/\s+/', ' ', $search_query) ?? '';
+$search_length = function_exists('mb_strlen') ? mb_strlen($search_query) : strlen($search_query);
+if ($search_length > 100) {
+    $search_query = function_exists('mb_substr') ? mb_substr($search_query, 0, 100) : substr($search_query, 0, 100);
+    $search_length = function_exists('mb_strlen') ? mb_strlen($search_query) : strlen($search_query);
+}
 $year = isset($_GET['year']) ? $_GET['year'] : '';
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'resolution_date_desc';
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
@@ -789,24 +795,41 @@ $where_clauses = [];
 
 // Add search condition if search query is provided
 if (!empty($search_query)) {
-    $search_like = "%" . $search_query . "%";
-    $searchFields = [
-        "CAST(id AS CHAR) LIKE ?",
-        "title LIKE ?",
-        "COALESCE(description, '') LIKE ?",
-        "COALESCE(reference_number, '') LIKE ?",
-        "COALESCE(resolution_number, '') LIKE ?",
-        "COALESCE(date_posted, '') LIKE ?",
-        "COALESCE(resolution_date, '') LIKE ?",
-        "COALESCE(content, '') LIKE ?",
-        "COALESCE(image_path, '') LIKE ?",
-        "COALESCE(date_issued, '') LIKE ?",
-        "COALESCE(uploaded_by, '') LIKE ?"
-    ];
-    $where_clauses[] = "(" . implode(" OR ", $searchFields) . ")";
-    $searchParams = array_fill(0, count($searchFields), $search_like);
-    $params = array_merge($params, $searchParams);
-    $types .= str_repeat('s', count($searchFields));
+    $hasSearchToken = preg_match('/[\p{L}\p{N}]/u', $search_query) === 1;
+    if ($search_length >= 2 && $hasSearchToken) {
+        $searchFields = [
+            "CAST(id AS CHAR) LIKE ?",
+            "title LIKE ?",
+            "COALESCE(description, '') LIKE ?",
+            "COALESCE(reference_number, '') LIKE ?",
+            "COALESCE(resolution_number, '') LIKE ?",
+            "COALESCE(date_posted, '') LIKE ?",
+            "COALESCE(resolution_date, '') LIKE ?",
+            "COALESCE(content, '') LIKE ?",
+            "COALESCE(image_path, '') LIKE ?",
+            "COALESCE(date_issued, '') LIKE ?",
+            "COALESCE(uploaded_by, '') LIKE ?"
+        ];
+
+        $searchVariants = buildTypoTolerantSearchVariants($conn, 'resolution', $search_query);
+        if (empty($searchVariants)) {
+            $searchVariants = [$search_query];
+        }
+
+        $searchVariantClauses = [];
+        foreach ($searchVariants as $searchVariant) {
+            $search_like = "%" . $searchVariant . "%";
+            $searchVariantClauses[] = "(" . implode(" OR ", $searchFields) . ")";
+            $searchParams = array_fill(0, count($searchFields), $search_like);
+            $params = array_merge($params, $searchParams);
+            $types .= str_repeat('s', count($searchFields));
+        }
+        if (!empty($searchVariantClauses)) {
+            $where_clauses[] = "(" . implode(" OR ", $searchVariantClauses) . ")";
+        }
+    } else {
+        $search_query = '';
+    }
 }
 
 // Add year condition if year is provided

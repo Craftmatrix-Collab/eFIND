@@ -878,19 +878,35 @@ $fullTextMatchSql = "MATCH(title, description, reference_number, executive_order
 if (!empty($search_query)) {
     $hasSearchToken = preg_match('/[\p{L}\p{N}]/u', $search_query) === 1;
     if ($search_length >= 2 && $hasSearchToken) {
+        $searchVariants = buildTypoTolerantSearchVariants($conn, 'executive_order', $search_query);
+        if (empty($searchVariants)) {
+            $searchVariants = [$search_query];
+        }
+
         if ($hasExecutiveOrderFullTextIndex === null) {
             $hasExecutiveOrderFullTextIndex = ensureExecutiveOrderFullTextIndex($conn);
         }
         if ($hasExecutiveOrderFullTextIndex) {
             $searchUsesFullText = true;
-            $relevanceSelectSql = "$fullTextMatchSql AS relevance_score";
-            $selectParams[] = $search_query;
-            $selectTypes .= 's';
-            $where_clauses[] = "$fullTextMatchSql > 0";
-            $whereParams[] = $search_query;
-            $whereTypes .= 's';
+            $relevanceParts = [];
+            $fullTextWhereClauses = [];
+            foreach ($searchVariants as $searchVariant) {
+                $relevanceParts[] = $fullTextMatchSql;
+                $selectParams[] = $searchVariant;
+                $selectTypes .= 's';
+
+                $fullTextWhereClauses[] = "$fullTextMatchSql > 0";
+                $whereParams[] = $searchVariant;
+                $whereTypes .= 's';
+            }
+
+            if (!empty($relevanceParts)) {
+                $relevanceSelectSql = "(" . implode(" + ", $relevanceParts) . ") AS relevance_score";
+            }
+            if (!empty($fullTextWhereClauses)) {
+                $where_clauses[] = "(" . implode(" OR ", $fullTextWhereClauses) . ")";
+            }
         } else {
-            $search_like = "%" . $search_query . "%";
             $searchFields = [
                 "CAST(id AS CHAR) LIKE ?",
                 "title LIKE ?",
@@ -906,10 +922,17 @@ if (!empty($search_query)) {
                 "COALESCE(file_path, '') LIKE ?",
                 "COALESCE(uploaded_by, '') LIKE ?"
             ];
-            $where_clauses[] = "(" . implode(" OR ", $searchFields) . ")";
-            $searchParams = array_fill(0, count($searchFields), $search_like);
-            $whereParams = array_merge($whereParams, $searchParams);
-            $whereTypes .= str_repeat('s', count($searchFields));
+            $searchVariantClauses = [];
+            foreach ($searchVariants as $searchVariant) {
+                $search_like = "%" . $searchVariant . "%";
+                $searchVariantClauses[] = "(" . implode(" OR ", $searchFields) . ")";
+                $searchParams = array_fill(0, count($searchFields), $search_like);
+                $whereParams = array_merge($whereParams, $searchParams);
+                $whereTypes .= str_repeat('s', count($searchFields));
+            }
+            if (!empty($searchVariantClauses)) {
+                $where_clauses[] = "(" . implode(" OR ", $searchVariantClauses) . ")";
+            }
         }
     } else {
         $search_query = '';
