@@ -498,6 +498,10 @@ if (!function_exists('buildTypoTolerantSearchVariants')) {
                 if ($distance < $bestDistance) {
                     $bestDistance = $distance;
                     $bestCandidate = $candidate;
+                    // Exact match is already excluded, so distance 1 is optimal here.
+                    if ($bestDistance <= 1) {
+                        break;
+                    }
                 }
             }
 

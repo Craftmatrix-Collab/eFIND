@@ -787,9 +787,13 @@ if (!empty($search_query)) {
 
 // Add year condition if year is provided
 if (!empty($year)) {
-    $where_clauses[] = "YEAR(meeting_date) = ?";
-    $params[] = $year;
-    $types .= 's';
+    if (preg_match('/^\d{4}$/', (string)$year)) {
+        $where_clauses[] = "YEAR(meeting_date) = ?";
+        $params[] = intval($year);
+        $types .= 'i';
+    } else {
+        $year = '';
+    }
 }
 
 // Build the query
