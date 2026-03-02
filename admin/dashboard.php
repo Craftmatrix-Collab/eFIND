@@ -1463,6 +1463,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                                                 data-image-src="<?= htmlspecialchars($document['image_path']) ?>"
                                                                 data-document-type="<?= $document['doc_type'] ?>"
                                                                 data-document-id="<?= $document['id'] ?>"
+                                                                data-existing-content="<?= htmlspecialchars((string)($document['content'] ?? ''), ENT_QUOTES) ?>"
                                                                 data-bs-toggle="modal"
                                                                 data-bs-target="#ocrModal"
                                                                 data-bs-placement="top"
@@ -2247,6 +2248,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                         .filter(Boolean);
                     const documentId = parseInt(btn.getAttribute('data-document-id') || '0', 10);
                     const documentType = (btn.getAttribute('data-document-type') || '').trim();
+                    const existingInlineContent = cleanOcrText(btn.getAttribute('data-existing-content') || '');
 
                     if (!documentId || documentType === '' || imageSrcs.length === 0) {
                         alert('Unable to start OCR for this document.');
@@ -2280,9 +2282,19 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                             return;
                         }
 
+                        if (existingInlineContent !== '') {
+                            showOcrText(existingInlineContent);
+                            return;
+                        }
+
                         setOcrLoading('Running OCR extraction...');
                         const extractedText = await extractOcrFromImages(imageSrcs, documentType);
                         if (extractedText === '') {
+                            if (existingInlineContent !== '') {
+                                showOcrText(existingInlineContent);
+                                prependOcrAlert('warning', 'No new OCR text was extracted. Showing saved text instead.');
+                                return;
+                            }
                             showOcrError('No text could be extracted from this document image.');
                             return;
                         }
