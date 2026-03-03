@@ -1693,6 +1693,20 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     </nav>
                 </div>
             </div>
+
+            <div class="documents-table-section card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-circle-question me-2"></i>Help</h5>
+                </div>
+                <div class="card-body p-3">
+                    <p class="mb-2">Need help with the system? Message a developer directly via Gmail:</p>
+                    <ul class="mb-0">
+                        <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=eys.acads@gmail.com" target="_blank" rel="noopener">eys.acads@gmail.com</a></li>
+                        <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=sierra.pacilan1@gmail.com" target="_blank" rel="noopener">sierra.pacilan1@gmail.com</a></li>
+                        <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=erwinbartolome4@gmail.com" target="_blank" rel="noopener">erwinbartolome4@gmail.com</a></li>
+                    </ul>
+                </div>
+            </div>
         </div>
     </div>
     <!-- Chatbot Button -->
