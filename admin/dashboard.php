@@ -2,6 +2,7 @@
 include('includes/auth.php');
 include('includes/config.php');
 include(__DIR__ . '/includes/logger.php');
+include(__DIR__ . '/includes/text_duplicate_helper.php');
 
 // Check if user is logged in - redirect to login if not
 if (!isLoggedIn()) {
@@ -36,8 +37,87 @@ $valid_sorts = [
     'type_desc' => 'doc_type DESC'
 ];
 $sort_clause = $valid_sorts[$sort_by] ?? 'date_posted DESC';
+
+function ensureDashboardFullTextIndex($conn, $tableName, $indexName, array $columns) {
+    $checkStmt = $conn->prepare("
+        SELECT 1
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = ?
+          AND index_name = ?
+        LIMIT 1
+    ");
+
+    if (!$checkStmt) {
+        error_log("Failed to prepare dashboard fulltext index check: " . $conn->error);
+        return false;
+    }
+
+    $checkStmt->bind_param("ss", $tableName, $indexName);
+    $checkStmt->execute();
+    $result = $checkStmt->get_result();
+    $indexExists = $result && $result->num_rows > 0;
+    $checkStmt->close();
+
+    if ($indexExists) {
+        return true;
+    }
+
+    $safeColumns = [];
+    foreach ($columns as $column) {
+        $columnName = trim((string)$column);
+        if ($columnName !== '' && preg_match('/^[A-Za-z0-9_]+$/', $columnName) === 1) {
+            $safeColumns[] = $columnName;
+        }
+    }
+    if (empty($safeColumns) || preg_match('/^[A-Za-z0-9_]+$/', $tableName) !== 1 || preg_match('/^[A-Za-z0-9_]+$/', $indexName) !== 1) {
+        return false;
+    }
+
+    $createIndexSql = "ALTER TABLE {$tableName} ADD FULLTEXT INDEX {$indexName} (" . implode(', ', $safeColumns) . ")";
+    if (!$conn->query($createIndexSql)) {
+        error_log("Failed to create dashboard fulltext index {$indexName}: " . $conn->error);
+        return false;
+    }
+
+    return true;
+}
+
+function ensureDashboardExecutiveOrderFullTextIndex($conn) {
+    return ensureDashboardFullTextIndex(
+        $conn,
+        'executive_orders',
+        'idx_executive_orders_fulltext',
+        ['title', 'description', 'reference_number', 'executive_order_number', 'status', 'content', 'uploaded_by']
+    );
+}
+
+function ensureDashboardResolutionFullTextIndex($conn) {
+    return ensureDashboardFullTextIndex(
+        $conn,
+        'resolutions',
+        'idx_resolutions_fulltext',
+        ['title', 'description', 'reference_number', 'resolution_number', 'content', 'uploaded_by']
+    );
+}
+
+function ensureDashboardMinutesFullTextIndex($conn) {
+    return ensureDashboardFullTextIndex(
+        $conn,
+        'minutes_of_meeting',
+        'idx_minutes_fulltext',
+        ['title', 'reference_number', 'session_number', 'content', 'uploaded_by']
+    );
+}
+
 // Handle search functionality
 $search_query = isset($_GET['search_query']) ? trim($_GET['search_query']) : '';
+$search_query = preg_replace('/\s+/', ' ', $search_query) ?? '';
+$search_length = function_exists('mb_strlen') ? mb_strlen($search_query) : strlen($search_query);
+if ($search_length > 100) {
+    $search_query = function_exists('mb_substr') ? mb_substr($search_query, 0, 100) : substr($search_query, 0, 100);
+    $search_length = function_exists('mb_strlen') ? mb_strlen($search_query) : strlen($search_query);
+}
 $document_type = isset($_GET['document_type']) ? $_GET['document_type'] : '';
 $year = isset($_GET['year']) ? $_GET['year'] : '';
 $is_superadmin_dashboard = function_exists('isSuperAdmin') && isSuperAdmin();
@@ -53,6 +133,82 @@ $dashboard_search_placeholder = 'Search any document field (title, number, refer
 if (!empty($year) && (!is_numeric($year) || $year < 1900 || $year > date('Y'))) {
     $year = '';
 }
+
+$searchUsesFullText = false;
+$searchVariants = [];
+$baseQueryParams = [];
+$baseQueryTypes = '';
+$executiveOrderRelevanceSql = "0";
+$resolutionRelevanceSql = "0";
+$minutesRelevanceSql = "0";
+
+if (!empty($search_query)) {
+    $hasSearchToken = preg_match('/[\p{L}\p{N}]/u', $search_query) === 1;
+    if ($search_length >= 2 && $hasSearchToken) {
+        $variantsByType = [
+            buildTypoTolerantSearchVariants($conn, 'executive_order', $search_query),
+            buildTypoTolerantSearchVariants($conn, 'resolution', $search_query),
+            buildTypoTolerantSearchVariants($conn, 'minutes', $search_query)
+        ];
+
+        foreach ($variantsByType as $variantList) {
+            if (!is_array($variantList)) {
+                continue;
+            }
+            foreach ($variantList as $variant) {
+                $cleanVariant = trim((string)$variant);
+                if ($cleanVariant !== '' && !in_array($cleanVariant, $searchVariants, true)) {
+                    $searchVariants[] = $cleanVariant;
+                }
+            }
+        }
+        if (empty($searchVariants)) {
+            $searchVariants = [$search_query];
+        }
+        $searchVariants = array_slice($searchVariants, 0, 3);
+
+        $hasAllFullTextIndexes =
+            ensureDashboardExecutiveOrderFullTextIndex($conn) &&
+            ensureDashboardResolutionFullTextIndex($conn) &&
+            ensureDashboardMinutesFullTextIndex($conn);
+
+        if ($hasAllFullTextIndexes) {
+            $searchUsesFullText = true;
+
+            $eoMatchSql = "MATCH(o.title, o.description, o.reference_number, o.executive_order_number, o.status, o.content, o.uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
+            $resolutionMatchSql = "MATCH(r.title, r.description, r.reference_number, r.resolution_number, r.content, r.uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
+            $minutesMatchSql = "MATCH(m.title, m.reference_number, m.session_number, m.content, m.uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
+
+            $eoRelevanceParts = [];
+            $resolutionRelevanceParts = [];
+            $minutesRelevanceParts = [];
+
+            foreach ($searchVariants as $searchVariant) {
+                $eoRelevanceParts[] = $eoMatchSql;
+                $resolutionRelevanceParts[] = $resolutionMatchSql;
+                $minutesRelevanceParts[] = $minutesMatchSql;
+
+                $baseQueryParams[] = $searchVariant;
+                $baseQueryParams[] = $searchVariant;
+                $baseQueryParams[] = $searchVariant;
+                $baseQueryTypes .= 'sss';
+            }
+
+            if (!empty($eoRelevanceParts)) {
+                $executiveOrderRelevanceSql = "(" . implode(" + ", $eoRelevanceParts) . ")";
+            }
+            if (!empty($resolutionRelevanceParts)) {
+                $resolutionRelevanceSql = "(" . implode(" + ", $resolutionRelevanceParts) . ")";
+            }
+            if (!empty($minutesRelevanceParts)) {
+                $minutesRelevanceSql = "(" . implode(" + ", $minutesRelevanceParts) . ")";
+            }
+        }
+    } else {
+        $search_query = '';
+    }
+}
+
 // Build base query
 $base_query = "
     SELECT * FROM (
@@ -68,7 +224,8 @@ $base_query = "
             o.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
             o.date_posted as date_posted,
-            o.image_path
+            o.image_path,
+            {$executiveOrderRelevanceSql} as relevance_score
         FROM executive_orders o
         LEFT JOIN users u ON o.uploaded_by = u.username
         LEFT JOIN admin_users au ON o.uploaded_by = au.username
@@ -85,7 +242,8 @@ $base_query = "
             r.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
             r.date_posted as date_posted,
-            r.image_path
+            r.image_path,
+            {$resolutionRelevanceSql} as relevance_score
         FROM resolutions r
         LEFT JOIN users u ON r.uploaded_by = u.username
         LEFT JOIN admin_users au ON r.uploaded_by = au.username
@@ -102,7 +260,8 @@ $base_query = "
             m.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
             m.date_posted as date_posted,
-            m.image_path
+            m.image_path,
+            {$minutesRelevanceSql} as relevance_score
         FROM minutes_of_meeting m
         LEFT JOIN users u ON m.uploaded_by = u.username
         LEFT JOIN admin_users au ON m.uploaded_by = au.username
@@ -112,42 +271,58 @@ $base_query .= "
 ";
 // Build WHERE conditions
 $where_conditions = [];
-$params = [];
-$types = '';
+$whereParams = [];
+$whereTypes = '';
 if (!empty($search_query)) {
-    $search_terms = "%" . $search_query . "%";
-    $where_conditions[] = "(CAST(id AS CHAR) LIKE ? OR doc_type LIKE ? OR title LIKE ? OR COALESCE(reference_number, '') LIKE ? OR COALESCE(document_number, '') LIKE ? OR COALESCE(document_status, '') LIKE ? OR COALESCE(document_description, '') LIKE ? OR COALESCE(content, '') LIKE ? OR COALESCE(uploaded_by, '') LIKE ? OR COALESCE(date_posted, '') LIKE ? OR COALESCE(image_path, '') LIKE ?)";
-    $types .= 'sssssssssss';
-    $params = array_merge($params, [
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms
-    ]);
+    if ($searchUsesFullText) {
+        $where_conditions[] = "relevance_score > 0";
+    } else {
+        if (empty($searchVariants)) {
+            $searchVariants = [$search_query];
+        }
+
+        $searchFieldsSql = "CAST(id AS CHAR) LIKE ? OR doc_type LIKE ? OR title LIKE ? OR COALESCE(reference_number, '') LIKE ? OR COALESCE(document_number, '') LIKE ? OR COALESCE(document_status, '') LIKE ? OR COALESCE(document_description, '') LIKE ? OR COALESCE(content, '') LIKE ? OR COALESCE(uploaded_by, '') LIKE ? OR COALESCE(date_posted, '') LIKE ? OR COALESCE(image_path, '') LIKE ?";
+        $searchVariantClauses = [];
+        foreach ($searchVariants as $searchVariant) {
+            $search_terms = "%" . $searchVariant . "%";
+            $searchVariantClauses[] = "(" . $searchFieldsSql . ")";
+            $whereTypes .= 'sssssssssss';
+            $whereParams = array_merge($whereParams, [
+                $search_terms,
+                $search_terms,
+                $search_terms,
+                $search_terms,
+                $search_terms,
+                $search_terms,
+                $search_terms,
+                $search_terms,
+                $search_terms,
+                $search_terms,
+                $search_terms
+            ]);
+        }
+        if (!empty($searchVariantClauses)) {
+            $where_conditions[] = "(" . implode(" OR ", $searchVariantClauses) . ")";
+        }
+    }
 }
 if (!empty($year)) {
     $where_conditions[] = "YEAR(date_posted) = ?";
-    $types .= 's';
-    $params = array_merge($params, [$year]);
+    $whereTypes .= 's';
+    $whereParams[] = $year;
 }
 if (!empty($document_type)) {
     $where_conditions[] = "doc_type = ?";
-    $types .= 's';
-    $params = array_merge($params, [$document_type]);
+    $whereTypes .= 's';
+    $whereParams[] = $document_type;
 }
 // Build final query
 $where_clause = empty($where_conditions) ? "" : " WHERE " . implode(" AND ", $where_conditions);
-$all_documents_query = $base_query . $where_clause . " ORDER BY " . $sort_clause . " LIMIT ? OFFSET ?";
-// Add pagination parameters
-$types .= 'ii';
-$params = array_merge($params, [$table_limit, $offset]);
+$order_clause = $searchUsesFullText ? " ORDER BY relevance_score DESC, " . $sort_clause : " ORDER BY " . $sort_clause;
+$all_documents_query = $base_query . $where_clause . $order_clause . " LIMIT ? OFFSET ?";
+
+$types = $baseQueryTypes . $whereTypes . 'ii';
+$params = array_merge($baseQueryParams, $whereParams, [$table_limit, $offset]);
 // Execute main query
 $stmt = $conn->prepare($all_documents_query);
 if ($stmt) {
@@ -163,40 +338,9 @@ if ($stmt) {
     error_log("Database query error: " . $conn->error);
 }
 // Fetch total count for pagination
-$count_query = $base_query;
-if (!empty($where_conditions)) {
-    $count_query .= " WHERE " . implode(" AND ", $where_conditions);
-}
-// Remove ORDER BY and LIMIT for count query
-$count_query = "SELECT COUNT(*) as total FROM (" . $count_query . ") as count_table";
-// Prepare count query with parameters (without pagination params)
-$count_params = [];
-$count_types = '';
-if (!empty($search_query)) {
-    $search_terms = "%" . $search_query . "%";
-    $count_types .= 'sssssssssss';
-    $count_params = array_merge($count_params, [
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms,
-        $search_terms
-    ]);
-}
-if (!empty($year)) {
-    $count_types .= 's';
-    $count_params = array_merge($count_params, [$year]);
-}
-if (!empty($document_type)) {
-    $count_types .= 's';
-    $count_params = array_merge($count_params, [$document_type]);
-}
+$count_query = "SELECT COUNT(*) as total FROM (" . $base_query . $where_clause . ") as count_table";
+$count_types = $baseQueryTypes . $whereTypes;
+$count_params = array_merge($baseQueryParams, $whereParams);
 $count_stmt = $conn->prepare($count_query);
 if ($count_stmt) {
     if (!empty($count_types)) {

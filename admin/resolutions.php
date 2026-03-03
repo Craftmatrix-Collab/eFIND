@@ -79,6 +79,46 @@ if (!ensureDocumentImageHashTable($conn)) {
     error_log("Failed to ensure document_image_hashes table: " . $conn->error);
 }
 
+function ensureResolutionFullTextIndex($conn) {
+    $indexName = 'idx_resolutions_fulltext';
+    $checkStmt = $conn->prepare("
+        SELECT 1
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = 'resolutions'
+          AND index_name = ?
+        LIMIT 1
+    ");
+
+    if (!$checkStmt) {
+        error_log("Failed to prepare resolution fulltext index check: " . $conn->error);
+        return false;
+    }
+
+    $checkStmt->bind_param("s", $indexName);
+    $checkStmt->execute();
+    $result = $checkStmt->get_result();
+    $indexExists = $result && $result->num_rows > 0;
+    $checkStmt->close();
+
+    if ($indexExists) {
+        return true;
+    }
+
+    $createIndexSql = "ALTER TABLE resolutions
+        ADD FULLTEXT INDEX idx_resolutions_fulltext
+        (title, description, reference_number, resolution_number, content, uploaded_by)";
+
+    if (!$conn->query($createIndexSql)) {
+        error_log("Failed to create resolutions fulltext index: " . $conn->error);
+        return false;
+    }
+
+    return true;
+}
+
+$hasResolutionFullTextIndex = null;
+
 // Function to generate reference number for resolutions
 function generateReferenceNumber($conn, $resolution_date = null) {
     if ($resolution_date) {
@@ -791,41 +831,73 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
 // Initialize parameters and types for search
 $params = [];
 $types = '';
+$selectParams = [];
+$selectTypes = '';
+$whereParams = [];
+$whereTypes = '';
 $where_clauses = [];
+$searchUsesFullText = false;
+$relevanceSelectSql = "0 AS relevance_score";
+$fullTextMatchSql = "MATCH(title, description, reference_number, resolution_number, content, uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
 
 // Add search condition if search query is provided
 if (!empty($search_query)) {
     $hasSearchToken = preg_match('/[\p{L}\p{N}]/u', $search_query) === 1;
     if ($search_length >= 2 && $hasSearchToken) {
-        $searchFields = [
-            "CAST(id AS CHAR) LIKE ?",
-            "title LIKE ?",
-            "COALESCE(description, '') LIKE ?",
-            "COALESCE(reference_number, '') LIKE ?",
-            "COALESCE(resolution_number, '') LIKE ?",
-            "COALESCE(date_posted, '') LIKE ?",
-            "COALESCE(resolution_date, '') LIKE ?",
-            "COALESCE(content, '') LIKE ?",
-            "COALESCE(image_path, '') LIKE ?",
-            "COALESCE(date_issued, '') LIKE ?",
-            "COALESCE(uploaded_by, '') LIKE ?"
-        ];
-
         $searchVariants = buildTypoTolerantSearchVariants($conn, 'resolution', $search_query);
         if (empty($searchVariants)) {
             $searchVariants = [$search_query];
         }
 
-        $searchVariantClauses = [];
-        foreach ($searchVariants as $searchVariant) {
-            $search_like = "%" . $searchVariant . "%";
-            $searchVariantClauses[] = "(" . implode(" OR ", $searchFields) . ")";
-            $searchParams = array_fill(0, count($searchFields), $search_like);
-            $params = array_merge($params, $searchParams);
-            $types .= str_repeat('s', count($searchFields));
+        if ($hasResolutionFullTextIndex === null) {
+            $hasResolutionFullTextIndex = ensureResolutionFullTextIndex($conn);
         }
-        if (!empty($searchVariantClauses)) {
-            $where_clauses[] = "(" . implode(" OR ", $searchVariantClauses) . ")";
+        if ($hasResolutionFullTextIndex) {
+            $searchUsesFullText = true;
+            $relevanceParts = [];
+            $fullTextWhereClauses = [];
+            foreach ($searchVariants as $searchVariant) {
+                $relevanceParts[] = $fullTextMatchSql;
+                $selectParams[] = $searchVariant;
+                $selectTypes .= 's';
+
+                $fullTextWhereClauses[] = "$fullTextMatchSql > 0";
+                $whereParams[] = $searchVariant;
+                $whereTypes .= 's';
+            }
+
+            if (!empty($relevanceParts)) {
+                $relevanceSelectSql = "(" . implode(" + ", $relevanceParts) . ") AS relevance_score";
+            }
+            if (!empty($fullTextWhereClauses)) {
+                $where_clauses[] = "(" . implode(" OR ", $fullTextWhereClauses) . ")";
+            }
+        } else {
+            $searchFields = [
+                "CAST(id AS CHAR) LIKE ?",
+                "title LIKE ?",
+                "COALESCE(description, '') LIKE ?",
+                "COALESCE(reference_number, '') LIKE ?",
+                "COALESCE(resolution_number, '') LIKE ?",
+                "COALESCE(date_posted, '') LIKE ?",
+                "COALESCE(resolution_date, '') LIKE ?",
+                "COALESCE(content, '') LIKE ?",
+                "COALESCE(image_path, '') LIKE ?",
+                "COALESCE(date_issued, '') LIKE ?",
+                "COALESCE(uploaded_by, '') LIKE ?"
+            ];
+
+            $searchVariantClauses = [];
+            foreach ($searchVariants as $searchVariant) {
+                $search_like = "%" . $searchVariant . "%";
+                $searchVariantClauses[] = "(" . implode(" OR ", $searchFields) . ")";
+                $searchParams = array_fill(0, count($searchFields), $search_like);
+                $whereParams = array_merge($whereParams, $searchParams);
+                $whereTypes .= str_repeat('s', count($searchFields));
+            }
+            if (!empty($searchVariantClauses)) {
+                $where_clauses[] = "(" . implode(" OR ", $searchVariantClauses) . ")";
+            }
         }
     } else {
         $search_query = '';
@@ -836,8 +908,8 @@ if (!empty($search_query)) {
 if (!empty($year)) {
     if (preg_match('/^\d{4}$/', (string)$year)) {
         $where_clauses[] = "YEAR(resolution_date) = ?";
-        $params[] = intval($year);
-        $types .= 'i';
+        $whereParams[] = intval($year);
+        $whereTypes .= 'i';
     } else {
         $year = '';
     }
@@ -845,6 +917,7 @@ if (!empty($year)) {
 
 // Build the query
 $query = "SELECT id, title, description, resolution_number, date_posted, resolution_date, content, image_path, date_issued, reference_number,
+    $relevanceSelectSql,
     CASE WHEN EXISTS (
         SELECT 1
         FROM document_image_hashes dih
@@ -878,10 +951,16 @@ $valid_sorts = [
 $sort_clause = $valid_sorts[$sort_by] ?? 'resolution_date DESC';
 
 // Add sorting
-$query .= " ORDER BY " . $sort_clause;
+if ($searchUsesFullText) {
+    $query .= " ORDER BY relevance_score DESC, " . $sort_clause;
+} else {
+    $query .= " ORDER BY " . $sort_clause;
+}
 
 // Add pagination parameters (always present)
 $query .= " LIMIT ? OFFSET ?";
+$params = array_merge($selectParams, $whereParams);
+$types = $selectTypes . $whereTypes;
 $params[] = $table_limit;
 $params[] = $offset;
 $types .= 'ii';
@@ -902,16 +981,8 @@ if (!empty($where_clauses)) {
     $count_query .= " WHERE " . implode(" AND ", $where_clauses);
 }
 $count_stmt = $conn->prepare($count_query);
-if (!empty($params) && !empty($types)) {
-    $countParams = [];
-    $countTypes = '';
-    for ($i = 0; $i < count($params) - 2; $i++) {
-        $countParams[] = $params[$i];
-        $countTypes .= substr($types, $i, 1);
-    }
-    if (!empty($countParams)) {
-        $count_stmt->bind_param($countTypes, ...$countParams);
-    }
+if (!empty($whereParams) && !empty($whereTypes)) {
+    $count_stmt->bind_param($whereTypes, ...$whereParams);
 }
 $count_stmt->execute();
 $count_result = $count_stmt->get_result();
