@@ -367,6 +367,11 @@ $years_query_sql = "
 $years_query_sql .= " ORDER BY year DESC";
 $years_query = $conn->query($years_query_sql);
 $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
+
+$showLoginWelcomeModal = !empty($_SESSION['show_login_welcome_modal']);
+if ($showLoginWelcomeModal) {
+    unset($_SESSION['show_login_welcome_modal']);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1707,6 +1712,55 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                     </ul>
                 </div>
             </div>
+
+            <?php if ($showLoginWelcomeModal): ?>
+            <div class="modal fade" id="loginWelcomeModal" tabindex="-1" aria-labelledby="loginWelcomeModalTitle" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="loginWelcomeModalTitle">Welcome to eFIND</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p id="loginWelcomeModalMessage" class="mb-2">Loading your dashboard tips...</p>
+                            <small class="text-muted">This message will close automatically in 5 seconds.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    const welcomeTips = [
+                        { title: 'Welcome to eFIND', message: 'Manage Executive Orders, Resolutions, and Minutes in one place.' },
+                        { title: 'Welcome back!', message: 'Use the Search bar to find documents by title, number, reference, or content.' },
+                        { title: 'Tip of the Day', message: 'Filter by Year and Document Type to narrow records instantly.' },
+                        { title: 'Before You Upload', message: 'Check document number, reference number, and date before saving.' },
+                        { title: 'Need Help?', message: 'Open the Help section below to message system developers directly.' }
+                    ];
+
+                    const modalElement = document.getElementById('loginWelcomeModal');
+                    if (!modalElement || !window.bootstrap || !bootstrap.Modal) {
+                        return;
+                    }
+
+                    const selectedTip = welcomeTips[Math.floor(Math.random() * welcomeTips.length)];
+                    const titleElement = document.getElementById('loginWelcomeModalTitle');
+                    const messageElement = document.getElementById('loginWelcomeModalMessage');
+                    if (titleElement) {
+                        titleElement.textContent = selectedTip.title;
+                    }
+                    if (messageElement) {
+                        messageElement.textContent = selectedTip.message;
+                    }
+
+                    const welcomeModal = bootstrap.Modal.getOrCreateInstance(modalElement);
+                    welcomeModal.show();
+                    setTimeout(function () {
+                        welcomeModal.hide();
+                    }, 5000);
+                });
+            </script>
+            <?php endif; ?>
         </div>
     </div>
     <!-- Chatbot Button -->

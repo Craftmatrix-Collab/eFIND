@@ -297,6 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                                 $loginSuccessful = true;
                                 
                                 // Redirect to dashboard or original requested URL
+                                $_SESSION['show_login_welcome_modal'] = true;
                                 header("Location: " . getSafeRedirect());
                                 exit();
                             }
@@ -369,6 +370,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                                 logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
 
                                 // Redirect to dashboard or original requested URL
+                                $_SESSION['show_login_welcome_modal'] = true;
                                 header("Location: " . getSafeRedirect());
                                 exit();
                             }
