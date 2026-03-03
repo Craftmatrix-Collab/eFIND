@@ -1072,6 +1072,12 @@ if ($showLoginWelcomeModal) {
         .ocr-modal .modal-title {
             font-weight: 600;
         }
+        .login-welcome-modal.fade {
+            transition: opacity 1.2s ease;
+        }
+        .login-welcome-modal.fade .modal-dialog {
+            transition: transform 1.2s ease-out;
+        }
         #ocrLoading {
             background-color: #f8f9fa;
             padding: 15px;
@@ -1714,7 +1720,7 @@ if ($showLoginWelcomeModal) {
             </div>
 
             <?php if ($showLoginWelcomeModal): ?>
-            <div class="modal fade" id="loginWelcomeModal" tabindex="-1" aria-labelledby="loginWelcomeModalTitle" aria-hidden="true">
+            <div class="modal fade login-welcome-modal" id="loginWelcomeModal" tabindex="-1" aria-labelledby="loginWelcomeModalTitle" aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content">
                         <div class="modal-header">
@@ -1722,8 +1728,11 @@ if ($showLoginWelcomeModal) {
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
-                            <p id="loginWelcomeModalMessage" class="mb-2">Loading your dashboard tips...</p>
-                            <small class="text-muted">This message will close automatically in 5 seconds.</small>
+                            <div class="text-center mb-3">
+                                <img src="images/logo_pbsth.png" alt="Barangay Poblacion South Logo" style="width:72px;height:72px;object-fit:contain;">
+                            </div>
+                            <p id="loginWelcomeModalMessage" class="mb-2 text-center fw-semibold">Loading your dashboard tips...</p>
+                            <small class="text-muted d-block text-center">This message will close automatically in 5 seconds.</small>
                         </div>
                     </div>
                 </div>
@@ -1732,10 +1741,10 @@ if ($showLoginWelcomeModal) {
                 document.addEventListener('DOMContentLoaded', function () {
                     const welcomeTips = [
                         { title: 'Welcome to eFIND', message: 'Manage Executive Orders, Resolutions, and Minutes in one place.' },
-                        { title: 'Welcome back!', message: 'Use the Search bar to find documents by title, number, reference, or content.' },
-                        { title: 'Tip of the Day', message: 'Filter by Year and Document Type to narrow records instantly.' },
-                        { title: 'Before You Upload', message: 'Check document number, reference number, and date before saving.' },
-                        { title: 'Need Help?', message: 'Open the Help section below to message system developers directly.' }
+                        { title: 'Quick Start', message: 'Use Search plus Type and Year filters to find records faster.' },
+                        { title: 'Search Tip', message: 'You can search by title, document number, reference number, or content.' },
+                        { title: 'Before You Upload', message: 'Review title, number, and date first for better data quality.' },
+                        { title: 'Need Assistance?', message: 'Open the Help section to message system developers directly.' }
                     ];
 
                     const modalElement = document.getElementById('loginWelcomeModal');
