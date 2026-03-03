@@ -70,6 +70,12 @@ $enableTiptapAddContent = in_array($currentPage, ['executive_orders.php', 'resol
             <div class="col-md-6 text-md-end d-flex flex-column justify-content-center">
                 <small class="mb-1">&copy; <?= date('Y') ?> Barangay Poblacion South. All rights reserved.</small>
                 <small>Developed by PBD</small>
+                <small>
+                    Message developers:
+                    <a href="https://mail.google.com/mail/?view=cm&fs=1&to=eys.acads@gmail.com" class="text-white text-decoration-none" target="_blank" rel="noopener">eys.acads@gmail.com</a>,
+                    <a href="https://mail.google.com/mail/?view=cm&fs=1&to=sierra.pacilan1@gmail.com" class="text-white text-decoration-none" target="_blank" rel="noopener">sierra.pacilan1@gmail.com</a>,
+                    <a href="https://mail.google.com/mail/?view=cm&fs=1&to=erwinbartolome4@gmail.com" class="text-white text-decoration-none" target="_blank" rel="noopener">erwinbartolome4@gmail.com</a>
+                </small>
             </div>
         </div>
     </div>
