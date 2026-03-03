@@ -1560,7 +1560,7 @@ $available_years = $years_query ? $years_query->fetch_all(MYSQLI_ASSOC) : [];
                                                         default: echo 'light text-dark';
                                                     }
                                                 ?> badge-sm">
-                                                    <?= ucfirst($document['doc_type']) ?>
+                                                    <?= ucwords(str_replace('_', ' ', $document['doc_type'])) ?>
                                                 </span>
                                             </td>
                                             <td class="text-start">
