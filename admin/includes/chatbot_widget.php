@@ -214,6 +214,7 @@ if ($chatbot_profile_picture_raw !== '') {
         font-size: 14px;
         line-height: 1.5;
         word-wrap: break-word;
+        white-space: pre-wrap;
     }
 
     .bot-message .message-bubble {
@@ -725,28 +726,52 @@ function collectDocumentMentions(message) {
     return dedupedMatches;
 }
 
+function normalizeBotMessage(message) {
+    const normalizedMessage = String(message ?? '').replace(/\r\n?/g, '\n');
+    const filteredLines = normalizedMessage.split('\n').filter((line) => {
+        const normalizedLine = line.replace(/^\s*[*\-•]\s*/, '').trim().toLowerCase();
+        return !normalizedLine.startsWith('**anticipated needs:**')
+            && !normalizedLine.startsWith('anticipated needs:')
+            && !normalizedLine.startsWith('**suggestions:**')
+            && !normalizedLine.startsWith('suggestions:');
+    });
+
+    const cleanedMessage = filteredLines
+        .join('\n')
+        .replace(/^\s*[*-]\s+/gm, '• ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+    return cleanedMessage || normalizedMessage.trim();
+}
+
+function formatBasicMarkdown(messageHtml) {
+    return messageHtml.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+}
+
 function formatMessageWithDocumentLinks(message, sender) {
     const safeMessage = typeof message === 'string' ? message : String(message ?? '');
+    const normalizedMessage = sender === 'bot' ? normalizeBotMessage(safeMessage) : safeMessage;
     if (sender !== 'bot') {
-        return escapeHtml(safeMessage);
+        return escapeHtml(normalizedMessage);
     }
     
-    const mentions = collectDocumentMentions(safeMessage);
+    const mentions = collectDocumentMentions(normalizedMessage);
     if (mentions.length === 0) {
-        return escapeHtml(safeMessage);
+        return formatBasicMarkdown(escapeHtml(normalizedMessage));
     }
     
     let html = '';
     let cursor = 0;
     
     mentions.forEach((mention) => {
-        html += escapeHtml(safeMessage.slice(cursor, mention.start));
+        html += escapeHtml(normalizedMessage.slice(cursor, mention.start));
         html += `<a href="#" class="chatbot-doc-link" data-doc-type="${mention.type}" data-doc-number="${encodeURIComponent(mention.number)}">${escapeHtml(mention.label)}</a>`;
         cursor = mention.end;
     });
     
-    html += escapeHtml(safeMessage.slice(cursor));
-    return html;
+    html += escapeHtml(normalizedMessage.slice(cursor));
+    return formatBasicMarkdown(html);
 }
 
 async function handleChatbotDocumentLinkClick(event) {
