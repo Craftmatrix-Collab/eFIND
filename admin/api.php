@@ -438,86 +438,122 @@ class BarangayChatbotAPI {
         if (!$this->db) {
             return;
         }
-        
-        // Get user information
-        $userName = 'Guest';
-        $userRole = 'guest';
-        $userIdInt = 0;
-        
-        if ($userId !== 'guest' && is_numeric($userId)) {
-            $userIdInt = intval($userId);
-            $stmt = $this->db->prepare("SELECT username, full_name, role FROM users WHERE id = ? LIMIT 1");
-            if ($stmt) {
-                $stmt->bind_param("i", $userIdInt);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                if ($row = $result->fetch_assoc()) {
-                    $userName = $row['full_name'] ?? $row['username'];
-                    $userRole = $row['role'] ?? 'user';
-                }
-                $stmt->close();
-            }
-            // Fall back to admin_users if not found in users table
-            if ($userName === 'Guest') {
-                $stmt = $this->db->prepare("SELECT username, full_name FROM admin_users WHERE id = ? LIMIT 1");
-                if ($stmt) {
-                    $stmt->bind_param("i", $userIdInt);
-                    $stmt->execute();
-                    $result = $stmt->get_result();
-                    if ($row = $result->fetch_assoc()) {
-                        $userName = $row['full_name'] ?? $row['username'];
-                        $userRole = 'admin';
+
+        try {
+            // Resolve user information; keep user_id NULL for admin accounts because
+            // activity_logs.user_id has FK(users.id).
+            $userName = 'Guest';
+            $userRole = 'guest';
+            $userIdInt = null;
+
+            if ($userId !== 'guest' && is_numeric($userId)) {
+                $candidateUserId = (int)$userId;
+                if ($candidateUserId > 0) {
+                    $stmt = $this->db->prepare("SELECT username, full_name, role FROM users WHERE id = ? LIMIT 1");
+                    if ($stmt) {
+                        $stmt->bind_param("i", $candidateUserId);
+                        $stmt->execute();
+                        $result = $stmt->get_result();
+                        if ($row = $result->fetch_assoc()) {
+                            $userName = $row['full_name'] ?? $row['username'];
+                            $userRole = $row['role'] ?? 'user';
+                            $userIdInt = $candidateUserId;
+                        }
+                        $stmt->close();
                     }
+
+                    if ($userIdInt === null) {
+                        $stmt = $this->db->prepare("SELECT username, full_name FROM admin_users WHERE id = ? LIMIT 1");
+                        if ($stmt) {
+                            $stmt->bind_param("i", $candidateUserId);
+                            $stmt->execute();
+                            $result = $stmt->get_result();
+                            if ($row = $result->fetch_assoc()) {
+                                $userName = $row['full_name'] ?? $row['username'];
+                                $userRole = 'admin';
+                            }
+                            $stmt->close();
+                        }
+                    }
+                }
+            } elseif (isset($_SESSION['user_id'])) {
+                $sessionRole = strtolower((string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? '')));
+                $isAdminSession = isset($_SESSION['admin_id']) || in_array($sessionRole, ['admin', 'superadmin'], true);
+
+                if ($isAdminSession) {
+                    $userName = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? $_SESSION['admin_username'] ?? $_SESSION['username'] ?? 'Admin';
+                    $userRole = $sessionRole !== '' ? $sessionRole : 'admin';
+                    $userIdInt = null;
+                } else {
+                    $candidateUserId = (int)$_SESSION['user_id'];
+                    if ($candidateUserId > 0) {
+                        $stmt = $this->db->prepare("SELECT username, full_name, role FROM users WHERE id = ? LIMIT 1");
+                        if ($stmt) {
+                            $stmt->bind_param("i", $candidateUserId);
+                            $stmt->execute();
+                            $result = $stmt->get_result();
+                            if ($row = $result->fetch_assoc()) {
+                                $userName = $row['full_name'] ?? $row['username'];
+                                $userRole = $row['role'] ?? ($sessionRole !== '' ? $sessionRole : 'user');
+                                $userIdInt = $candidateUserId;
+                            }
+                            $stmt->close();
+                        }
+                    }
+
+                    if ($userIdInt === null) {
+                        $userName = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User';
+                        $userRole = $sessionRole !== '' ? $sessionRole : 'user';
+                    }
+                }
+            }
+
+            // Prepare action and description based on type
+            $action = 'chatbot';
+            $description = '';
+            $details = '';
+
+            switch ($actionType) {
+                case 'user_message':
+                    $description = "Asked chatbot: " . substr($message, 0, 100);
+                    $details = "User Question: " . $message . " | Session: " . $sessionId;
+                    break;
+                case 'bot_response':
+                    $description = "Chatbot responded";
+                    $details = "Bot Response: " . substr($message, 0, 200) . " | Context: " . substr($context, 0, 100) . " | Session: " . $sessionId;
+                    break;
+                case 'bot_error':
+                    $description = "Chatbot error occurred";
+                    $details = "Error: " . $message . " | User Question: " . $context . " | Session: " . $sessionId;
+                    break;
+            }
+
+            $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+            if ($userIdInt === null) {
+                $stmt = $this->db->prepare(
+                    "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, log_time)
+                     VALUES (NULL, ?, ?, ?, ?, ?, ?, NOW())"
+                );
+                if ($stmt) {
+                    $stmt->bind_param("ssssss", $userName, $userRole, $action, $description, $details, $ipAddress);
+                    $stmt->execute();
+                    $stmt->close();
+                }
+            } else {
+                $stmt = $this->db->prepare(
+                    "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, log_time)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, NOW())"
+                );
+                if ($stmt) {
+                    $stmt->bind_param("issssss", $userIdInt, $userName, $userRole, $action, $description, $details, $ipAddress);
+                    $stmt->execute();
                     $stmt->close();
                 }
             }
-        } elseif (isset($_SESSION['user_id'])) {
-            $userIdInt = intval($_SESSION['user_id']);
-            $userName = $_SESSION['username'] ?? $_SESSION['full_name'] ?? 'User';
-            $userRole = $_SESSION['role'] ?? 'user';
-        }
-        
-        // Prepare action and description based on type
-        $action = 'chatbot';
-        $description = '';
-        $details = '';
-        
-        switch ($actionType) {
-            case 'user_message':
-                $description = "Asked chatbot: " . substr($message, 0, 100);
-                $details = "User Question: " . $message . " | Session: " . $sessionId;
-                break;
-            case 'bot_response':
-                $description = "Chatbot responded";
-                $details = "Bot Response: " . substr($message, 0, 200) . " | Context: " . substr($context, 0, 100) . " | Session: " . $sessionId;
-                break;
-            case 'bot_error':
-                $description = "Chatbot error occurred";
-                $details = "Error: " . $message . " | User Question: " . $context . " | Session: " . $sessionId;
-                break;
-        }
-        
-        $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        
-        // Insert into activity_logs
-        $stmt = $this->db->prepare(
-            "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, log_time) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())"
-        );
-        
-        if ($stmt) {
-            $stmt->bind_param(
-                "issssss",
-                $userIdInt,
-                $userName,
-                $userRole,
-                $action,
-                $description,
-                $details,
-                $ipAddress
-            );
-            $stmt->execute();
-            $stmt->close();
+        } catch (Throwable $e) {
+            $this->log("Chatbot activity log skipped: " . $e->getMessage());
+            error_log("Chatbot logChatToDatabase error: " . $e->getMessage());
         }
     }
     
