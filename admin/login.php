@@ -438,7 +438,6 @@ function logLoginAttempt($username, $ip_address, $status, $details = '', $user_i
 /**
  * Log activity to activity_logs table
  */
-if (!function_exists('logActivity')) {
 function logActivity($user_id, $action, $description, $document_type = 'system', $ip_address = null, $details = null, $known_username = null, $user_role = null) {
     global $conn;
     
@@ -485,7 +484,6 @@ function logActivity($user_id, $action, $description, $document_type = 'system',
         error_log("Activity log error: " . $e->getMessage());
     }
 }
-} // end if (!function_exists('logActivity'))
 
 /**
  * Check if login logs table exists, create if not
