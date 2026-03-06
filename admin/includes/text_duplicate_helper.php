@@ -228,7 +228,7 @@ if (!function_exists('getTypoSearchDocumentConfig')) {
         if ($type === 'executive_order') {
             return [
                 'table' => 'executive_orders',
-                'columns' => ['title', 'description', 'reference_number', 'executive_order_number', 'status', 'content', 'uploaded_by'],
+                'columns' => ['title', 'description', 'reference_number', 'executive_order_number', 'content', 'uploaded_by'],
             ];
         }
         if ($type === 'resolution') {

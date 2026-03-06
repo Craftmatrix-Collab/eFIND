@@ -38,6 +38,31 @@ $valid_sorts = [
 ];
 $sort_clause = $valid_sorts[$sort_by] ?? 'date_posted DESC';
 
+function removeExecutiveOrderStatusColumn(mysqli $conn): void
+{
+    static $executed = false;
+    if ($executed) {
+        return;
+    }
+    $executed = true;
+
+    $statusColumnCheck = $conn->query("SHOW COLUMNS FROM executive_orders LIKE 'status'");
+    if (!$statusColumnCheck || (int)$statusColumnCheck->num_rows === 0) {
+        return;
+    }
+
+    $indexCheck = $conn->query("SHOW INDEX FROM executive_orders WHERE Key_name = 'idx_executive_orders_fulltext'");
+    if ($indexCheck && (int)$indexCheck->num_rows > 0) {
+        $conn->query("ALTER TABLE executive_orders DROP INDEX idx_executive_orders_fulltext");
+    }
+
+    if (!$conn->query("ALTER TABLE executive_orders DROP COLUMN status")) {
+        error_log("Failed to remove executive_orders.status column: " . $conn->error);
+    }
+}
+
+removeExecutiveOrderStatusColumn($conn);
+
 function ensureDashboardFullTextIndex($conn, $tableName, $indexName, array $columns) {
     $checkStmt = $conn->prepare("
         SELECT 1
@@ -88,7 +113,7 @@ function ensureDashboardExecutiveOrderFullTextIndex($conn) {
         $conn,
         'executive_orders',
         'idx_executive_orders_fulltext',
-        ['title', 'description', 'reference_number', 'executive_order_number', 'status', 'content', 'uploaded_by']
+        ['title', 'description', 'reference_number', 'executive_order_number', 'content', 'uploaded_by']
     );
 }
 
@@ -175,7 +200,7 @@ if (!empty($search_query)) {
         if ($hasAllFullTextIndexes) {
             $searchUsesFullText = true;
 
-            $eoMatchSql = "MATCH(o.title, o.description, o.reference_number, o.executive_order_number, o.status, o.content, o.uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
+            $eoMatchSql = "MATCH(o.title, o.description, o.reference_number, o.executive_order_number, o.content, o.uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
             $resolutionMatchSql = "MATCH(r.title, r.description, r.reference_number, r.resolution_number, r.content, r.uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
             $minutesMatchSql = "MATCH(m.title, m.reference_number, m.session_number, m.content, m.uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
 
@@ -219,7 +244,7 @@ $base_query = "
             o.date_posted as date,
             o.reference_number,
             o.executive_order_number as document_number,
-            o.status as document_status,
+            NULL as document_status,
             o.description as document_description,
             o.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
@@ -255,7 +280,7 @@ $base_query = "
             m.date_posted as date,
             m.reference_number,
             m.session_number as document_number,
-            m.status as document_status,
+            NULL as document_status,
             NULL as document_description,
             m.content,
             COALESCE(u.full_name, au.full_name) as uploaded_by,
@@ -281,14 +306,13 @@ if (!empty($search_query)) {
             $searchVariants = [$search_query];
         }
 
-        $searchFieldsSql = "CAST(id AS CHAR) LIKE ? OR doc_type LIKE ? OR title LIKE ? OR COALESCE(reference_number, '') LIKE ? OR COALESCE(document_number, '') LIKE ? OR COALESCE(document_status, '') LIKE ? OR COALESCE(document_description, '') LIKE ? OR COALESCE(content, '') LIKE ? OR COALESCE(uploaded_by, '') LIKE ? OR COALESCE(date_posted, '') LIKE ? OR COALESCE(image_path, '') LIKE ?";
+        $searchFieldsSql = "CAST(id AS CHAR) LIKE ? OR doc_type LIKE ? OR title LIKE ? OR COALESCE(reference_number, '') LIKE ? OR COALESCE(document_number, '') LIKE ? OR COALESCE(document_description, '') LIKE ? OR COALESCE(content, '') LIKE ? OR COALESCE(uploaded_by, '') LIKE ? OR COALESCE(date_posted, '') LIKE ? OR COALESCE(image_path, '') LIKE ?";
         $searchVariantClauses = [];
         foreach ($searchVariants as $searchVariant) {
             $search_terms = "%" . $searchVariant . "%";
             $searchVariantClauses[] = "(" . $searchFieldsSql . ")";
-            $whereTypes .= 'sssssssssss';
+            $whereTypes .= 'ssssssssss';
             $whereParams = array_merge($whereParams, [
-                $search_terms,
                 $search_terms,
                 $search_terms,
                 $search_terms,
@@ -1439,7 +1463,7 @@ if ($showLoginWelcomeModal) {
             <div class="stat-card executive_orders">
                 <div class="stat-content">
                     <div class="stat-number"><?php echo $executive_orders_count; ?></div>
-                    <div class="stat-label">Total Active Executive Orders</div>
+                    <div class="stat-label">Total Executive Orders</div>
                 </div>
                 <div class="stat-icon executive_orders">
                     <i class="fas fa-gavel"></i>
@@ -2860,12 +2884,6 @@ if ($showLoginWelcomeModal) {
           <input class="form-control" type="date" name="executive_order_date"></div>
         <div class="col-md-6"><label class="form-label fw-semibold">Date Issued</label>
           <input class="form-control" type="date" name="date_issued"></div>
-        <div class="col-md-6"><label class="form-label fw-semibold">Status</label>
-          <select class="form-select" name="status">
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-            <option value="Repealed">Repealed</option>
-          </select></div>
         <div class="col-12"><label class="form-label fw-semibold">Reference Number</label>
           <input class="form-control" name="reference_number" placeholder="Optional"></div>
         <div class="col-12"><label class="form-label fw-semibold">Description</label>

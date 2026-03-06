@@ -437,12 +437,6 @@ const metaTemplates = {
         <div class="col"><label class="form-label fw-semibold">Date Issued</label>
           <input class="form-control" type="date" name="date_issued"></div>
       </div>
-      <div class="mb-3"><label class="form-label fw-semibold">Status</label>
-        <select class="form-select" name="status">
-          <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-          <option value="Repealed">Repealed</option>
-        </select></div>
       <div class="mb-3"><label class="form-label fw-semibold">Reference Number</label>
         <input class="form-control" name="reference_number" placeholder="Optional"></div>
       <div class="mb-3"><label class="form-label fw-semibold">Description</label>

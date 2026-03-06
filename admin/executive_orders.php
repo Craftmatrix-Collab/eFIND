@@ -79,6 +79,32 @@ if (!ensureDocumentImageHashTable($conn)) {
     error_log("Failed to ensure document_image_hashes table: " . $conn->error);
 }
 
+function removeExecutiveOrderStatusColumn(mysqli $conn): void {
+    static $executed = false;
+    if ($executed) {
+        return;
+    }
+    $executed = true;
+
+    $statusColumnCheck = $conn->query("SHOW COLUMNS FROM executive_orders LIKE 'status'");
+    if (!$statusColumnCheck || (int)$statusColumnCheck->num_rows === 0) {
+        return;
+    }
+
+    $indexCheck = $conn->query("SHOW INDEX FROM executive_orders WHERE Key_name = 'idx_executive_orders_fulltext'");
+    if ($indexCheck && (int)$indexCheck->num_rows > 0) {
+        if (!$conn->query("ALTER TABLE executive_orders DROP INDEX idx_executive_orders_fulltext")) {
+            error_log("Failed to drop executive_orders fulltext index before status removal: " . $conn->error);
+        }
+    }
+
+    if (!$conn->query("ALTER TABLE executive_orders DROP COLUMN status")) {
+        error_log("Failed to remove executive_orders.status column: " . $conn->error);
+    }
+}
+
+removeExecutiveOrderStatusColumn($conn);
+
 function ensureExecutiveOrderFullTextIndex($conn) {
     $indexName = 'idx_executive_orders_fulltext';
     $checkStmt = $conn->prepare("
@@ -107,7 +133,7 @@ function ensureExecutiveOrderFullTextIndex($conn) {
 
     $createIndexSql = "ALTER TABLE executive_orders
         ADD FULLTEXT INDEX idx_executive_orders_fulltext
-        (title, description, reference_number, executive_order_number, status, content, uploaded_by)";
+        (title, description, reference_number, executive_order_number, content, uploaded_by)";
 
     if (!$conn->query($createIndexSql)) {
         error_log("Failed to create executive_orders fulltext index: " . $conn->error);
@@ -162,7 +188,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     }
 
     // Build query with filters for print
-    $printQuery = "SELECT id, title, executive_order_number, date_posted, executive_order_date, content, status FROM executive_orders WHERE 1=1";
+    $printQuery = "SELECT id, title, executive_order_number, date_posted, executive_order_date, content FROM executive_orders WHERE 1=1";
     $printConditions = [];
     $printParams = [];
     $printTypes = '';
@@ -323,7 +349,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             .col-executive_order-date { width: 10%; }
             .col-number { width: 12%; }
             .col-content { width: 20%; }
-            .col-status { width: 8%; }
             
             @media print {
                 body { 
@@ -401,13 +426,12 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                         <th class="col-executive_order-date">Executive Order Date</th>
                         <th class="col-number">Executive Order Number</th>
                         <th class="col-content">Content Preview</th>
-                        <th class="col-status">Status</th>
                     </tr>
                 </thead>
                 <tbody>';
 
     if (empty($printExecutiveOrders)) {
-        echo '<tr><td colspan="8" style="text-align: center;">No executive_orders found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="7" style="text-align: center;">No executive_orders found for the selected criteria.</td></tr>';
     } else {
         $count = 0;
         foreach ($printExecutiveOrders as $executive_order) {
@@ -422,7 +446,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     <th class="col-executive_order-date">Executive Order Date</th>
                     <th class="col-number">Executive Order Number</th>
                     <th class="col-content">Content Preview</th>
-                    <th class="col-status">Status</th>
                 </tr></thead><tbody>';
             }
             
@@ -442,20 +465,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 echo $content;
             }
             
-            echo '</td>
-                <td>
-                    <span class="badge badge-';
-                    switch($executive_order['status']) {
-                        case 'Active': echo 'success'; break;
-                        case 'Inactive': echo 'secondary'; break;
-                        case 'Pending': echo 'warning'; break;
-                        case 'Approved': echo 'primary'; break;
-                        case 'Rejected': echo 'danger'; break;
-                        default: echo 'secondary';
-                    }
-                    echo '">' . htmlspecialchars($executive_order['status']) . '</span>
-                </td>
-            </tr>';
+            echo '</td></tr>';
         }
     }
 
@@ -596,7 +606,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $executive_order_number = trim($_POST['executive_order_number']);
             $date_posted = $_POST['date_posted'];
             $executive_order_date = $_POST['executive_order_date'];
-            $status = $_POST['status'];
             $content = trim($_POST['content']);
             $uploadedImageHashEntries = [];
             $uploadedDocumentLogs = [];
@@ -686,9 +695,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($hasUpdatedByColumn) {
-            $stmt = $conn->prepare("INSERT INTO executive_orders (title, description, executive_order_number, date_posted, executive_order_date, status, content, image_path, reference_number, date_issued, file_path, uploaded_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO executive_orders (title, description, executive_order_number, date_posted, executive_order_date, content, image_path, reference_number, date_issued, file_path, uploaded_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         } else {
-            $stmt = $conn->prepare("INSERT INTO executive_orders (title, description, executive_order_number, date_posted, executive_order_date, status, content, image_path, reference_number, date_issued, file_path, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO executive_orders (title, description, executive_order_number, date_posted, executive_order_date, content, image_path, reference_number, date_issued, file_path, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         }
         if (!$stmt) {
             error_log("Failed to prepare statement: " . $conn->error);
@@ -696,9 +705,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($hasUpdatedByColumn) {
-            $stmt->bind_param("sssssssssssss", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $status, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by, $updated_by);
+            $stmt->bind_param("ssssssssssss", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by, $updated_by);
         } else {
-            $stmt->bind_param("ssssssssssss", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $status, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by);
+            $stmt->bind_param("sssssssssss", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $content, $image_path, $reference_number, $date_issued, $file_path, $uploaded_by);
         }
         if ($stmt->execute()) {
             $new_executive_order_id = $conn->insert_id;
@@ -734,7 +743,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $executive_order_number = trim($_POST['executive_order_number']);
         $date_posted = $_POST['date_posted'];
         $executive_order_date = $_POST['executive_order_date'];
-        $status = $_POST['status'];
         $content = trim($_POST['content']);
         $existing_image_path = $_POST['existing_image_path'];
         $allowDuplicateImages = isset($_POST['allow_duplicate_images']) && $_POST['allow_duplicate_images'] === '1';
@@ -797,8 +805,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Set description as title or content preview if not provided
         $description = !empty($content) ? substr($content, 0, 500) : $title;
         
-        $stmt = $conn->prepare("UPDATE executive_orders SET title = ?, description = ?, executive_order_number = ?, date_posted = ?, executive_order_date = ?, status = ?, content = ?, image_path = ? WHERE id = ?");
-        $stmt->bind_param("ssssssssi", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $status, $content, $image_path, $id);
+        $stmt = $conn->prepare("UPDATE executive_orders SET title = ?, description = ?, executive_order_number = ?, date_posted = ?, executive_order_date = ?, content = ?, image_path = ? WHERE id = ?");
+        $stmt->bind_param("sssssssi", $title, $description, $executive_order_number, $date_posted, $executive_order_date, $content, $image_path, $id);
         if ($stmt->execute()) {
             if (!empty($uploadedImageHashEntries)) {
                 saveDocumentImageHashes($conn, 'executive_order', $id, $uploadedImageHashEntries);
@@ -872,7 +880,7 @@ $whereTypes = '';
 $where_clauses = [];
 $searchUsesFullText = false;
 $relevanceSelectSql = "0 AS relevance_score";
-$fullTextMatchSql = "MATCH(title, description, reference_number, executive_order_number, status, content, uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
+$fullTextMatchSql = "MATCH(title, description, reference_number, executive_order_number, content, uploaded_by) AGAINST (? IN NATURAL LANGUAGE MODE)";
 
 // Add search condition if search query is provided
 if (!empty($search_query)) {
@@ -915,7 +923,6 @@ if (!empty($search_query)) {
                 "COALESCE(executive_order_number, '') LIKE ?",
                 "COALESCE(date_posted, '') LIKE ?",
                 "COALESCE(executive_order_date, '') LIKE ?",
-                "COALESCE(status, '') LIKE ?",
                 "COALESCE(content, '') LIKE ?",
                 "COALESCE(image_path, '') LIKE ?",
                 "COALESCE(date_issued, '') LIKE ?",
@@ -951,7 +958,7 @@ if (!empty($year)) {
 }
 
 // Build the query
-$query = "SELECT id, title, description, executive_order_number, date_posted, executive_order_date, status, content, image_path, date_issued, file_path, uploaded_by,
+$query = "SELECT id, title, description, executive_order_number, date_posted, executive_order_date, content, image_path, date_issued, file_path, uploaded_by,
     $relevanceSelectSql,
     CASE WHEN EXISTS (
         SELECT 1
@@ -1812,7 +1819,7 @@ $count_stmt->close();
                     <div class="col-md-8">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
-                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any executive_order field (title, number, status, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
+                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any executive_order field (title, number, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-md-1">
@@ -1875,7 +1882,6 @@ $count_stmt->close();
                                 <th style="width:9%">Executive Order Date</th>
                                 <th style="width:12%">Executive Order Number</th>
                                 <th style="width:20%">Content Preview</th>
-                                <th style="width:8%">Status</th>
                                 <th style="width:7%">Image</th>
                                 <th style="width:10%">Actions</th>
                             </tr>
@@ -1883,7 +1889,7 @@ $count_stmt->close();
                         <tbody id="executive_ordersTableBody">
                             <?php if (empty($executive_orders)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-4">No executive_orders found</td>
+                                    <td colspan="8" class="text-center py-4">No executive_orders found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php $row_num = $offset + 1; ?>
@@ -1913,20 +1919,6 @@ $count_stmt->close();
                                             <?php else: ?>
                                                 <?php echo $content; ?>
                                             <?php endif; ?>
-                                        </td>
-                                        <td class="status">
-                                            <span class="badge bg-<?php
-                                                switch($executive_order['status']) {
-                                                    case 'Active': echo 'success'; break;
-                                                    case 'Inactive': echo 'secondary'; break;
-                                                    case 'Pending': echo 'warning'; break;
-                                                    case 'Approved': echo 'primary'; break;
-                                                    case 'Rejected': echo 'danger'; break;
-                                                    default: echo 'dark';
-                                                }
-                                            ?>">
-                                                <?php echo htmlspecialchars($executive_order['status']); ?>
-                                            </span>
                                         </td>
                                         <td>
                                             <?php if (!empty($executive_order['image_path'])): ?>
@@ -2156,23 +2148,13 @@ $count_stmt->close();
                             </div>
                         </div>
                         <div class="row">
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-6 mb-3">
                                 <label for="date_posted" class="form-label">Date Posted <span class="text-danger">*</span></label>
                                 <input type="date" class="form-control" id="date_posted" name="date_posted" value="<?php echo date('Y-m-d'); ?>" required>
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-6 mb-3">
                                 <label for="executive_order_date" class="form-label">Executive Order Date <span class="text-danger">*</span></label>
                                 <input type="date" class="form-control" id="executive_order_date" name="executive_order_date" required>
-                            </div>
-                            <div class="col-md-4 mb-3">
-                                <label for="status" class="form-label">Status</label>
-                                <select class="form-select" id="status" name="status">
-                                    <option value="Active">Active</option>
-                                    <option value="Inactive">Inactive</option>
-                                    <option value="Pending">Pending</option>
-                                    <option value="Approved">Approved</option>
-                                    <option value="Rejected">Rejected</option>
-                                </select>
                             </div>
                         </div>
                         <div class="mb-3">
@@ -2270,23 +2252,13 @@ $count_stmt->close();
                             </div>
                         </div>
                         <div class="row">
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-6 mb-3">
                                 <label for="editDatePosted" class="form-label">Date Posted <span class="text-danger">*</span></label>
                                 <input type="date" class="form-control" id="editDatePosted" name="date_posted" required>
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-6 mb-3">
                                 <label for="editExecutiveOrderDate" class="form-label">Executive Order Date <span class="text-danger">*</span></label>
                                 <input type="date" class="form-control" id="editExecutiveOrderDate" name="executive_order_date" required>
-                            </div>
-                            <div class="col-md-4 mb-3">
-                                <label for="editStatus" class="form-label">Status</label>
-                                <select class="form-select" id="editStatus" name="status">
-                                    <option value="Active">Active</option>
-                                    <option value="Inactive">Inactive</option>
-                                    <option value="Pending">Pending</option>
-                                    <option value="Approved">Approved</option>
-                                    <option value="Rejected">Rejected</option>
-                                </select>
                             </div>
                         </div>
                         <div class="mb-3">
@@ -3138,7 +3110,6 @@ $count_stmt->close();
                             document.getElementById('editDatePosted').value = executive_order.date_posted;
                             document.getElementById('editExecutiveOrderDate').value = executive_order.executive_order_date;
                             document.getElementById('editExecutiveOrderNumber').value = executive_order.executive_order_number;
-                            document.getElementById('editStatus').value = executive_order.status;
                             document.getElementById('editContent').value = executive_order.content || '';
                             document.getElementById('editExistingImagePath').value = executive_order.image_path || '';
                             const currentFileInfo = document.getElementById('currentImageInfo');

@@ -13,7 +13,7 @@
  *   "title", "session_number", "meeting_date", "reference_number", "content"
  *   -- executive_orders --
  *   "title", "description", "executive_order_number", "executive_order_date",
- *   "status", "reference_number", "date_issued", "content"
+ *   "reference_number", "date_issued", "content"
  * }
  *
  * Response (JSON): { "success": true, "id": <new record id> }
@@ -119,6 +119,29 @@ function ensureImagePathColumns(mysqli $conn, string $docType): void
         if (!$conn->query($alterSql)) {
             throw new Exception("Failed to widen {$table}.{$column}: " . $conn->error);
         }
+    }
+}
+
+function removeExecutiveOrderStatusColumn(mysqli $conn): void
+{
+    static $executed = false;
+    if ($executed) {
+        return;
+    }
+    $executed = true;
+
+    $statusColumnCheck = $conn->query("SHOW COLUMNS FROM `executive_orders` LIKE 'status'");
+    if (!$statusColumnCheck || (int)$statusColumnCheck->num_rows === 0) {
+        return;
+    }
+
+    $indexCheck = $conn->query("SHOW INDEX FROM `executive_orders` WHERE Key_name = 'idx_executive_orders_fulltext'");
+    if ($indexCheck && (int)$indexCheck->num_rows > 0) {
+        $conn->query("ALTER TABLE `executive_orders` DROP INDEX `idx_executive_orders_fulltext`");
+    }
+
+    if (!$conn->query("ALTER TABLE `executive_orders` DROP COLUMN `status`")) {
+        error_log("Failed to remove executive_orders.status: " . $conn->error);
     }
 }
 
@@ -337,14 +360,11 @@ try {
         $stmt->close();
 
     } elseif ($docType === 'executive_orders') {
+        removeExecutiveOrderStatusColumn($conn);
         $title            = $body['title']             ?? '';
         $description      = $body['description']       ?? '';
         $executive_orderNumber  = $body['executive_order_number']  ?? '';
         $executive_orderDate    = normalizeOptionalDate($body['executive_order_date'] ?? null, 'executive_order_date');
-        $status           = trim((string)($body['status'] ?? 'Active'));
-        if ($status === '') {
-            $status = 'Active';
-        }
         $referenceNumber  = $body['reference_number']  ?? '';
         $dateIssued       = normalizeOptionalDate($body['date_issued'] ?? null, 'date_issued');
         $content          = $body['content']           ?? '';
@@ -359,26 +379,26 @@ try {
             $stmt = $conn->prepare(
                 "INSERT INTO executive_orders
                  (title, description, executive_order_number, date_posted, executive_order_date,
-                  status, content, image_path, reference_number, date_issued,
+                  content, image_path, reference_number, date_issued,
                   file_path, uploaded_by, updated_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
-            $stmt->bind_param('sssssssssssss',
+            $stmt->bind_param('ssssssssssss',
                 $title, $description, $executive_orderNumber, $datePosted, $executive_orderDate,
-                $status, $content, $imagePath, $referenceNumber, $dateIssued,
+                $content, $imagePath, $referenceNumber, $dateIssued,
                 $filePath, $uploadedBy, $uploadedBy
             );
         } else {
             $stmt = $conn->prepare(
                 "INSERT INTO executive_orders
                  (title, description, executive_order_number, date_posted, executive_order_date,
-                  status, content, image_path, reference_number, date_issued,
+                  content, image_path, reference_number, date_issued,
                   file_path, uploaded_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
-            $stmt->bind_param('ssssssssssss',
+            $stmt->bind_param('sssssssssss',
                 $title, $description, $executive_orderNumber, $datePosted, $executive_orderDate,
-                $status, $content, $imagePath, $referenceNumber, $dateIssued,
+                $content, $imagePath, $referenceNumber, $dateIssued,
                 $filePath, $uploadedBy
             );
         }

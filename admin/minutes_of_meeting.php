@@ -354,12 +354,11 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                         <th class="col-meeting-date">Meeting Date</th>
                         <th class="col-number">Session Number</th>
                         <th class="col-content">Content Preview</th>
-                        <th class="col-status">Status</th>
                     </tr>
                 </thead>
                 <tbody>';
     if (empty($printMinutes)) {
-        echo '<tr><td colspan="8" style="text-align: center;">No minutes found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="6" style="text-align: center;">No minutes found for the selected criteria.</td></tr>';
     } else {
         $count = 0;
         foreach ($printMinutes as $minute) {
@@ -373,7 +372,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     <th class="col-meeting-date">Meeting Date</th>
                     <th class="col-number">Session Number</th>
                     <th class="col-content">Content Preview</th>
-                    <th class="col-status">Status</th>
                 </tr></thead><tbody>';
             }
             echo '<tr>
