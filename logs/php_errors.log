@@ -27,4 +27,4 @@ Stack trace:
 #1 {main}
   thrown in Command line code on line 1
 [28-Feb-2026 00:34:28 Asia/Manila] Failed to evaluate wrong-password attempt state: mysqli object is already closed
-[07-Mar-2026 09:22:51 Asia/Manila] N8N Connection Error: N8N connection error: Operation timed out after 60001 milliseconds with 0 bytes received
+[07-Mar-2026 21:44:06 Asia/Manila] Chatbot API Fatal Error: Cannot add or update a child row: a foreign key constraint fails (`barangay_poblacion_south`.`activity_logs`, CONSTRAINT `fk_activity_logs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL) in /home/delfin/code/clone/eFIND/admin/api.php:519

@@ -43,10 +43,6 @@ class BarangayChatbotAPI {
     private $n8nWebhookUrl;
     private $logFile;
     private $db;
-    private const N8N_CONNECT_TIMEOUT_SECONDS = 10;
-    private const N8N_REQUEST_TIMEOUT_SECONDS = 60;
-    private const N8N_MAX_RETRIES = 1;
-    private const N8N_RETRY_DELAY_MICROSECONDS = 750000;
     
     public function __construct($webhookUrl, $dbConnection = null) {
         $this->n8nWebhookUrl = $webhookUrl;
@@ -419,16 +415,13 @@ class BarangayChatbotAPI {
             
             // Determine if this is a webhook activation issue
             $isFourOhFour = strpos($errorMsg, '404') !== false || strpos($errorMsg, 'not registered') !== false;
-            $isTimeout = stripos($errorMsg, 'timed out') !== false || stripos($errorMsg, 'timeout') !== false;
             
             $fallbackMessage = $isFourOhFour 
                 ? "The chatbot service is currently being configured. Please ensure the n8n workflow is activated in production mode. Contact the administrator if this persists."
-                : ($isTimeout
-                    ? "The chatbot is taking longer than expected right now. Please try again in a moment."
-                    : "I'm currently experiencing technical difficulties. Please contact the barangay office directly for immediate assistance, or try again in a moment.");
+                : "I'm currently experiencing technical difficulties. Please contact the barangay office directly for immediate assistance, or try again in a moment.";
             
             // Log error response to database
-            $this->logChatToDatabase($userId, $errorMsg, 'bot_error', $sessionId, $userMessage);
+            $this->logChatToDatabase($userId, $fallbackMessage, 'bot_error', $sessionId, $userMessage);
             
             // Fallback response if n8n is unavailable
             return $this->jsonResponse([
@@ -445,122 +438,118 @@ class BarangayChatbotAPI {
         if (!$this->db) {
             return;
         }
+        
+        // Resolve user metadata and keep FK-safe user_id for activity_logs.user_id -> users.id.
+        $userName = 'Guest';
+        $userRole = 'guest';
+        $resolvedUserId = null;
+        $candidateUserId = null;
 
-        try {
-            // Resolve user information; keep user_id NULL for admin accounts because
-            // activity_logs.user_id has FK(users.id).
-            $userName = 'Guest';
-            $userRole = 'guest';
-            $userIdInt = null;
+        if ($userId !== 'guest' && is_numeric($userId)) {
+            $candidateUserId = intval($userId);
+        } elseif (isset($_SESSION['user_id']) && is_numeric($_SESSION['user_id'])) {
+            $candidateUserId = intval($_SESSION['user_id']);
+            $userName = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User';
+            $userRole = $_SESSION['role'] ?? (isset($_SESSION['admin_id']) ? 'admin' : 'user');
+        }
 
-            if ($userId !== 'guest' && is_numeric($userId)) {
-                $candidateUserId = (int)$userId;
-                if ($candidateUserId > 0) {
-                    $stmt = $this->db->prepare("SELECT username, full_name, role FROM users WHERE id = ? LIMIT 1");
-                    if ($stmt) {
-                        $stmt->bind_param("i", $candidateUserId);
-                        $stmt->execute();
-                        $result = $stmt->get_result();
-                        if ($row = $result->fetch_assoc()) {
-                            $userName = $row['full_name'] ?? $row['username'];
-                            $userRole = $row['role'] ?? 'user';
-                            $userIdInt = $candidateUserId;
-                        }
-                        $stmt->close();
-                    }
-
-                    if ($userIdInt === null) {
-                        $stmt = $this->db->prepare("SELECT username, full_name FROM admin_users WHERE id = ? LIMIT 1");
-                        if ($stmt) {
-                            $stmt->bind_param("i", $candidateUserId);
-                            $stmt->execute();
-                            $result = $stmt->get_result();
-                            if ($row = $result->fetch_assoc()) {
-                                $userName = $row['full_name'] ?? $row['username'];
-                                $userRole = 'admin';
-                            }
-                            $stmt->close();
-                        }
-                    }
+        if ($candidateUserId !== null && $candidateUserId > 0) {
+            $stmt = $this->db->prepare("SELECT username, full_name, role FROM users WHERE id = ? LIMIT 1");
+            if ($stmt) {
+                $stmt->bind_param("i", $candidateUserId);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                if ($row = $result->fetch_assoc()) {
+                    $resolvedUserId = $candidateUserId;
+                    $userName = $row['full_name'] ?? $row['username'];
+                    $userRole = $row['role'] ?? 'user';
                 }
-            } elseif (isset($_SESSION['user_id'])) {
-                $sessionRole = strtolower((string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? '')));
-                $isAdminSession = isset($_SESSION['admin_id']) || in_array($sessionRole, ['admin', 'superadmin'], true);
-
-                if ($isAdminSession) {
-                    $userName = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? $_SESSION['admin_username'] ?? $_SESSION['username'] ?? 'Admin';
-                    $userRole = $sessionRole !== '' ? $sessionRole : 'admin';
-                    $userIdInt = null;
-                } else {
-                    $candidateUserId = (int)$_SESSION['user_id'];
-                    if ($candidateUserId > 0) {
-                        $stmt = $this->db->prepare("SELECT username, full_name, role FROM users WHERE id = ? LIMIT 1");
-                        if ($stmt) {
-                            $stmt->bind_param("i", $candidateUserId);
-                            $stmt->execute();
-                            $result = $stmt->get_result();
-                            if ($row = $result->fetch_assoc()) {
-                                $userName = $row['full_name'] ?? $row['username'];
-                                $userRole = $row['role'] ?? ($sessionRole !== '' ? $sessionRole : 'user');
-                                $userIdInt = $candidateUserId;
-                            }
-                            $stmt->close();
-                        }
-                    }
-
-                    if ($userIdInt === null) {
-                        $userName = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User';
-                        $userRole = $sessionRole !== '' ? $sessionRole : 'user';
-                    }
-                }
+                $stmt->close();
             }
 
-            // Prepare action and description based on type
-            $action = 'chatbot';
-            $description = '';
-            $details = '';
-
-            switch ($actionType) {
-                case 'user_message':
-                    $description = "Asked chatbot: " . substr($message, 0, 100);
-                    $details = "User Question: " . $message . " | Session: " . $sessionId;
-                    break;
-                case 'bot_response':
-                    $description = "Chatbot responded";
-                    $details = "Bot Response: " . substr($message, 0, 200) . " | Context: " . substr($context, 0, 100) . " | Session: " . $sessionId;
-                    break;
-                case 'bot_error':
-                    $description = "Chatbot error occurred";
-                    $details = "Error: " . $message . " | User Question: " . $context . " | Session: " . $sessionId;
-                    break;
-            }
-
-            $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-
-            if ($userIdInt === null) {
-                $stmt = $this->db->prepare(
-                    "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, log_time)
-                     VALUES (NULL, ?, ?, ?, ?, ?, ?, NOW())"
-                );
+            // Fall back to admin_users metadata only; keep FK user_id NULL for admin-only IDs.
+            if ($resolvedUserId === null) {
+                $stmt = $this->db->prepare("SELECT username, full_name FROM admin_users WHERE id = ? LIMIT 1");
                 if ($stmt) {
-                    $stmt->bind_param("ssssss", $userName, $userRole, $action, $description, $details, $ipAddress);
+                    $stmt->bind_param("i", $candidateUserId);
                     $stmt->execute();
-                    $stmt->close();
-                }
-            } else {
-                $stmt = $this->db->prepare(
-                    "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, log_time)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, NOW())"
-                );
-                if ($stmt) {
-                    $stmt->bind_param("issssss", $userIdInt, $userName, $userRole, $action, $description, $details, $ipAddress);
-                    $stmt->execute();
+                    $result = $stmt->get_result();
+                    if ($row = $result->fetch_assoc()) {
+                        $userName = $row['full_name'] ?? $row['username'];
+                        $userRole = 'admin';
+                    }
                     $stmt->close();
                 }
             }
-        } catch (Throwable $e) {
-            $this->log("Chatbot activity log skipped: " . $e->getMessage());
-            error_log("Chatbot logChatToDatabase error: " . $e->getMessage());
+        }
+        
+        // Prepare action and description based on type
+        $action = 'chatbot';
+        $description = '';
+        $details = '';
+        
+        switch ($actionType) {
+            case 'user_message':
+                $description = "Asked chatbot: " . substr($message, 0, 100);
+                $details = "User Question: " . $message . " | Session: " . $sessionId;
+                break;
+            case 'bot_response':
+                $description = "Chatbot responded";
+                $details = "Bot Response: " . substr($message, 0, 200) . " | Context: " . substr($context, 0, 100) . " | Session: " . $sessionId;
+                break;
+            case 'bot_error':
+                $description = "Chatbot error occurred";
+                $details = "Error: " . $message . " | User Question: " . $context . " | Session: " . $sessionId;
+                break;
+        }
+        
+        $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        
+        // Insert into activity_logs
+        if ($resolvedUserId === null) {
+            $stmt = $this->db->prepare(
+                "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, log_time) 
+                 VALUES (NULL, ?, ?, ?, ?, ?, ?, NOW())"
+            );
+
+            if ($stmt) {
+                $stmt->bind_param(
+                    "ssssss",
+                    $userName,
+                    $userRole,
+                    $action,
+                    $description,
+                    $details,
+                    $ipAddress
+                );
+                if (!$stmt->execute()) {
+                    $this->log("Failed to insert chatbot activity log: " . $stmt->error);
+                }
+                $stmt->close();
+            }
+            return;
+        }
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, log_time) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())"
+        );
+        
+        if ($stmt) {
+            $stmt->bind_param(
+                "issssss",
+                $resolvedUserId,
+                $userName,
+                $userRole,
+                $action,
+                $description,
+                $details,
+                $ipAddress
+            );
+            if (!$stmt->execute()) {
+                $this->log("Failed to insert chatbot activity log: " . $stmt->error);
+            }
+            $stmt->close();
         }
     }
     
@@ -588,87 +577,58 @@ class BarangayChatbotAPI {
         }
         
         $this->log("Sending to n8n: " . substr($payload['message'], 0, 50));
-
-        $retryableCurlErrors = [
-            CURLE_OPERATION_TIMEDOUT,
-            CURLE_COULDNT_CONNECT,
-            CURLE_COULDNT_RESOLVE_HOST,
-            CURLE_RECV_ERROR,
-            CURLE_SEND_ERROR
-        ];
-        $retryableHttpCodes = [408, 425, 429, 500, 502, 503, 504];
-        $maxAttempts = self::N8N_MAX_RETRIES + 1;
-        $lastError = 'Unknown N8N request error';
-
-        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            $ch = curl_init();
-            curl_setopt_array($ch, [
-                CURLOPT_URL => $this->n8nWebhookUrl,
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($payload),
-                CURLOPT_HTTPHEADER => [
-                    'Content-Type: application/json',
-                    'User-Agent: Barangay-AI-Chatbot/1.0'
-                ],
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_CONNECTTIMEOUT => self::N8N_CONNECT_TIMEOUT_SECONDS,
-                CURLOPT_TIMEOUT => self::N8N_REQUEST_TIMEOUT_SECONDS,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => false,
-                CURLOPT_FOLLOWLOCATION => true
-            ]);
-
-            $response = curl_exec($ch);
-            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlErrNo = curl_errno($ch);
-            $curlError = curl_error($ch);
-            $curlInfo = curl_getinfo($ch);
-            curl_close($ch);
-
-            // Log curl details for debugging
-            $this->log("N8N attempt {$attempt}/{$maxAttempts} - HTTP Code: $httpCode, URL: {$curlInfo['url']}");
-
-            $shouldRetry = false;
-
-            if ($curlErrNo !== 0) {
-                $lastError = "N8N connection error: $curlError";
-                $this->log($lastError . " (errno: $curlErrNo)");
-                $shouldRetry = in_array($curlErrNo, $retryableCurlErrors, true);
-            } elseif ($httpCode !== 200) {
-                $errorDetail = $response ?: "No response body";
-                $this->log("N8N HTTP Error $httpCode: $errorDetail");
-                $lastError = "N8N service unavailable. HTTP Code: $httpCode. Response: $errorDetail";
-                $shouldRetry = in_array($httpCode, $retryableHttpCodes, true);
-            } else {
-                $data = json_decode((string)$response, true);
-
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    $this->log("N8N response JSON error: " . json_last_error_msg());
-                    // Try to return raw response if JSON parsing fails
-                    return ['output' => $response];
-                }
-
-                // Flexible response handling - accept multiple formats
-                if (!$data) {
-                    $lastError = "Empty response from AI service";
-                    $this->log($lastError);
-                    $shouldRetry = true;
-                } else {
-                    $this->log("N8N response parsed successfully");
-                    return $data;
-                }
-            }
-
-            if ($shouldRetry && $attempt < $maxAttempts) {
-                $this->log("Retrying n8n request after transient failure");
-                usleep(self::N8N_RETRY_DELAY_MICROSECONDS);
-                continue;
-            }
-
-            throw new Exception($lastError);
+        
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $this->n8nWebhookUrl,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'User-Agent: Barangay-AI-Chatbot/1.0'
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_FOLLOWLOCATION => true
+        ]);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        $curlInfo = curl_getinfo($ch);
+        curl_close($ch);
+        
+        // Log curl details for debugging
+        $this->log("N8N Response - HTTP Code: $httpCode, URL: {$curlInfo['url']}");
+        
+        if ($curlError) {
+            throw new Exception("N8N connection error: $curlError");
         }
-
-        throw new Exception($lastError);
+        
+        if ($httpCode !== 200) {
+            $errorDetail = $response ?: "No response body";
+            $this->log("N8N HTTP Error $httpCode: $errorDetail");
+            throw new Exception("N8N service unavailable. HTTP Code: $httpCode. Response: $errorDetail");
+        }
+        
+        $data = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->log("N8N response JSON error: " . json_last_error_msg());
+            // Try to return raw response if JSON parsing fails
+            return ['output' => $response];
+        }
+        
+        // Flexible response handling - accept multiple formats
+        if (!$data) {
+            throw new Exception("Empty response from AI service");
+        }
+        
+        $this->log("N8N response parsed successfully");
+        
+        return $data;
     }
     
     private function getSessionId() {
