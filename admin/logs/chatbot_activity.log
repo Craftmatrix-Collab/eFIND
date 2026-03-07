@@ -2,3 +2,12 @@
 [2025-12-02 16:58:03] [127.0.0.1] JSON decode error: Syntax error
 [2026-02-12 09:55:06] [127.0.0.1] Request received: /chat [POST]
 [2026-02-12 09:55:06] [127.0.0.1] JSON decode error: Syntax error
+[2026-03-07 09:20:50] [127.0.0.1] Request received: /chat [POST]
+[2026-03-07 09:20:50] [127.0.0.1] Chat request - User: 1, Session: verify_live, Message: live outage verification
+[2026-03-07 09:20:50] [127.0.0.1] Sending to n8n: live outage verification
+[2026-03-07 09:21:50] [127.0.0.1] N8N attempt 1/2 - HTTP Code: 0, URL: https://n8n-efind.craftmatrix.org/webhook/5eaeb40b-8411-43ce-bee1-c32fc14e04f1
+[2026-03-07 09:21:50] [127.0.0.1] N8N connection error: Operation timed out after 60002 milliseconds with 0 bytes received (errno: 28)
+[2026-03-07 09:21:50] [127.0.0.1] Retrying n8n request after transient failure
+[2026-03-07 09:22:51] [127.0.0.1] N8N attempt 2/2 - HTTP Code: 0, URL: https://n8n-efind.craftmatrix.org/webhook/5eaeb40b-8411-43ce-bee1-c32fc14e04f1
+[2026-03-07 09:22:51] [127.0.0.1] N8N connection error: Operation timed out after 60001 milliseconds with 0 bytes received (errno: 28)
+[2026-03-07 09:22:51] [127.0.0.1] N8N Error: N8N connection error: Operation timed out after 60001 milliseconds with 0 bytes received
