@@ -43,6 +43,10 @@ class BarangayChatbotAPI {
     private $n8nWebhookUrl;
     private $logFile;
     private $db;
+    private const N8N_CONNECT_TIMEOUT_SECONDS = 10;
+    private const N8N_REQUEST_TIMEOUT_SECONDS = 60;
+    private const N8N_MAX_RETRIES = 1;
+    private const N8N_RETRY_DELAY_MICROSECONDS = 750000;
     
     public function __construct($webhookUrl, $dbConnection = null) {
         $this->n8nWebhookUrl = $webhookUrl;
@@ -415,13 +419,16 @@ class BarangayChatbotAPI {
             
             // Determine if this is a webhook activation issue
             $isFourOhFour = strpos($errorMsg, '404') !== false || strpos($errorMsg, 'not registered') !== false;
+            $isTimeout = stripos($errorMsg, 'timed out') !== false || stripos($errorMsg, 'timeout') !== false;
             
             $fallbackMessage = $isFourOhFour 
                 ? "The chatbot service is currently being configured. Please ensure the n8n workflow is activated in production mode. Contact the administrator if this persists."
-                : "I'm currently experiencing technical difficulties. Please contact the barangay office directly for immediate assistance, or try again in a moment.";
+                : ($isTimeout
+                    ? "The chatbot is taking longer than expected right now. Please try again in a moment."
+                    : "I'm currently experiencing technical difficulties. Please contact the barangay office directly for immediate assistance, or try again in a moment.");
             
             // Log error response to database
-            $this->logChatToDatabase($userId, $fallbackMessage, 'bot_error', $sessionId, $userMessage);
+            $this->logChatToDatabase($userId, $errorMsg, 'bot_error', $sessionId, $userMessage);
             
             // Fallback response if n8n is unavailable
             return $this->jsonResponse([
@@ -581,58 +588,87 @@ class BarangayChatbotAPI {
         }
         
         $this->log("Sending to n8n: " . substr($payload['message'], 0, 50));
-        
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $this->n8nWebhookUrl,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'User-Agent: Barangay-AI-Chatbot/1.0'
-            ],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_FOLLOWLOCATION => true
-        ]);
-        
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
-        $curlInfo = curl_getinfo($ch);
-        curl_close($ch);
-        
-        // Log curl details for debugging
-        $this->log("N8N Response - HTTP Code: $httpCode, URL: {$curlInfo['url']}");
-        
-        if ($curlError) {
-            throw new Exception("N8N connection error: $curlError");
+
+        $retryableCurlErrors = [
+            CURLE_OPERATION_TIMEDOUT,
+            CURLE_COULDNT_CONNECT,
+            CURLE_COULDNT_RESOLVE_HOST,
+            CURLE_RECV_ERROR,
+            CURLE_SEND_ERROR
+        ];
+        $retryableHttpCodes = [408, 425, 429, 500, 502, 503, 504];
+        $maxAttempts = self::N8N_MAX_RETRIES + 1;
+        $lastError = 'Unknown N8N request error';
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $this->n8nWebhookUrl,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($payload),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'User-Agent: Barangay-AI-Chatbot/1.0'
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => self::N8N_CONNECT_TIMEOUT_SECONDS,
+                CURLOPT_TIMEOUT => self::N8N_REQUEST_TIMEOUT_SECONDS,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_FOLLOWLOCATION => true
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlErrNo = curl_errno($ch);
+            $curlError = curl_error($ch);
+            $curlInfo = curl_getinfo($ch);
+            curl_close($ch);
+
+            // Log curl details for debugging
+            $this->log("N8N attempt {$attempt}/{$maxAttempts} - HTTP Code: $httpCode, URL: {$curlInfo['url']}");
+
+            $shouldRetry = false;
+
+            if ($curlErrNo !== 0) {
+                $lastError = "N8N connection error: $curlError";
+                $this->log($lastError . " (errno: $curlErrNo)");
+                $shouldRetry = in_array($curlErrNo, $retryableCurlErrors, true);
+            } elseif ($httpCode !== 200) {
+                $errorDetail = $response ?: "No response body";
+                $this->log("N8N HTTP Error $httpCode: $errorDetail");
+                $lastError = "N8N service unavailable. HTTP Code: $httpCode. Response: $errorDetail";
+                $shouldRetry = in_array($httpCode, $retryableHttpCodes, true);
+            } else {
+                $data = json_decode((string)$response, true);
+
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $this->log("N8N response JSON error: " . json_last_error_msg());
+                    // Try to return raw response if JSON parsing fails
+                    return ['output' => $response];
+                }
+
+                // Flexible response handling - accept multiple formats
+                if (!$data) {
+                    $lastError = "Empty response from AI service";
+                    $this->log($lastError);
+                    $shouldRetry = true;
+                } else {
+                    $this->log("N8N response parsed successfully");
+                    return $data;
+                }
+            }
+
+            if ($shouldRetry && $attempt < $maxAttempts) {
+                $this->log("Retrying n8n request after transient failure");
+                usleep(self::N8N_RETRY_DELAY_MICROSECONDS);
+                continue;
+            }
+
+            throw new Exception($lastError);
         }
-        
-        if ($httpCode !== 200) {
-            $errorDetail = $response ?: "No response body";
-            $this->log("N8N HTTP Error $httpCode: $errorDetail");
-            throw new Exception("N8N service unavailable. HTTP Code: $httpCode. Response: $errorDetail");
-        }
-        
-        $data = json_decode($response, true);
-        
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->log("N8N response JSON error: " . json_last_error_msg());
-            // Try to return raw response if JSON parsing fails
-            return ['output' => $response];
-        }
-        
-        // Flexible response handling - accept multiple formats
-        if (!$data) {
-            throw new Exception("Empty response from AI service");
-        }
-        
-        $this->log("N8N response parsed successfully");
-        
-        return $data;
+
+        throw new Exception($lastError);
     }
     
     private function getSessionId() {
