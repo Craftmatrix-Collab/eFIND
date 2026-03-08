@@ -28,3 +28,16 @@ Stack trace:
   thrown in Command line code on line 1
 [28-Feb-2026 00:34:28 Asia/Manila] Failed to evaluate wrong-password attempt state: mysqli object is already closed
 [07-Mar-2026 21:44:06 Asia/Manila] Chatbot API Fatal Error: Cannot add or update a child row: a foreign key constraint fails (`barangay_poblacion_south`.`activity_logs`, CONSTRAINT `fk_activity_logs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL) in /home/delfin/code/clone/eFIND/admin/api.php:519
+[08-Mar-2026 11:51:37 Asia/Manila] PHP Fatal error:  Uncaught Error: Undefined constant "c" in Command line code:16
+Stack trace:
+#0 {main}
+  thrown in Command line code on line 16
+[08-Mar-2026 11:51:49 Asia/Manila] PHP Fatal error:  Uncaught Error: Undefined constant "c" in Command line code:21
+Stack trace:
+#0 {main}
+  thrown in Command line code on line 21
+[08-Mar-2026 11:57:21 Asia/Manila] PHP Fatal error:  Uncaught mysqli_sql_exception: Table 'barangay_poblacion_south.executive_order' doesn't exist in Command line code:1
+Stack trace:
+#0 Command line code(1): mysqli->query()
+#1 {main}
+  thrown in Command line code on line 1

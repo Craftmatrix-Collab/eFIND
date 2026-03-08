@@ -37,23 +37,23 @@ User Browser → dashboard.php → api.php → n8n Webhook → api.php → Brows
    - Copy the **Production URL** (NOT Test URL)
    - Format: `https://n8n-efind.craftmatrix.org/webhook/YOUR-PRODUCTION-ID`
 
-### Step 2: Update api.php Configuration
+### Step 2: Configure Environment Variables (Recommended)
 
-1. **Open api.php**
-   ```bash
-   nano /home/delfin/code/clone/eFIND/admin/api.php
-   ```
+Set chatbot settings in your `.env` file (loaded by `includes/env_loader.php`):
 
-2. **Update Line 17 with Production Webhook URL**
-   ```php
-   // BEFORE (placeholder):
-   $N8N_WEBHOOK_URL = "https://n8n-efind.craftmatrix.org/webhook-test/5eaeb40b-8411-43ce-bee1-c32fc14e04f1";
-   
-   // AFTER (your production URL):
-   $N8N_WEBHOOK_URL = "https://n8n-efind.craftmatrix.org/webhook/YOUR-PRODUCTION-WEBHOOK-ID";
-   ```
+```env
+# Required: your production webhook URL
+N8N_WEBHOOK_URL=https://n8n-efind.craftmatrix.org/webhook/YOUR-PRODUCTION-WEBHOOK-ID
 
-3. **Save and close** (Ctrl+X, Y, Enter)
+# Optional: comma-separated allowed browser origins for CORS preflight
+# If omitted, same-origin requests are allowed by default
+CHATBOT_ALLOWED_ORIGINS=https://your-domain.com,https://admin.your-domain.com
+
+# Optional: keep this false in production (TLS verification ON by default)
+N8N_INSECURE_SSL=false
+```
+
+If `N8N_WEBHOOK_URL` is not set, `api.php` falls back to the built-in production URL.
 
 ### Step 3: Test the API
 
@@ -85,7 +85,9 @@ curl -X POST http://localhost/admin/api.php/chat \
 - **Purpose**: Middleware API that handles chatbot requests
 - **Location**: `/admin/api.php`
 - **Key Settings**:
-  - `$N8N_WEBHOOK_URL` (line 17) - Your production webhook URL
+  - `N8N_WEBHOOK_URL` - Production webhook URL
+  - `CHATBOT_ALLOWED_ORIGINS` - Optional CORS allowlist
+  - `N8N_INSECURE_SSL` - Optional insecure TLS override for local/self-signed certs
   - Logging enabled to `/admin/logs/chatbot_activity.log`
   - Error logging to `/admin/logs/chatbot_errors.log`
 
@@ -102,7 +104,7 @@ curl -X POST http://localhost/admin/api.php/chat \
 
 Your n8n workflow should:
 
-### Required Response Format
+### Preferred Response Format (JSON)
 ```json
 {
   "output": "Your response text here",
@@ -110,6 +112,8 @@ Your n8n workflow should:
   "confidence": 0.95                   // Optional
 }
 ```
+
+`api.php` also accepts plain-text webhook responses and returns them as chatbot output.
 
 ### Webhook Node Settings
 1. **HTTP Method**: POST
@@ -208,7 +212,7 @@ tail -f /home/delfin/code/clone/eFIND/admin/logs/php_errors.log
 ✅ Webhook URL hidden from client-side  
 ✅ Server-side input validation  
 ✅ Error logging for audit trail  
-✅ CORS headers configured  
+✅ CORS preflight allowlist (same-origin by default, optional env allowlist)  
 ✅ Timeout protection (30 seconds)  
 ✅ Session tracking  
 

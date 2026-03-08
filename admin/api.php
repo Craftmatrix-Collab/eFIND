@@ -12,6 +12,70 @@ ini_set('error_log', __DIR__ . '/logs/chatbot_errors.log');
 $debugLog = __DIR__ . '/logs/chatbot_debug.log';
 @file_put_contents($debugLog, date('[Y-m-d H:i:s] ') . "API Called: " . $_SERVER['REQUEST_METHOD'] . " " . ($_SERVER['REQUEST_URI'] ?? 'no-uri') . "\n", FILE_APPEND);
 
+function normalizeOriginValue($origin)
+{
+    $origin = trim((string)$origin);
+    if ($origin === '' || strtolower($origin) === 'null') {
+        return null;
+    }
+
+    $parts = parse_url($origin);
+    if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+        return null;
+    }
+
+    $normalized = strtolower($parts['scheme']) . '://' . strtolower($parts['host']);
+    if (!empty($parts['port'])) {
+        $normalized .= ':' . (int)$parts['port'];
+    }
+
+    return $normalized;
+}
+
+function getCurrentRequestOrigin()
+{
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+    if ($host === '') {
+        return null;
+    }
+
+    $forwardedProto = trim((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+    if ($forwardedProto !== '') {
+        $scheme = strtolower(explode(',', $forwardedProto)[0]);
+    } else {
+        $isHttps = !empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off';
+        $scheme = $isHttps ? 'https' : 'http';
+    }
+
+    return normalizeOriginValue($scheme . '://' . $host);
+}
+
+function resolveAllowedCorsOrigin()
+{
+    $requestOrigin = normalizeOriginValue($_SERVER['HTTP_ORIGIN'] ?? '');
+    if ($requestOrigin === null) {
+        return null;
+    }
+
+    $allowedOrigins = [];
+    $configuredOrigins = trim((string)(getenv('CHATBOT_ALLOWED_ORIGINS') ?: ''));
+    if ($configuredOrigins !== '') {
+        foreach (explode(',', $configuredOrigins) as $origin) {
+            $normalized = normalizeOriginValue($origin);
+            if ($normalized !== null) {
+                $allowedOrigins[$normalized] = true;
+            }
+        }
+    }
+
+    $sameOrigin = getCurrentRequestOrigin();
+    if ($sameOrigin !== null) {
+        $allowedOrigins[$sameOrigin] = true;
+    }
+
+    return isset($allowedOrigins[$requestOrigin]) ? $requestOrigin : null;
+}
+
 // Start session for user tracking
 if (session_status() === PHP_SESSION_NONE) {
     @session_start();
@@ -19,22 +83,31 @@ if (session_status() === PHP_SESSION_NONE) {
 
 // Send headers
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
+header('Vary: Origin');
 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
+$allowedCorsOrigin = resolveAllowedCorsOrigin();
+if ($allowedCorsOrigin !== null) {
+    header('Access-Control-Allow-Origin: ' . $allowedCorsOrigin);
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    http_response_code(200);
+    if (!empty($_SERVER['HTTP_ORIGIN']) && $allowedCorsOrigin === null) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Origin not allowed']);
+        exit(0);
+    }
+    http_response_code(204);
     exit(0);
 }
 
 // Database connection
 require_once(__DIR__ . '/includes/config.php');
 
-// N8N Configuration - PRODUCTION WEBHOOK URL
-// IMPORTANT: This is the ACTIVE production webhook
-// Updated: December 2, 2025
-$N8N_WEBHOOK_URL = "https://n8n-efind.craftmatrix.org/webhook/5eaeb40b-8411-43ce-bee1-c32fc14e04f1";
+// N8N Configuration - defaults to production webhook, but can be overridden via env.
+$N8N_WEBHOOK_URL = getenv('N8N_WEBHOOK_URL') ?: "https://n8n-efind.craftmatrix.org/webhook/5eaeb40b-8411-43ce-bee1-c32fc14e04f1";
+$N8N_INSECURE_SSL = filter_var(getenv('N8N_INSECURE_SSL') ?: 'false', FILTER_VALIDATE_BOOLEAN);
 
 // NOTE: This workflow must be ACTIVE (not in test mode) in n8n dashboard
 // To verify: https://n8n-efind.craftmatrix.org
@@ -43,16 +116,22 @@ class BarangayChatbotAPI {
     private $n8nWebhookUrl;
     private $logFile;
     private $db;
+    private $allowInsecureSsl;
     
-    public function __construct($webhookUrl, $dbConnection = null) {
+    public function __construct($webhookUrl, $dbConnection = null, $allowInsecureSsl = false) {
         $this->n8nWebhookUrl = $webhookUrl;
         $this->logFile = __DIR__ . '/logs/chatbot_activity.log';
         $this->db = $dbConnection;
+        $this->allowInsecureSsl = (bool)$allowInsecureSsl;
         
         // Create logs directory if it doesn't exist
         $logDir = __DIR__ . '/logs';
         if (!file_exists($logDir)) {
             @mkdir($logDir, 0755, true);
+        }
+
+        if ($this->allowInsecureSsl) {
+            $this->log("Warning: N8N_INSECURE_SSL is enabled. TLS verification is disabled.");
         }
     }
     
@@ -599,6 +678,8 @@ class BarangayChatbotAPI {
         $this->log("Sending to n8n: " . substr($payload['message'], 0, 50));
         
         $ch = curl_init();
+        $verifyPeer = !$this->allowInsecureSsl;
+        $verifyHost = $this->allowInsecureSsl ? 0 : 2;
         curl_setopt_array($ch, [
             CURLOPT_URL => $this->n8nWebhookUrl,
             CURLOPT_POST => true,
@@ -609,8 +690,8 @@ class BarangayChatbotAPI {
             ],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 30,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_SSL_VERIFYPEER => $verifyPeer,
+            CURLOPT_SSL_VERIFYHOST => $verifyHost,
             CURLOPT_FOLLOWLOCATION => true
         ]);
         
@@ -633,22 +714,32 @@ class BarangayChatbotAPI {
             throw new Exception("N8N service unavailable. HTTP Code: $httpCode. Response: $errorDetail");
         }
         
-        $data = json_decode($response, true);
-        
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->log("N8N response JSON error: " . json_last_error_msg());
-            // Try to return raw response if JSON parsing fails
-            return ['output' => $response];
-        }
-        
-        // Flexible response handling - accept multiple formats
-        if (!$data) {
+        $responseText = trim((string)$response);
+        if ($responseText === '') {
             throw new Exception("Empty response from AI service");
         }
-        
-        $this->log("N8N response parsed successfully");
-        
-        return $data;
+
+        $contentType = strtolower((string)($curlInfo['content_type'] ?? ''));
+        $looksLikeJson = str_contains($contentType, 'json') || preg_match('/^\s*[\{\[]/', $responseText) === 1;
+
+        if ($looksLikeJson) {
+            $data = json_decode($responseText, true);
+
+            if (json_last_error() === JSON_ERROR_NONE) {
+                if (is_array($data)) {
+                    $this->log("N8N response parsed successfully");
+                    return $data;
+                }
+
+                if (is_string($data) || is_numeric($data) || is_bool($data)) {
+                    return ['output' => (string)$data];
+                }
+            } else {
+                $this->log("N8N JSON parse warning: " . json_last_error_msg() . " (falling back to plain text output)");
+            }
+        }
+
+        return ['output' => $responseText];
     }
     
     private function getSessionId() {
@@ -675,7 +766,7 @@ class BarangayChatbotAPI {
 
 // Initialize and handle request with error catching
 try {
-    $api = new BarangayChatbotAPI($N8N_WEBHOOK_URL, $conn ?? null);
+    $api = new BarangayChatbotAPI($N8N_WEBHOOK_URL, $conn ?? null, $N8N_INSECURE_SSL);
     $api->handleRequest();
 } catch (Throwable $e) {
     // Clear any output buffers
