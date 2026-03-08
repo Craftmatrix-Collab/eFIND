@@ -535,6 +535,13 @@ if ($chatbot_profile_picture_raw !== '') {
         box-shadow: 0 6px 14px rgba(0, 132, 255, 0.28);
     }
 
+    .chatbot-send-icon {
+        display: inline-block;
+        font-size: 14px;
+        line-height: 1;
+        transform: translateY(-1px);
+    }
+
     .chatbot-send-btn:hover:not(:disabled) {
         transform: translateY(-1px);
         box-shadow: 0 8px 18px rgba(0, 132, 255, 0.34);
@@ -727,7 +734,7 @@ if ($chatbot_profile_picture_raw !== '') {
             onkeypress="handleChatKeyPress(event)"
         >
         <button class="chatbot-send-btn" id="chatbotSendBtn" onclick="sendMessage()">
-            <i class="fas fa-paper-plane" aria-hidden="true"></i>
+            <span class="chatbot-send-icon" aria-hidden="true">&#10148;</span>
             <span>Send</span>
         </button>
     </div>
