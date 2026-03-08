@@ -1855,7 +1855,7 @@ $count_stmt->close();
             <div class="table-info d-flex justify-content-between align-items-center">
                 <div>
                     <i class="fas fa-file-alt me-2"></i>
-                    Showing <?php echo count($executive_orders); ?> of <?php echo $total_executive_orders; ?> executive_orders
+                    Showing <?php echo count($executive_orders); ?> of <?php echo $total_executive_orders; ?> Executive Orders
                     <?php if (!empty($search_query)): ?>
                         <span class="text-muted ms-2">(Filtered results)</span>
                     <?php endif; ?>
