@@ -1729,20 +1729,6 @@ if ($showLoginWelcomeModal) {
                 </div>
             </div>
 
-            <div class="documents-table-section card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-circle-question me-2"></i>Help</h5>
-                </div>
-                <div class="card-body p-3">
-                    <p class="mb-2">Need help with the system? Message a developer directly via Gmail:</p>
-                    <ul class="mb-0">
-                        <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=eys.acads@gmail.com" target="_blank" rel="noopener">eys.acads@gmail.com</a></li>
-                        <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=sierra.pacilan1@gmail.com" target="_blank" rel="noopener">sierra.pacilan1@gmail.com</a></li>
-                        <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=erwinbartolome4@gmail.com" target="_blank" rel="noopener">erwinbartolome4@gmail.com</a></li>
-                    </ul>
-                </div>
-            </div>
-
             <?php if ($showLoginWelcomeModal): ?>
             <div class="modal fade login-welcome-modal" id="loginWelcomeModal" tabindex="-1" aria-labelledby="loginWelcomeModalTitle" aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered">
@@ -1767,8 +1753,7 @@ if ($showLoginWelcomeModal) {
                         { title: 'Welcome to eFIND', message: 'Manage Executive Orders, Resolutions, and Minutes in one place.' },
                         { title: 'Quick Start', message: 'Use Search plus Type and Year filters to find records faster.' },
                         { title: 'Search Tip', message: 'You can search by title, document number, reference number, or content.' },
-                        { title: 'Before You Upload', message: 'Review title, number, and date first for better data quality.' },
-                        { title: 'Need Assistance?', message: 'Open the Help section to message system developers directly.' }
+                        { title: 'Before You Upload', message: 'Review title, number, and date first for better data quality.' }
                     ];
 
                     const modalElement = document.getElementById('loginWelcomeModal');

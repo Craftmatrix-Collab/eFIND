@@ -87,6 +87,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="profileDropdown">
                     <li><a class="dropdown-item" href="javascript:void(0);" data-bs-toggle="modal" data-bs-target="#profileModal"><i class="fas fa-user me-2"></i>Profile</a></li>
+                    <li><a class="dropdown-item" href="javascript:void(0);" data-bs-toggle="modal" data-bs-target="#helpModal"><i class="fas fa-circle-question me-2"></i>Help</a></li>
                     <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true): ?>
                     <?php endif; ?>
                     <li><hr class="dropdown-divider"></li>
@@ -109,6 +110,29 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
 <!-- Toast Container for Notifications -->
 <div class="position-fixed top-0 end-0 p-3" style="z-index: 11000;">
     <div id="toastContainer"></div>
+</div>
+
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="helpModalLabel"><i class="fas fa-circle-question me-2"></i>Help</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Need help with the system? Message a developer directly via Gmail:</p>
+                <ul class="mb-0">
+                    <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=eys.acads@gmail.com" target="_blank" rel="noopener">eys.acads@gmail.com</a></li>
+                    <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=sierra.pacilan1@gmail.com" target="_blank" rel="noopener">sierra.pacilan1@gmail.com</a></li>
+                    <li><a href="https://mail.google.com/mail/?view=cm&fs=1&to=erwinbartolome4@gmail.com" target="_blank" rel="noopener">erwinbartolome4@gmail.com</a></li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Profile View Modal -->
