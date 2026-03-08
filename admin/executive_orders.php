@@ -1214,6 +1214,11 @@ $count_stmt->close();
         .table tbody tr[data-id] {
             cursor: pointer;
         }
+        .table tbody tr[data-id] td {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
         .table tbody tr.selected-for-delete td {
             background-color: rgba(220, 53, 69, 0.18) !important;
         }
