@@ -560,6 +560,23 @@ function normalizeNavbarProfilePicturePath(path) {
     return file ? `uploads/profiles/${file}` : '';
 }
 
+const browserExitCsrfToken = <?php echo json_encode((string)($_SESSION['csrf_token'] ?? '')); ?>;
+
+function markBrowserExitPendingLogout() {
+    if (!browserExitCsrfToken || window.__efindBrowserExitMarked === true || !navigator.sendBeacon) {
+        return;
+    }
+
+    const payload = new URLSearchParams();
+    payload.append('csrf_token', browserExitCsrfToken);
+    window.__efindBrowserExitMarked = true;
+    navigator.sendBeacon('mark_browser_exit.php', payload);
+}
+
+window.addEventListener('pagehide', function() {
+    markBrowserExitPendingLogout();
+}, { capture: true });
+
 function initNavbarJQueryHandlers() {
     $(document).ready(function() {
         function loadEditProfileForm(routeIndex = 0) {

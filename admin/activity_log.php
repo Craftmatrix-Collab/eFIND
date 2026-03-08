@@ -37,62 +37,103 @@ if (!isAdmin() && !(function_exists('isSuperAdmin') && isSuperAdmin())) {
     exit();
 }
 
-function normalizeActivityAction(string $action): string {
-    $value = strtolower(trim($action));
-    switch ($value) {
-        case 'login':
-        case 'logout':
-        case 'upload':
-        case 'update':
-        case 'delete':
-        case 'profile_update':
-        case 'password_change':
-        case 'chatbot':
-            return $value;
-        case 'create':
-        case 'user_create':
-            return 'upload';
-        case 'user_delete':
-            return 'delete';
-        case 'download':
-        case 'view':
-        case 'search':
-        case 'ocr_edit':
-        case 'ocr_update':
-        case 'user_update':
-            return 'update';
-        default:
-            return 'update';
+function normalizeActivityActionValue(string $value): string {
+    $normalized = strtolower(trim($value));
+    if ($normalized === '' || !preg_match('/^[a-z0-9_]+$/', $normalized)) {
+        return 'unknown';
     }
+    return $normalized;
 }
 
-function getActivityActionBadgeClass(string $normalizedAction): string {
-    switch ($normalizedAction) {
+function resolveEffectiveActivityAction(string $action, ?string $description = null): string {
+    $normalizedAction = normalizeActivityActionValue($action);
+    $normalizedDescription = normalizeActivityActionValue((string)$description);
+    if (preg_match('/^\d+$/', $normalizedAction) && $normalizedDescription !== 'unknown') {
+        return $normalizedDescription;
+    }
+    if ($normalizedAction === 'unknown' && $normalizedDescription !== 'unknown') {
+        return $normalizedDescription;
+    }
+    return $normalizedAction;
+}
+
+function getActivityActionBadgeClass(string $effectiveAction): string {
+    switch ($effectiveAction) {
         case 'login': return 'badge-login';
+        case 'failed_login': return 'badge-failed_login';
         case 'logout': return 'badge-logout';
         case 'upload': return 'badge-upload';
+        case 'create': return 'badge-create';
+        case 'user_create': return 'badge-user_create';
         case 'update': return 'badge-update';
+        case 'user_update': return 'badge-user_update';
+        case 'ocr_edit': return 'badge-ocr_edit';
+        case 'ocr_update': return 'badge-ocr_update';
         case 'delete': return 'badge-delete';
+        case 'user_delete': return 'badge-user_delete';
+        case 'download': return 'badge-download';
+        case 'view': return 'badge-view';
+        case 'search': return 'badge-search';
         case 'profile_update': return 'badge-profile_update';
         case 'password_change': return 'badge-password_change';
         case 'chatbot': return 'badge-chatbot';
+        case 'login_attempts_reset': return 'badge-login_attempts_reset';
+        case 'settings_update': return 'badge-settings_update';
         default: return 'badge-system';
     }
 }
 
-function getActivityActionLabel(string $normalizedAction): string {
+function getActivityActionLabel(string $effectiveAction): string {
     $labels = [
         'login' => 'Login',
+        'failed_login' => 'Failed Login',
         'logout' => 'Logout',
         'upload' => 'Upload',
+        'create' => 'Create',
+        'user_create' => 'User Create',
         'update' => 'Update',
+        'user_update' => 'User Update',
+        'ocr_edit' => 'OCR Edit',
+        'ocr_update' => 'OCR Update',
         'delete' => 'Delete',
+        'user_delete' => 'User Delete',
+        'download' => 'Download',
+        'view' => 'View',
+        'search' => 'Search',
         'profile_update' => 'Profile Update',
         'password_change' => 'Password Change',
         'chatbot' => 'Chatbot',
+        'login_attempts_reset' => 'Login Attempts Reset',
+        'settings_update' => 'Settings Update',
+        'unknown' => 'Unknown',
     ];
-    return $labels[$normalizedAction] ?? 'Update';
+    if (isset($labels[$effectiveAction])) {
+        return $labels[$effectiveAction];
+    }
+    return ucwords(str_replace('_', ' ', $effectiveAction));
 }
+
+function isSystemActivityAction(string $effectiveAction): bool {
+    return in_array($effectiveAction, [
+        'chatbot',
+        'logout',
+        'login',
+        'failed_login',
+        'login_attempts_reset',
+        'settings_update',
+        'profile_update',
+        'password_change',
+    ], true);
+}
+
+$effectiveActionSql = "CASE
+    WHEN LOWER(TRIM(al.action)) REGEXP '^[0-9]+$'
+         AND LOWER(TRIM(al.description)) REGEXP '^[a-z0-9_]+$'
+        THEN LOWER(TRIM(al.description))
+    WHEN LOWER(TRIM(al.action)) REGEXP '^[a-z0-9_]+$'
+        THEN LOWER(TRIM(al.action))
+    ELSE 'unknown'
+END";
 
 // Handle print action
 if (isset($_GET['print']) && $_GET['print'] === '1') {
@@ -106,7 +147,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     }
 
     // Build query with filters for print
-    $printQuery = "SELECT al.*, u.username as user_username, au.username as admin_username
+    $printQuery = "SELECT al.*, u.username as user_username, au.username as admin_username, {$effectiveActionSql} AS effective_action
                    FROM activity_logs al
                    LEFT JOIN users u ON al.user_id = u.id
                    LEFT JOIN admin_users au ON al.user_id = au.id
@@ -174,6 +215,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             .logo img { max-height: 60px; }
             /* Enhanced Badge Colors for Action Types */
             .badge-login { background-color: #d4edda; color: #155724; }
+            .badge-failed_login { background-color: #f8d7da; color: #721c24; }
             .badge-logout { background-color: #fff3cd; color: #856404; }
             .badge-download { background-color: #cce7ff; color: #004085; }
             .badge-upload { background-color: #d1ecf1; color: #0c5460; }
@@ -191,6 +233,8 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             .badge-user_update { background-color: #fef9e7; color: #7d6608; }
             .badge-user_delete { background-color: #fadbd8; color: #78281f; }
             .badge-chatbot { background-color: #e3d7ff; color: #5a1f7c; }
+            .badge-login_attempts_reset { background-color: #ffe5d9; color: #7f5539; }
+            .badge-settings_update { background-color: #dbeafe; color: #1e3a8a; }
             .user-role-admin { background-color: #e74c3c; color: white; }
             .user-role-staff { background-color: #3498db; color: white; }
             .user-role-user { background-color: #2ecc71; color: white; }
@@ -250,16 +294,16 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             $resolved_user = $is_admin_log
                 ? ($log['admin_username'] ?? $log['user_name'] ?? 'System')
                 : ($log['user_username'] ?? $log['user_name'] ?? 'System');
-            $normalizedAction = normalizeActivityAction((string)($log['action'] ?? ''));
+            $effectiveAction = resolveEffectiveActivityAction((string)($log['effective_action'] ?? $log['action'] ?? ''), (string)($log['description'] ?? ''));
             echo '<tr>
                 <td>' . $count . '</td>
                 <td>' . htmlspecialchars($resolved_user) . '</td>
                 <td><span class="user-role-' . htmlspecialchars($log['user_role'] ?? 'system') . '">' . htmlspecialchars(ucfirst($log['user_role'] ?? 'System')) . '</span></td>
                 <td>
-                    <span class="badge ' . htmlspecialchars(getActivityActionBadgeClass($normalizedAction)) . '">' . htmlspecialchars(getActivityActionLabel($normalizedAction)) . '</span>
+                    <span class="badge ' . htmlspecialchars(getActivityActionBadgeClass($effectiveAction)) . '">' . htmlspecialchars(getActivityActionLabel($effectiveAction)) . '</span>
                 </td>
                 <td>' . htmlspecialchars($log['description'] ?? 'N/A') . '</td>
-                <td>' . htmlspecialchars(ucfirst(!empty($log['document_type']) ? $log['document_type'] : (in_array($normalizedAction, ['chatbot', 'logout', 'login'], true) ? 'System' : 'N/A'))) . '</td>
+                <td>' . htmlspecialchars(ucfirst(!empty($log['document_type']) ? $log['document_type'] : (isSystemActivityAction($effectiveAction) ? 'System' : 'N/A'))) . '</td>
                 <td>' . htmlspecialchars($log['document_id'] ?? 'N/A') . '</td>
                 <td>' . htmlspecialchars($log['details'] ?? 'N/A') . '</td>
                 <!-- <td>' . htmlspecialchars($log['ip_address'] ?? 'N/A') . '</td> -->
@@ -305,7 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle search, pagination, and sort functionality
 $search_query = isset($_GET['search_query']) ? trim($_GET['search_query']) : '';
-$filter_action = isset($_GET['filter_action']) ? trim($_GET['filter_action']) : '';
+$filter_action = isset($_GET['filter_action']) ? strtolower(trim((string)$_GET['filter_action'])) : '';
 $filter_user = isset($_GET['filter_user']) ? trim($_GET['filter_user']) : '';
 $filter_user_role = isset($_GET['filter_user_role']) ? trim($_GET['filter_user_role']) : '';
 $filter_date = isset($_GET['filter_date']) ? trim($_GET['filter_date']) : '';
@@ -317,15 +361,7 @@ if (!in_array($table_limit, $valid_limits)) {
     $table_limit = 5;
 }
 $offset = ($page - 1) * $table_limit;
-$normalizedActionSql = "CASE
-    WHEN al.action IN ('login','logout','upload','update','delete','profile_update','password_change','chatbot') THEN al.action
-    WHEN al.action IN ('create','user_create') THEN 'upload'
-    WHEN al.action = 'user_delete' THEN 'delete'
-    WHEN al.action IN ('download','view','search','ocr_edit','ocr_update','user_update') THEN 'update'
-    ELSE 'update'
-END";
-$allowedActionFilters = ['login', 'logout', 'upload', 'update', 'delete', 'profile_update', 'password_change', 'chatbot'];
-if ($filter_action !== '' && !in_array($filter_action, $allowedActionFilters, true)) {
+if ($filter_action !== '' && !preg_match('/^[a-z0-9_]+$/', $filter_action)) {
     $filter_action = '';
 }
 
@@ -344,7 +380,7 @@ if (!empty($search_query)) {
 
 // Add filter conditions
 if (!empty($filter_action)) {
-    $where_clauses[] = "($normalizedActionSql) = ?";
+    $where_clauses[] = "($effectiveActionSql) = ?";
     $params[] = $filter_action;
     $types .= 's';
 }
@@ -370,7 +406,7 @@ if (!empty($filter_date)) {
 }
 
 // Build the query
-$query = "SELECT al.*, u.username as user_username, au.username as admin_username, {$normalizedActionSql} AS normalized_action
+$query = "SELECT al.*, u.username as user_username, au.username as admin_username, {$effectiveActionSql} AS effective_action
           FROM activity_logs al
           LEFT JOIN users u ON al.user_id = u.id
           LEFT JOIN admin_users au ON al.user_id = au.id
@@ -388,8 +424,8 @@ $valid_sorts = [
     'user_name_desc' => 'al.user_name DESC',
     'user_role_asc' => 'al.user_role ASC',
     'user_role_desc' => 'al.user_role DESC',
-    'action_asc' => 'normalized_action ASC',
-    'action_desc' => 'normalized_action DESC',
+    'action_asc' => 'effective_action ASC',
+    'action_desc' => 'effective_action DESC',
     'document_type_asc' => 'al.document_type ASC',
     'document_type_desc' => 'al.document_type DESC'
 ];
@@ -444,11 +480,14 @@ $total_pages = ceil($total_logs / $table_limit);
 $count_stmt->close();
 
 // Get unique actions for filter dropdown
-$actions_query = "SELECT DISTINCT action FROM activity_logs ORDER BY action";
+$actions_query = "SELECT DISTINCT {$effectiveActionSql} AS action_value
+                  FROM activity_logs al
+                  WHERE {$effectiveActionSql} <> 'unknown'
+                  ORDER BY action_value";
 $actions_result = $conn->query($actions_query);
 $unique_actions = [];
 while ($row = $actions_result->fetch_assoc()) {
-    $unique_actions[] = $row['action'];
+    $unique_actions[] = $row['action_value'];
 }
 
 // Add this function near the top of the file after the existing includes
@@ -761,6 +800,7 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
             font-weight: 600;
         }
         .badge-login { background-color: #d4edda; color: #155724; }
+        .badge-failed_login { background-color: #f8d7da; color: #721c24; }
         .badge-logout { background-color: #fff3cd; color: #856404; }
         .badge-download { background-color: #cce7ff; color: #004085; }
         .badge-upload { background-color: #d1ecf1; color: #0c5460; }
@@ -772,7 +812,14 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
         .badge-system { background-color: #e2e3e5; color: #383d41; }
         .badge-create { background-color: #cce7ff; color: #004085; }
         .badge-search { background-color: #f8f9fa; color: #212529; }
+        .badge-ocr_edit { background-color: #e8d7f1; color: #4a235a; }
+        .badge-ocr_update { background-color: #d6eaf8; color: #1b4f72; }
+        .badge-user_create { background-color: #d5f5e3; color: #186a3b; }
+        .badge-user_update { background-color: #fef9e7; color: #7d6608; }
+        .badge-user_delete { background-color: #fadbd8; color: #78281f; }
         .badge-chatbot { background-color: #e3d7ff; color: #5a1f7c; }
+        .badge-login_attempts_reset { background-color: #ffe5d9; color: #7f5539; }
+        .badge-settings_update { background-color: #dbeafe; color: #1e3a8a; }
         .document-link {
             color: var(--primary-blue);
             text-decoration: none;
@@ -1196,14 +1243,11 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                             <label for="filter_action" class="form-label">Action Type</label>
                             <select class="form-select" id="filter_action" name="filter_action">
                                 <option value="">All Actions</option>
-                                <option value="login" <?php echo $filter_action === 'login' ? 'selected' : ''; ?>>Login</option>
-                                <option value="logout" <?php echo $filter_action === 'logout' ? 'selected' : ''; ?>>Logout</option>
-                                <option value="upload" <?php echo $filter_action === 'upload' ? 'selected' : ''; ?>>Upload</option>
-                                <option value="update" <?php echo $filter_action === 'update' ? 'selected' : ''; ?>>Update</option>
-                                <option value="delete" <?php echo $filter_action === 'delete' ? 'selected' : ''; ?>>Delete</option>
-                                <option value="profile_update" <?php echo $filter_action === 'profile_update' ? 'selected' : ''; ?>>Profile Update</option>
-                                <option value="password_change" <?php echo $filter_action === 'password_change' ? 'selected' : ''; ?>>Password Change</option>
-                                <option value="chatbot" <?php echo $filter_action === 'chatbot' ? 'selected' : ''; ?>>Chatbot</option>
+                                <?php foreach ($unique_actions as $actionValue): ?>
+                                    <option value="<?php echo htmlspecialchars($actionValue); ?>" <?php echo $filter_action === $actionValue ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars(getActivityActionLabel($actionValue)); ?>
+                                    </option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-md-2">
@@ -1281,7 +1325,7 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                         $resolved_user = $is_admin_log
                             ? ($log['admin_username'] ?? $log['user_name'] ?? 'System')
                             : ($log['user_username'] ?? $log['user_name'] ?? 'System');
-                        $normalizedAction = normalizeActivityAction((string)($log['normalized_action'] ?? $log['action'] ?? ''));
+                        $effectiveAction = resolveEffectiveActivityAction((string)($log['effective_action'] ?? $log['action'] ?? ''), (string)($log['description'] ?? ''));
                         ?>
                         <tr>
                             <td><?php echo $row_num++; ?></td>
@@ -1292,8 +1336,8 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                             </td>
                             <td>
                                 <span class="badge
-                                    <?php echo htmlspecialchars(getActivityActionBadgeClass($normalizedAction)); ?>">
-                                    <?php echo htmlspecialchars(getActivityActionLabel($normalizedAction)); ?>
+                                    <?php echo htmlspecialchars(getActivityActionBadgeClass($effectiveAction)); ?>">
+                                    <?php echo htmlspecialchars(getActivityActionLabel($effectiveAction)); ?>
                                 </span>
                             </td>
                             <td class="text-start">
@@ -1310,7 +1354,7 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                             <td>
                                 <?php if (!empty($log['document_type'])): ?>
                                     <span class="badge bg-info"><?php echo htmlspecialchars(ucfirst($log['document_type'])); ?></span>
-                                <?php elseif (in_array($normalizedAction, ['chatbot', 'logout', 'login'], true)): ?>
+                                <?php elseif (isSystemActivityAction($effectiveAction)): ?>
                                     <span class="badge bg-secondary">System</span>
                                 <?php else: ?>
                                     <span class="badge bg-light text-dark">N/A</span>

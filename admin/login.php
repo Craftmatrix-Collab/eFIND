@@ -225,14 +225,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
     if (empty($username) || empty($password)) {
         $error = "Both username and password are required.";
         logLoginAttempt($username, $user_ip, 'FAILED', 'Empty credentials');
-        logActivity(null, 'failed_login', 'Login attempt with empty credentials', 'system', $user_ip, "Username: $username");
+        logLoginActivity(null, 'failed_login', 'Login attempt with empty credentials', 'system', $user_ip, "Username: $username");
     } else {
         ensureLoginAccountLockColumns();
         $accountState = getLoginAccountByUsername($username);
         if ($accountState && (int)($accountState['account_locked'] ?? 0) === 1) {
             $error = buildAccountLockedErrorMessage();
             logLoginAttempt($username, $user_ip, 'FAILED', 'Account locked', $accountState['id'], $accountState['user_role']);
-            logActivity($accountState['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $accountState['username'], $accountState['user_role']);
+            logLoginActivity($accountState['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $accountState['username'], $accountState['user_role']);
         } else {
             $loginSuccessful = false;
         
@@ -251,7 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                     if ((int)($user['account_locked'] ?? 0) === 1) {
                         $error = buildAccountLockedErrorMessage();
                         logLoginAttempt($username, $user_ip, 'FAILED', 'Account locked', $user['id'], 'admin');
-                        logActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                        logLoginActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
                         $loginSuccessful = true; // Mark as processed to skip staff login
                     } elseif (password_verify($password, $user['password_hash'])) {
                         resetFailedLoginAttempts('admin_users', (int)$user['id']);
@@ -260,7 +260,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                         if (!$user['is_verified']) {
                             $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
                             logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified', $user['id'], 'admin');
-                            logActivity($user['id'], 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                            logLoginActivity($user['id'], 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
                             $loginSuccessful = true; // Mark as processed to skip staff login
                         } else {
                             updateAccountLastLogin($conn, 'admin', (int)$user['id']);
@@ -285,14 +285,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                             if ($primaryToken === null) {
                                 $error = "Unable to start secure session. Please try again.";
                                 logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], 'admin');
-                                logActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                                logLoginActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
                                 session_unset();
                                 session_destroy();
                                 $loginSuccessful = true;
                             } else {
                                 // Log successful admin login
                                 logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
-                                logActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
+                                logLoginActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
 
                                 $loginSuccessful = true;
                                 
@@ -307,7 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                         $attemptState = registerFailedLoginAttempt('admin_users', (int)$user['id']);
                         $details = !empty($attemptState['is_locked']) ? 'Invalid admin password - account locked' : 'Invalid admin password';
                         logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], 'admin');
-                        logActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                        logLoginActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
                         $error = !empty($attemptState['is_locked'])
                             ? buildAccountLockedErrorMessage()
                             : buildWrongPasswordErrorMessage($attemptState['remaining_attempts']);
@@ -333,7 +333,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                         if ((int)($user['account_locked'] ?? 0) === 1) {
                             $error = buildAccountLockedErrorMessage();
                             logLoginAttempt($username, $user_ip, 'FAILED', 'Account locked', $user['id'], $user['role']);
-                            logActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
+                            logLoginActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
                         } elseif (password_verify($password, $user['password'])) {
                             resetFailedLoginAttempts('users', (int)$user['id']);
                             updateAccountLastLogin($conn, 'staff', (int)$user['id']);
@@ -361,13 +361,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                             if ($primaryToken === null) {
                                 $error = "Unable to start secure session. Please try again.";
                                 logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], $user['role']);
-                                logActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
+                                logLoginActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
                                 session_unset();
                                 session_destroy();
                             } else {
                                 // Log successful staff login
                                 logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
-                                logActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
+                                logLoginActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
 
                                 // Redirect to dashboard or original requested URL
                                 $_SESSION['show_login_welcome_modal'] = true;
@@ -378,14 +378,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                             $attemptState = registerFailedLoginAttempt('users', (int)$user['id']);
                             $details = !empty($attemptState['is_locked']) ? 'Invalid password - account locked' : 'Invalid password';
                             logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], $user['role']);
-                            logActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
+                            logLoginActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
                             $error = !empty($attemptState['is_locked'])
                                 ? buildAccountLockedErrorMessage()
                                 : buildWrongPasswordErrorMessage($attemptState['remaining_attempts']);
                         }
                     } else {
                         logLoginAttempt($username, $user_ip, 'FAILED', 'Username not found');
-                        logActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
+                        logLoginActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
                         $error = "Invalid username or password.";
                     }
                  
@@ -393,7 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
                 } else {
                     $error = "Database error. Please try again later.";
                     logLoginAttempt($username, $user_ip, 'FAILED', 'Database error');
-                    logActivity(null, 'failed_login', 'Database error during login', 'system', $user_ip, "Username: $username");
+                    logLoginActivity(null, 'failed_login', 'Database error during login', 'system', $user_ip, "Username: $username");
                 }
             }
         }
@@ -438,7 +438,7 @@ function logLoginAttempt($username, $ip_address, $status, $details = '', $user_i
 /**
  * Log activity to activity_logs table
  */
-function logActivity($user_id, $action, $description, $document_type = 'system', $ip_address = null, $details = null, $known_username = null, $user_role = null) {
+function logLoginActivity($user_id, $action, $description, $document_type = 'system', $ip_address = null, $details = null, $known_username = null, $user_role = null) {
     global $conn;
     
     try {

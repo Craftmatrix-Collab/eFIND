@@ -7,8 +7,55 @@ if (!defined('PRIMARY_LOGIN_SESSION_TABLE')) {
     define('PRIMARY_LOGIN_SESSION_TABLE', 'primary_login_sessions');
 }
 
+if (!defined('PRIMARY_BROWSER_EXIT_GRACE_SECONDS')) {
+    define('PRIMARY_BROWSER_EXIT_GRACE_SECONDS', 30);
+}
+
 function getAuthConnection() {
     return (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) ? $GLOBALS['conn'] : null;
+}
+
+function supportsBrowserExitPendingColumn(mysqli $conn): bool {
+    static $supports = null;
+    if ($supports !== null) {
+        return $supports;
+    }
+
+    $columnCheck = $conn->query("SHOW COLUMNS FROM " . PRIMARY_LOGIN_SESSION_TABLE . " LIKE 'browser_exit_pending_at'");
+    if (!$columnCheck) {
+        error_log('Failed to inspect browser_exit_pending_at column: ' . $conn->error);
+        $supports = false;
+        return false;
+    }
+
+    if ((int)$columnCheck->num_rows > 0) {
+        $supports = true;
+        return true;
+    }
+
+    $supports = $conn->query(
+        "ALTER TABLE " . PRIMARY_LOGIN_SESSION_TABLE . " ADD COLUMN browser_exit_pending_at DATETIME NULL AFTER session_id"
+    ) === true;
+
+    if (!$supports) {
+        error_log('Failed to add browser_exit_pending_at column: ' . $conn->error);
+    }
+
+    return $supports;
+}
+
+function isBrowserExitPendingExpired($pendingAt): bool {
+    $pendingValue = trim((string)$pendingAt);
+    if ($pendingValue === '' || $pendingValue === '0000-00-00 00:00:00') {
+        return false;
+    }
+
+    $pendingTs = strtotime($pendingValue);
+    if ($pendingTs === false) {
+        return false;
+    }
+
+    return (time() - $pendingTs) > PRIMARY_BROWSER_EXIT_GRACE_SECONDS;
 }
 
 function ensurePrimaryLoginSessionTable(mysqli $conn) {
@@ -25,6 +72,7 @@ function ensurePrimaryLoginSessionTable(mysqli $conn) {
         username      VARCHAR(100) NOT NULL DEFAULT '',
         session_token VARCHAR(128) NOT NULL,
         session_id    VARCHAR(128) NOT NULL DEFAULT '',
+        browser_exit_pending_at DATETIME NULL,
         created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
         updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_account_identity (account_type, account_id)
@@ -33,9 +81,14 @@ function ensurePrimaryLoginSessionTable(mysqli $conn) {
     $initialized = $conn->query($sql) === true;
     if (!$initialized) {
         error_log('Failed to ensure primary login session table: ' . $conn->error);
+        return false;
     }
 
-    return $initialized;
+    if (!supportsBrowserExitPendingColumn($conn)) {
+        error_log('Browser-exit pending logout tracking is unavailable.');
+    }
+
+    return true;
 }
 
 function buildPrimaryAccountKey($accountType, $accountId) {
@@ -278,15 +331,29 @@ function registerPrimaryLoginSession(mysqli $conn, $accountType, $accountId, $us
     $token = bin2hex(random_bytes(32));
     $sessionId = session_id();
 
-    $sql = "INSERT INTO " . PRIMARY_LOGIN_SESSION_TABLE . " (account_key, account_type, account_id, username, session_token, session_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
-            ON DUPLICATE KEY UPDATE
-                account_type = VALUES(account_type),
-                account_id = VALUES(account_id),
-                username = VALUES(username),
-                session_token = VALUES(session_token),
-                session_id = VALUES(session_id),
-                updated_at = NOW()";
+    $supportsBrowserExitPending = supportsBrowserExitPendingColumn($conn);
+    if ($supportsBrowserExitPending) {
+        $sql = "INSERT INTO " . PRIMARY_LOGIN_SESSION_TABLE . " (account_key, account_type, account_id, username, session_token, session_id, browser_exit_pending_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE
+                    account_type = VALUES(account_type),
+                    account_id = VALUES(account_id),
+                    username = VALUES(username),
+                    session_token = VALUES(session_token),
+                    session_id = VALUES(session_id),
+                    browser_exit_pending_at = NULL,
+                    updated_at = NOW()";
+    } else {
+        $sql = "INSERT INTO " . PRIMARY_LOGIN_SESSION_TABLE . " (account_key, account_type, account_id, username, session_token, session_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE
+                    account_type = VALUES(account_type),
+                    account_id = VALUES(account_id),
+                    username = VALUES(username),
+                    session_token = VALUES(session_token),
+                    session_id = VALUES(session_id),
+                    updated_at = NOW()";
+    }
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
         error_log('Failed to prepare primary login session upsert: ' . $conn->error);
@@ -326,6 +393,35 @@ function logoutPrimaryLoginSession(mysqli $conn) {
     clearPrimaryLoginMarkers();
 }
 
+function markPrimaryLoginSessionPendingBrowserExit(mysqli $conn): bool {
+    if (!ensurePrimaryLoginSessionTable($conn) || !supportsBrowserExitPendingColumn($conn)) {
+        return false;
+    }
+
+    $accountKey = (string)($_SESSION['primary_account_key'] ?? '');
+    $token = (string)($_SESSION['primary_session_token'] ?? '');
+    if ($accountKey === '' || $token === '') {
+        return false;
+    }
+
+    $stmt = $conn->prepare(
+        "UPDATE " . PRIMARY_LOGIN_SESSION_TABLE . " SET browser_exit_pending_at = NOW() WHERE account_key = ? AND session_token = ? LIMIT 1"
+    );
+    if (!$stmt) {
+        error_log('Failed to prepare browser-exit pending update: ' . $conn->error);
+        return false;
+    }
+
+    $stmt->bind_param('ss', $accountKey, $token);
+    $ok = $stmt->execute();
+    if (!$ok) {
+        error_log('Failed to mark browser-exit pending logout: ' . $stmt->error);
+    }
+    $stmt->close();
+
+    return $ok;
+}
+
 function validatePrimaryLoginSession(mysqli $conn) {
     $context = getPrimaryAccountContext();
     $sessionToken = (string)($_SESSION['primary_session_token'] ?? '');
@@ -338,7 +434,11 @@ function validatePrimaryLoginSession(mysqli $conn) {
     $accountKey = buildPrimaryAccountKey($context['account_type'], $context['account_id']);
     $_SESSION['primary_account_key'] = $accountKey;
 
-    $stmt = $conn->prepare("SELECT session_token FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1");
+    $supportsBrowserExitPending = supportsBrowserExitPendingColumn($conn);
+    $selectSql = $supportsBrowserExitPending
+        ? "SELECT session_token, browser_exit_pending_at FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1"
+        : "SELECT session_token FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1";
+    $stmt = $conn->prepare($selectSql);
     if (!$stmt) {
         error_log('Failed to prepare primary login session validation: ' . $conn->error);
         destroyAuthSession();
@@ -355,7 +455,23 @@ function validatePrimaryLoginSession(mysqli $conn) {
         return false;
     }
 
-    $touch = $conn->prepare("UPDATE " . PRIMARY_LOGIN_SESSION_TABLE . " SET session_id = ?, updated_at = NOW() WHERE account_key = ? AND session_token = ?");
+    if ($supportsBrowserExitPending && isBrowserExitPendingExpired($row['browser_exit_pending_at'] ?? null)) {
+        $invalidateStmt = $conn->prepare(
+            "DELETE FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? AND session_token = ? LIMIT 1"
+        );
+        if ($invalidateStmt) {
+            $invalidateStmt->bind_param('ss', $accountKey, $sessionToken);
+            $invalidateStmt->execute();
+            $invalidateStmt->close();
+        }
+        destroyAuthSession();
+        return false;
+    }
+
+    $touchSql = $supportsBrowserExitPending
+        ? "UPDATE " . PRIMARY_LOGIN_SESSION_TABLE . " SET session_id = ?, browser_exit_pending_at = NULL, updated_at = NOW() WHERE account_key = ? AND session_token = ?"
+        : "UPDATE " . PRIMARY_LOGIN_SESSION_TABLE . " SET session_id = ?, updated_at = NOW() WHERE account_key = ? AND session_token = ?";
+    $touch = $conn->prepare($touchSql);
     if ($touch) {
         $currentSessionId = session_id();
         $touch->bind_param('sss', $currentSessionId, $accountKey, $sessionToken);
