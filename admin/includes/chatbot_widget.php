@@ -16,13 +16,13 @@ if ($chatbot_profile_picture_raw !== '') {
 <style>
     :root {
         --chatbot-bg: #F5F7FA;
-        --chatbot-surface: #FFFFFF;
+        --chatbot-surface: #F5F7FA;
         --chatbot-border: #DCE2EA;
         --chatbot-text: #000000;
         --chatbot-muted: #8E8E93;
         --chatbot-user: #0084FF;
-        --chatbot-bot: #E9E9EB;
-        --chatbot-message-bg: #E9E9EB;
+        --chatbot-bot: #F5F7FA;
+        --chatbot-message-bg: #F5F7FA;
         --chatbot-message-border: #D2D8E1;
         --chatbot-message-border-accent: #C1C8D2;
         --chatbot-success: #22C55E;
@@ -690,8 +690,8 @@ if ($chatbot_profile_picture_raw !== '') {
                 <img src="images/logo_pbsth.png" alt="eFINDBot logo" class="chatbot-logo-image">
             </div>
             <div class="chatbot-title">
-                <h4># eFINDBot</h4>
-                <p class="chatbot-status">## Online</p>
+                <h4>eFINDBot</h4>
+                <p class="chatbot-status">Online</p>
             </div>
         </div>
         <button class="chatbot-close-btn" onclick="toggleChatbot()">
