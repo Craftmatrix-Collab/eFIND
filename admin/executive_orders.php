@@ -1861,7 +1861,7 @@ $count_stmt->close();
                     <?php endif; ?>
                 </div>
                 <div class="d-flex flex-column align-items-end gap-1">
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 d-none" id="bulkDeleteControls" aria-hidden="true">
                         <span class="badge bg-secondary" id="selectedRowsCount">0 selected</span>
                         <button type="button" class="btn btn-sm btn-danger disabled" id="bulkDeleteBtn" aria-disabled="true" disabled>
                             <i class="fas fa-trash me-1"></i>Delete Selected
@@ -2800,6 +2800,7 @@ $count_stmt->close();
             const deleteConfirmLabel = document.getElementById('deleteConfirmLabel');
             const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
             const selectedRowsCount = document.getElementById('selectedRowsCount');
+            const bulkDeleteControls = document.getElementById('bulkDeleteControls');
             const selectedRowIds = new Set();
             const selectableRows = Array.from(document.querySelectorAll('#executive_ordersTableBody tr[data-id]'));
             let selectionModeActive = false;
@@ -2821,6 +2822,10 @@ $count_stmt->close();
                 selectionModeActive = selectedCount > 0;
                 selectedRowsCount.textContent = `${selectedCount} selected`;
                 const hasSelection = selectedCount > 0;
+                if (bulkDeleteControls) {
+                    bulkDeleteControls.classList.toggle('d-none', !hasSelection);
+                    bulkDeleteControls.setAttribute('aria-hidden', hasSelection ? 'false' : 'true');
+                }
                 bulkDeleteBtn.classList.toggle('disabled', !hasSelection);
                 bulkDeleteBtn.disabled = !hasSelection;
                 if (hasSelection) {
