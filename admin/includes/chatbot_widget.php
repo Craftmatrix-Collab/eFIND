@@ -776,18 +776,23 @@ const chatbotHistoryStorageKey = `efind_chatbot_history_${chatbotUserId}`;
 const chatbotDocumentMentionMatchers = [
     {
         type: 'resolution',
-        regex: /\b(resolution(?:\s*(?:no\.?|number|#))?)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]*\d[A-Za-z0-9\-\/]*)\b/gi,
+        regex: /\b(resolution(?:\s*(?:no\.?|number|#))?)\s*[:#-]?\s*((?=[A-Za-z0-9\-\/]*\d)[A-Za-z0-9][A-Za-z0-9\-\/]*)\b/gi,
         numberGroup: 2
     },
     {
         type: 'executive_order',
-        regex: /\b(executive\s+order(?:\s*(?:no\.?|number|#))?)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]*\d[A-Za-z0-9\-\/]*)\b/gi,
+        regex: /\b(executive\s+order(?:\s*(?:no\.?|number|#))?)\s*[:#-]?\s*((?=[A-Za-z0-9\-\/]*\d)[A-Za-z0-9][A-Za-z0-9\-\/]*)\b/gi,
         numberGroup: 2
     },
     {
         type: 'minutes',
-        regex: /\b((?:(?:minutes?\s+of\s+meeting|meeting\s+minutes)(?:\s*(?:no\.?|number|#))?|session\s*(?:no\.?|number|#)))\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]*\d[A-Za-z0-9\-\/]*)\b/gi,
+        regex: /\b((?:(?:minutes?\s+of\s+meeting|meeting\s+minutes)(?:\s*(?:no\.?|number|#))?|session\s*(?:no\.?|number|#)))\s*[:#-]?\s*((?=[A-Za-z0-9\-\/]*\d)[A-Za-z0-9][A-Za-z0-9\-\/]*)\b/gi,
         numberGroup: 2
+    },
+    {
+        type: 'minutes',
+        regex: /\b(\d{1,3}(?:st|nd|rd|th)\s+regular\s+session)\b/gi,
+        numberGroup: 1
     },
     {
         type: 'executive_order',

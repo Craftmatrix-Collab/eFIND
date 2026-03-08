@@ -18,3 +18,12 @@
 [2026-03-07 21:49:56] [127.0.0.1] N8N Response - HTTP Code: 200, URL: https://n8n-efind.craftmatrix.org/webhook/5eaeb40b-8411-43ce-bee1-c32fc14e04f1
 [2026-03-07 21:49:56] [127.0.0.1] N8N response JSON error: Syntax error
 [2026-03-07 21:49:56] [127.0.0.1] N8N response received successfully
+[2026-03-08 10:52:48] [unknown] Request received: /document-image [GET]
+[2026-03-08 10:52:56] [unknown] Request received: /document-image [GET]
+[2026-03-08 10:53:39] [unknown] Request received: /document-image [GET]
+[2026-03-08 10:54:09] [unknown] Request received: /document-image [GET]
+[2026-03-08 10:56:05] [unknown] Request received: /document-image [GET]
+[2026-03-08 10:56:15] [unknown] Request received: /document-image [GET]
+[2026-03-08 10:56:24] [unknown] Request received: /document-image [GET]
+[2026-03-08 10:56:34] [unknown] Request received: /document-image [GET]
+[2026-03-08 10:56:34] [unknown] Request received: /document-image [GET]

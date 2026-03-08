@@ -290,18 +290,22 @@ class BarangayChatbotAPI {
             'minutes' => ['MINUTESOFMEETING', 'MEETINGMINUTES', 'MINUTES', 'SESSION']
         ];
 
+        $candidate = $normalizedValue;
+
         if (!isset($prefixesByType[$documentType])) {
-            return $normalizedValue;
+            $strippedGeneric = preg_replace('/^(?:NO|NUMBER)+/', '', $candidate);
+            return $strippedGeneric !== '' ? $strippedGeneric : $normalizedValue;
         }
 
         foreach ($prefixesByType[$documentType] as $prefix) {
-            if (str_starts_with($normalizedValue, $prefix)) {
-                $stripped = substr($normalizedValue, strlen($prefix));
-                return $stripped !== '' ? $stripped : $normalizedValue;
+            if (str_starts_with($candidate, $prefix)) {
+                $candidate = substr($candidate, strlen($prefix));
+                break;
             }
         }
 
-        return $normalizedValue;
+        $candidate = preg_replace('/^(?:NO|NUMBER)+/', '', $candidate);
+        return $candidate !== '' ? $candidate : $normalizedValue;
     }
 
     private function isDocumentNumberMatch($requestedNumber, $storedNumber, $documentType) {
@@ -326,8 +330,24 @@ class BarangayChatbotAPI {
         $requestedDigits = preg_replace('/[^0-9]/', '', $requestedNormalized);
         $storedDigits = preg_replace('/[^0-9]/', '', $storedNormalized);
 
-        if (strlen($requestedDigits) >= 4 && $requestedDigits === $storedDigits) {
-            return true;
+        if ($requestedDigits !== '' && $storedDigits !== '') {
+            if ($requestedDigits === $storedDigits) {
+                return true;
+            }
+
+            $requestedDigitsTrimmed = ltrim($requestedDigits, '0');
+            $storedDigitsTrimmed = ltrim($storedDigits, '0');
+
+            if ($requestedDigitsTrimmed === '') {
+                $requestedDigitsTrimmed = '0';
+            }
+            if ($storedDigitsTrimmed === '') {
+                $storedDigitsTrimmed = '0';
+            }
+
+            if ($requestedDigitsTrimmed === $storedDigitsTrimmed) {
+                return true;
+            }
         }
 
         if (strlen($requestedStripped) >= 6 && str_contains($storedStripped, $requestedStripped)) {
