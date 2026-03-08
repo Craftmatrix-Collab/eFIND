@@ -479,7 +479,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
             }
 
             if (!archiveToRecycleBin('minutes_of_meeting', $id, $minute)) {
-                throw new Exception("Failed to archive minute to recycle bin.");
+                throw new Exception("Failed to archive minute to recover document.");
             }
 
             $stmt = $conn->prepare("DELETE FROM minutes_of_meeting WHERE id = ?");

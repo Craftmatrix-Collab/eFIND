@@ -516,7 +516,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
             }
 
             if (!archiveToRecycleBin('resolutions', $id, $resolution)) {
-                throw new Exception("Failed to archive resolution to recycle bin.");
+                throw new Exception("Failed to archive resolution to recover document.");
             }
 
             $stmt = $conn->prepare("DELETE FROM resolutions WHERE id = ?");

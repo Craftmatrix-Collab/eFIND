@@ -556,7 +556,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
             }
 
             if (!archiveToRecycleBin('executive_orders', $id, $executive_order)) {
-                throw new Exception("Failed to archive executive_order to recycle bin.");
+                throw new Exception("Failed to archive executive_order to recover document.");
             }
 
             $stmt = $conn->prepare("DELETE FROM executive_orders WHERE id = ?");

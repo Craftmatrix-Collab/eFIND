@@ -13,7 +13,7 @@ if (!isLoggedIn()) {
 }
 
 if (!isAdmin() && !(function_exists('isSuperAdmin') && isSuperAdmin())) {
-    $_SESSION['error_message'] = 'You do not have permission to access Recycle Bin.';
+    $_SESSION['error_message'] = 'You do not have permission to access Recover Document.';
     header('Location: dashboard.php');
     exit();
 }
@@ -288,7 +288,7 @@ unset($_SESSION['error'], $_SESSION['success']);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Recycle Bin - eFIND System</title>
+    <title>Recover Document - eFIND System</title>
     <link rel="icon" type="image/png" href="images/eFind_logo.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -632,7 +632,7 @@ unset($_SESSION['error'], $_SESSION['success']);
     <div class="management-container">
         <div class="container-fluid">
             <div class="page-header">
-                <h1 class="page-title">Recycle Bin</h1>
+                <h1 class="page-title">Recover Document</h1>
                 <form method="GET" class="d-flex align-items-center gap-2">
                     <label for="table_limit" class="form-label mb-0">Rows:</label>
                     <select id="table_limit" name="table_limit" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -684,7 +684,7 @@ unset($_SESSION['error'], $_SESSION['success']);
                         <tbody>
                             <?php if (empty($entries)): ?>
                                 <tr>
-                                    <td colspan="8" class="text-center py-4">Recycle bin is empty.</td>
+                                    <td colspan="8" class="text-center py-4">Recover document is empty.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($entries as $entry): ?>
