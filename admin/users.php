@@ -7,8 +7,10 @@ if (session_status() === PHP_SESSION_NONE) {
 include(__DIR__ . '/includes/auth.php');
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
+require_once __DIR__ . '/includes/password_policy.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
+$passwordPolicy = getPasswordPolicyClientConfig();
 
 // Check if user is logged in - redirect to login if not
 if (!isLoggedIn()) {
@@ -502,8 +504,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // Validate inputs
+        $passwordValidation = validatePasswordPolicy($password);
         if (empty($full_name) || empty($email) || empty($username) || empty($password) || empty($role)) {
             $_SESSION['error'] = "Full Name, Email, Username, Password, and Role are required fields.";
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit();
+        } elseif (!$passwordValidation['is_valid']) {
+            $_SESSION['error'] = $passwordValidation['message'];
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
         } elseif (empty($_SESSION['add_user_verified_email']) || $_SESSION['add_user_verified_email'] !== $email) {
@@ -536,7 +543,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $contact_number = trim($_POST['contact_number']);
         $email = trim($_POST['email']);
         $username = trim($_POST['username']);
-        $password = !empty(trim($_POST['password'])) ? password_hash(trim($_POST['password']), PASSWORD_DEFAULT) : null;
+        $newPasswordRaw = trim((string)($_POST['password'] ?? ''));
+        $password = null;
         $role = trim($_POST['role']);
         $profile_picture = '';
 
@@ -554,6 +562,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
         } else {
+            if ($newPasswordRaw !== '') {
+                $passwordValidation = validatePasswordPolicy($newPasswordRaw);
+                if (!$passwordValidation['is_valid']) {
+                    $_SESSION['error'] = $passwordValidation['message'];
+                    header("Location: " . $_SERVER['PHP_SELF']);
+                    exit();
+                }
+                $password = password_hash($newPasswordRaw, PASSWORD_DEFAULT);
+            }
+
             $dupStmt = $conn->prepare("SELECT 1 FROM users WHERE (email = ? OR username = ?) AND NOT (? = 'users' AND id = ?) UNION ALL SELECT 1 FROM admin_users WHERE (email = ? OR username = ?) AND NOT (? = 'admin_users' AND id = ?) LIMIT 1");
             $dupStmt->bind_param("sssisssi", $email, $username, $user_type, $id, $email, $username, $user_type, $id);
             $dupStmt->execute();
@@ -1103,6 +1121,30 @@ $count_stmt->close();
         }
         .file-upload:hover {
             background-color: rgba(67, 97, 238, 0.1);
+        }
+        .password-strength {
+            height: 5px;
+            border-radius: 3px;
+            margin-top: 8px;
+            background: #e9ecef;
+            overflow: hidden;
+        }
+        .password-strength-bar {
+            height: 100%;
+            width: 0;
+            transition: all 0.3s ease;
+        }
+        .password-strength-weak { background: #dc3545; width: 33%; }
+        .password-strength-medium { background: #ffc107; width: 66%; }
+        .password-strength-strong { background: #28a745; width: 100%; }
+        .password-requirements {
+            margin: 8px 0 0;
+            padding-left: 18px;
+            font-size: 0.85rem;
+            color: var(--medium-gray);
+        }
+        .password-requirements li.met {
+            color: #198754;
         }
         .current-file {
             margin-top: 10px;
@@ -1788,13 +1830,23 @@ $count_stmt->close();
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="password" class="form-label">Password <span class="text-danger">*</span></label>
+                                <label for="addUserPassword" class="form-label">Password <span class="text-danger">*</span></label>
                                 <div class="input-group">
-                                    <input type="password" class="form-control" id="password" name="password" required>
+                                    <input type="password" class="form-control" id="addUserPassword" name="password" required>
                                     <button class="btn btn-outline-secondary toggle-password" type="button">
                                         <i class="fas fa-eye"></i>
                                     </button>
                                 </div>
+                                <small class="text-muted"><?php echo htmlspecialchars($passwordPolicy['hint']); ?></small>
+                                <div class="password-strength">
+                                    <div class="password-strength-bar" id="addUserStrengthBar"></div>
+                                </div>
+                                <ul class="password-requirements mb-0">
+                                    <li id="addUserReqLength"><?php echo htmlspecialchars($passwordPolicy['requirements']['length']); ?></li>
+                                    <li id="addUserReqUppercase"><?php echo htmlspecialchars($passwordPolicy['requirements']['uppercase']); ?></li>
+                                    <li id="addUserReqNumber"><?php echo htmlspecialchars($passwordPolicy['requirements']['number']); ?></li>
+                                    <li id="addUserReqSpecial"><?php echo htmlspecialchars($passwordPolicy['requirements']['special']); ?></li>
+                                </ul>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="role" class="form-label">Role <span class="text-danger">*</span></label>
@@ -1886,6 +1938,7 @@ $count_stmt->close();
                                         <i class="fas fa-eye"></i>
                                     </button>
                                 </div>
+                                <small class="text-muted"><?php echo htmlspecialchars($passwordPolicy['hint']); ?></small>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="editRole" class="form-label">Role <span class="text-danger">*</span></label>
@@ -1936,6 +1989,64 @@ $count_stmt->close();
             if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:')) return path;
             return path.startsWith('uploads/profiles/') ? path : `uploads/profiles/${path.replace(/^\/+/, '')}`;
         }
+        const usersPasswordPolicy = <?php echo json_encode($passwordPolicy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+        function evaluateUsersPasswordChecks(passwordValue) {
+            return {
+                length: passwordValue.length >= usersPasswordPolicy.minLength,
+                uppercase: /[A-Z]/.test(passwordValue),
+                number: /[0-9]/.test(passwordValue),
+                special: /[^A-Za-z0-9]/.test(passwordValue)
+            };
+        }
+
+        function resolveUsersPasswordStrengthClass(checks) {
+            const score = [checks.length, checks.uppercase, checks.number, checks.special].filter(Boolean).length;
+            if (score <= 1) {
+                return 'password-strength-weak';
+            }
+            if (score <= 3) {
+                return 'password-strength-medium';
+            }
+            return 'password-strength-strong';
+        }
+
+        function updateAddUserPasswordIndicator(passwordValue) {
+            const checks = evaluateUsersPasswordChecks(passwordValue);
+            const strengthBar = document.getElementById('addUserStrengthBar');
+
+            document.getElementById('addUserReqLength')?.classList.toggle('met', checks.length);
+            document.getElementById('addUserReqUppercase')?.classList.toggle('met', checks.uppercase);
+            document.getElementById('addUserReqNumber')?.classList.toggle('met', checks.number);
+            document.getElementById('addUserReqSpecial')?.classList.toggle('met', checks.special);
+
+            if (strengthBar) {
+                strengthBar.className = 'password-strength-bar';
+                if (passwordValue.length > 0) {
+                    strengthBar.classList.add(resolveUsersPasswordStrengthClass(checks));
+                }
+            }
+
+            return checks;
+        }
+
+        function resetAddUserPasswordIndicator() {
+            const strengthBar = document.getElementById('addUserStrengthBar');
+            if (strengthBar) {
+                strengthBar.className = 'password-strength-bar';
+            }
+            ['addUserReqLength', 'addUserReqUppercase', 'addUserReqNumber', 'addUserReqSpecial'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.classList.remove('met');
+                }
+            });
+        }
+
+        function isUsersPasswordPolicySatisfied(checks) {
+            return checks.length && checks.uppercase && checks.number && checks.special;
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             // Initialize tooltips
             const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -1964,6 +2075,33 @@ $count_stmt->close();
                     }
                 });
             });
+            const addUserPasswordInput = document.getElementById('addUserPassword');
+            if (addUserPasswordInput) {
+                addUserPasswordInput.addEventListener('input', function() {
+                    updateAddUserPasswordIndicator(this.value || '');
+                });
+            }
+
+            const addUserForm = document.querySelector('#addUserModal form');
+            if (addUserForm) {
+                addUserForm.addEventListener('submit', function(e) {
+                    const passwordInput = document.getElementById('addUserPassword');
+                    const checks = updateAddUserPasswordIndicator(passwordInput ? passwordInput.value : '');
+                    if (!isUsersPasswordPolicySatisfied(checks)) {
+                        e.preventDefault();
+                        alert(usersPasswordPolicy.hint);
+                        return false;
+                    }
+                    return true;
+                });
+            }
+
+            const addUserModal = document.getElementById('addUserModal');
+            if (addUserModal) {
+                addUserModal.addEventListener('hidden.bs.modal', function() {
+                    resetAddUserPasswordIndicator();
+                });
+            }
             // Edit button functionality
             document.querySelectorAll('.edit-btn').forEach(button => {
                 button.addEventListener('click', function() {

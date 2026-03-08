@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/logger.php';
+require_once __DIR__ . '/includes/password_policy.php';
 
 function resolvePasswordRedirectTarget($default = 'dashboard.php') {
     $candidate = trim((string)($_POST['redirect'] ?? ($_SERVER['HTTP_REFERER'] ?? '')));
@@ -66,20 +67,15 @@ if ($currentPassword === '' || $newPassword === '' || $confirmPassword === '') {
     exit;
 }
 
-if (strlen($newPassword) < 8) {
-    $_SESSION['error'] = 'Password must be at least 8 characters long.';
-    header('Location: ' . $redirectTarget);
-    exit;
-}
-
-if (!preg_match('/[0-9]/', $newPassword) || !preg_match('/[^A-Za-z0-9]/', $newPassword)) {
-    $_SESSION['error'] = 'Password must include at least one number and one special character.';
-    header('Location: ' . $redirectTarget);
-    exit;
-}
-
-if (!hash_equals($newPassword, $confirmPassword)) {
+if ($newPassword !== $confirmPassword) {
     $_SESSION['error'] = 'New passwords do not match.';
+    header('Location: ' . $redirectTarget);
+    exit;
+}
+
+$passwordValidation = validatePasswordPolicy($newPassword);
+if (!$passwordValidation['is_valid']) {
+    $_SESSION['error'] = $passwordValidation['message'];
     header('Location: ' . $redirectTarget);
     exit;
 }
@@ -156,4 +152,3 @@ if (function_exists('logActivity')) {
 $_SESSION['success'] = 'Password updated successfully.';
 header('Location: ' . $redirectTarget);
 exit;
-

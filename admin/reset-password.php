@@ -2,9 +2,11 @@
 session_start();
 require_once __DIR__ . '/includes/auth.php';
 include('includes/config.php');
+require_once __DIR__ . '/includes/password_policy.php';
 
 $error = '';
 $message = '';
+$passwordPolicy = getPasswordPolicyClientConfig();
 
 // Accept either session-based auth (from OTP flow) or token-based auth (legacy)
 $use_session_auth = false;
@@ -60,11 +62,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
 
     if (empty($password) || empty($confirm_password)) {
         $error = "Both fields are required.";
-    } elseif (strlen($password) < 8) {
-        $error = "Password must be at least 8 characters long.";
     } elseif ($password !== $confirm_password) {
         $error = "Passwords do not match.";
     } else {
+        $passwordValidation = validatePasswordPolicy($password);
+        if (!$passwordValidation['is_valid']) {
+            $error = $passwordValidation['message'];
+        }
+    }
+
+    if (empty($error)) {
         // Hash the password
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
         // admin_users stores password in 'password_hash'; staff users table uses 'password'
@@ -314,10 +321,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
         <div class="requirements">
             <strong>Password Requirements:</strong>
             <ul id="requirements">
-                <li id="req-length">At least 8 characters</li>
-                <li id="req-uppercase">One uppercase letter</li>
-                <li id="req-lowercase">One lowercase letter</li>
-                <li id="req-number">One number</li>
+                <li id="req-length"><?php echo htmlspecialchars($passwordPolicy['requirements']['length']); ?></li>
+                <li id="req-uppercase"><?php echo htmlspecialchars($passwordPolicy['requirements']['uppercase']); ?></li>
+                <li id="req-number"><?php echo htmlspecialchars($passwordPolicy['requirements']['number']); ?></li>
+                <li id="req-special"><?php echo htmlspecialchars($passwordPolicy['requirements']['special']); ?></li>
             </ul>
         </div>
 
@@ -351,6 +358,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        const resetPasswordPolicy = <?php echo json_encode($passwordPolicy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+        function evaluatePasswordPolicy(passwordValue) {
+            return {
+                length: passwordValue.length >= resetPasswordPolicy.minLength,
+                uppercase: /[A-Z]/.test(passwordValue),
+                number: /[0-9]/.test(passwordValue),
+                special: /[^A-Za-z0-9]/.test(passwordValue)
+            };
+        }
+
+        function calculateStrength(checks) {
+            const score = [checks.length, checks.uppercase, checks.number, checks.special].filter(Boolean).length;
+            if (score <= 1) {
+                return 'password-strength-weak';
+            }
+            if (score <= 3) {
+                return 'password-strength-medium';
+            }
+            return 'password-strength-strong';
+        }
+
         // Password visibility toggle
         const togglePassword = document.getElementById('togglePassword');
         const password = document.getElementById('password');
@@ -375,53 +404,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
         password.addEventListener('input', function() {
             const value = this.value;
             const strengthBar = document.getElementById('strengthBar');
-            
-            let strength = 0;
-            
-            // Check length
-            const lengthReq = document.getElementById('req-length');
-            if (value.length >= 8) {
-                strength++;
-                lengthReq.classList.add('met');
-            } else {
-                lengthReq.classList.remove('met');
-            }
-            
-            // Check uppercase
-            const uppercaseReq = document.getElementById('req-uppercase');
-            if (/[A-Z]/.test(value)) {
-                strength++;
-                uppercaseReq.classList.add('met');
-            } else {
-                uppercaseReq.classList.remove('met');
-            }
-            
-            // Check lowercase
-            const lowercaseReq = document.getElementById('req-lowercase');
-            if (/[a-z]/.test(value)) {
-                strength++;
-                lowercaseReq.classList.add('met');
-            } else {
-                lowercaseReq.classList.remove('met');
-            }
-            
-            // Check number
-            const numberReq = document.getElementById('req-number');
-            if (/[0-9]/.test(value)) {
-                strength++;
-                numberReq.classList.add('met');
-            } else {
-                numberReq.classList.remove('met');
-            }
-            
-            // Update strength bar
+            const checks = evaluatePasswordPolicy(value);
+
+            document.getElementById('req-length').classList.toggle('met', checks.length);
+            document.getElementById('req-uppercase').classList.toggle('met', checks.uppercase);
+            document.getElementById('req-number').classList.toggle('met', checks.number);
+            document.getElementById('req-special').classList.toggle('met', checks.special);
+
             strengthBar.className = 'password-strength-bar';
-            if (strength <= 2) {
-                strengthBar.classList.add('password-strength-weak');
-            } else if (strength === 3) {
-                strengthBar.classList.add('password-strength-medium');
-            } else if (strength === 4) {
-                strengthBar.classList.add('password-strength-strong');
+            if (value.length > 0) {
+                strengthBar.classList.add(calculateStrength(checks));
             }
         });
 
@@ -429,13 +421,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
         document.querySelector('form').addEventListener('submit', function(e) {
             const pass = password.value;
             const confirmPass = confirmPassword.value;
-            
-            if (pass.length < 8) {
+
+            const checks = evaluatePasswordPolicy(pass);
+            if (!checks.length || !checks.uppercase || !checks.number || !checks.special) {
                 e.preventDefault();
-                alert('Password must be at least 8 characters long!');
+                alert(resetPasswordPolicy.hint);
                 return false;
             }
-            
+
             if (pass !== confirmPass) {
                 e.preventDefault();
                 alert('Passwords do not match!');

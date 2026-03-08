@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
+require_once __DIR__ . '/includes/password_policy.php';
 header('Content-Type: application/json');
 
 // Check if the user is an admin or superadmin
@@ -27,9 +28,20 @@ $username = htmlspecialchars(trim($_POST['username']));
 $password = $_POST['password']; // Will be hashed
 $role = htmlspecialchars(trim($_POST['role']));
 
+if ($full_name === '' || $email === '' || $username === '' || $password === '' || $role === '') {
+    echo json_encode(['success' => false, 'message' => 'Full name, email, username, password, and role are required.']);
+    exit;
+}
+
 // Validate email
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     echo json_encode(['success' => false, 'message' => 'Invalid email format.']);
+    exit;
+}
+
+$passwordValidation = validatePasswordPolicy($password);
+if (!$passwordValidation['is_valid']) {
+    echo json_encode(['success' => false, 'message' => $passwordValidation['message']]);
     exit;
 }
 

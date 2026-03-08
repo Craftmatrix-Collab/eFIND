@@ -1,5 +1,7 @@
 <?php
 // Fetch profile data directly for the modal (no AJAX needed)
+require_once __DIR__ . '/password_policy.php';
+$_navbar_password_policy = getPasswordPolicyClientConfig();
 $_navbar_profile = null;
 $_navbar_last_active = null;
 $_navbar_password_changed = null;
@@ -331,7 +333,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                                 <i class="fas fa-eye"></i>
                             </button>
                         </div>
-                        <div class="form-text">Minimum 8 characters with at least one number and one special character</div>
+                        <div class="form-text"><?php echo htmlspecialchars($_navbar_password_policy['hint']); ?></div>
                     </div>
                     <div class="mb-3">
                         <label for="confirmPassword" class="form-label">Confirm New Password</label>
@@ -382,6 +384,16 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                 <i class="fas fa-eye"></i>
               </button>
             </div>
+            <div class="form-text"><?php echo htmlspecialchars($_navbar_password_policy['hint']); ?></div>
+            <div class="password-strength">
+              <div class="password-strength-bar" id="addStaffStrengthBar"></div>
+            </div>
+            <ul class="password-requirements mb-0">
+              <li id="addStaffReqLength"><?php echo htmlspecialchars($_navbar_password_policy['requirements']['length']); ?></li>
+              <li id="addStaffReqUppercase"><?php echo htmlspecialchars($_navbar_password_policy['requirements']['uppercase']); ?></li>
+              <li id="addStaffReqNumber"><?php echo htmlspecialchars($_navbar_password_policy['requirements']['number']); ?></li>
+              <li id="addStaffReqSpecial"><?php echo htmlspecialchars($_navbar_password_policy['requirements']['special']); ?></li>
+            </ul>
           </div>
           <div class="mb-3">
             <label for="role" class="form-label">Role <span class="text-danger">*</span></label>
@@ -534,8 +546,117 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
 .nav-item.dropdown {
     position: relative;
 }
+
+.password-strength {
+    height: 5px;
+    border-radius: 3px;
+    margin-top: 8px;
+    background: #e9ecef;
+    overflow: hidden;
+}
+
+.password-strength-bar {
+    height: 100%;
+    width: 0;
+    transition: all 0.3s ease;
+}
+
+.password-strength-weak { background: #dc3545; width: 33%; }
+.password-strength-medium { background: #ffc107; width: 66%; }
+.password-strength-strong { background: #28a745; width: 100%; }
+
+.password-requirements {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+.password-requirements li.met {
+    color: #198754;
+}
 </style>
 <script>
+const navbarPasswordPolicy = <?php echo json_encode($_navbar_password_policy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+function evaluateNavbarPasswordChecks(passwordValue) {
+    return {
+        length: passwordValue.length >= navbarPasswordPolicy.minLength,
+        uppercase: /[A-Z]/.test(passwordValue),
+        number: /[0-9]/.test(passwordValue),
+        special: /[^A-Za-z0-9]/.test(passwordValue)
+    };
+}
+
+function resolveNavbarStrengthClass(checks) {
+    const score = [checks.length, checks.uppercase, checks.number, checks.special].filter(Boolean).length;
+    if (score <= 1) {
+        return 'password-strength-weak';
+    }
+    if (score <= 3) {
+        return 'password-strength-medium';
+    }
+    return 'password-strength-strong';
+}
+
+function updateAddStaffPasswordIndicator(passwordValue) {
+    const checks = evaluateNavbarPasswordChecks(passwordValue);
+    const strengthBar = document.getElementById('addStaffStrengthBar');
+
+    document.getElementById('addStaffReqLength')?.classList.toggle('met', checks.length);
+    document.getElementById('addStaffReqUppercase')?.classList.toggle('met', checks.uppercase);
+    document.getElementById('addStaffReqNumber')?.classList.toggle('met', checks.number);
+    document.getElementById('addStaffReqSpecial')?.classList.toggle('met', checks.special);
+
+    if (strengthBar) {
+        strengthBar.className = 'password-strength-bar';
+        if (passwordValue.length > 0) {
+            strengthBar.classList.add(resolveNavbarStrengthClass(checks));
+        }
+    }
+
+    return checks;
+}
+
+function isNavbarPasswordPolicySatisfied(checks) {
+    return checks.length && checks.uppercase && checks.number && checks.special;
+}
+
+function resetAddStaffPasswordIndicator() {
+    const strengthBar = document.getElementById('addStaffStrengthBar');
+    if (strengthBar) {
+        strengthBar.className = 'password-strength-bar';
+    }
+    ['addStaffReqLength', 'addStaffReqUppercase', 'addStaffReqNumber', 'addStaffReqSpecial'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.remove('met');
+        }
+    });
+}
+
+function setupAddStaffPasswordIndicator() {
+    const addStaffForm = document.getElementById('addStaffForm');
+    if (!addStaffForm) {
+        return;
+    }
+    const passwordInput = addStaffForm.querySelector('input[name="password"]');
+    if (!passwordInput) {
+        return;
+    }
+
+    passwordInput.addEventListener('input', function() {
+        updateAddStaffPasswordIndicator(this.value || '');
+    });
+
+    const addStaffModal = document.getElementById('add_staffModal');
+    if (addStaffModal) {
+        addStaffModal.addEventListener('hidden.bs.modal', function() {
+            resetAddStaffPasswordIndicator();
+        });
+    }
+}
+
 // Toast notification function
 function showToast(message, type = 'success') {
     const bgColor = type === 'success' ? 'bg-success' : 'bg-danger';
@@ -710,6 +831,12 @@ function initNavbarJQueryHandlers() {
         // --- Add Staff AJAX handler ---
         $('#addStaffForm').submit(function(e) {
             e.preventDefault();
+            const passwordField = this.querySelector('input[name="password"]');
+            const passwordChecks = updateAddStaffPasswordIndicator(passwordField ? passwordField.value : '');
+            if (!isNavbarPasswordPolicySatisfied(passwordChecks)) {
+                $('#addStaffMessage').html('<div class="alert alert-danger">' + navbarPasswordPolicy.hint + '</div>');
+                return;
+            }
             var formData = new FormData(this);
             $('#addStaffMessage').html('<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div> Adding staff...');
             $.ajax({
@@ -723,6 +850,7 @@ function initNavbarJQueryHandlers() {
                     if (response.success) {
                         showToast(response.message, 'success');
                         $('#addStaffForm')[0].reset();
+                        resetAddStaffPasswordIndicator();
                         setTimeout(function() {
                             $('#add_staffModal').modal('hide');
                             $('#addStaffMessage').html('');
@@ -751,6 +879,8 @@ if (window.jQuery) {
     document.head.appendChild(navbarJqueryScript);
 }
 
+setupAddStaffPasswordIndicator();
+
 // Toggle password visibility
 document.querySelectorAll('.toggle-password').forEach(button => {
   button.addEventListener('click', function() {
@@ -773,15 +903,11 @@ if (navbarPasswordChangeForm) {
         const confirmPasswordInput = document.getElementById('confirmPassword');
         const newPassword = newPasswordInput ? newPasswordInput.value : '';
         const confirmPassword = confirmPasswordInput ? confirmPasswordInput.value : '';
+        const checks = evaluateNavbarPasswordChecks(newPassword);
 
-        if (newPassword.length < 8) {
+        if (!isNavbarPasswordPolicySatisfied(checks)) {
             e.preventDefault();
-            alert('Password must be at least 8 characters long.');
-            return false;
-        }
-        if (!/[0-9]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
-            e.preventDefault();
-            alert('Password must contain at least one number and one special character.');
+            alert(navbarPasswordPolicy.hint);
             return false;
         }
         if (newPassword !== confirmPassword) {

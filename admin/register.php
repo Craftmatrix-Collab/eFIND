@@ -4,6 +4,7 @@ include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
+require_once __DIR__ . '/includes/password_policy.php';
 
 // Redirect if already logged in
 if (isset($_SESSION['admin_id'])) {
@@ -13,6 +14,7 @@ if (isset($_SESSION['admin_id'])) {
 
 $error = '';
 $success = '';
+$passwordPolicy = getPasswordPolicyClientConfig();
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Sanitize and validate inputs
@@ -30,9 +32,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $error = "Please enter a valid email address.";
     } elseif ($password !== $confirm_password) {
         $error = "Passwords do not match.";
-    } elseif (strlen($password) < 8) {
-        $error = "Password must be at least 8 characters long.";
     } else {
+        $passwordValidation = validatePasswordPolicy($password);
+        if (!$passwordValidation['is_valid']) {
+            $error = $passwordValidation['message'];
+        }
+    }
+
+    if (empty($error)) {
         // Check if username or email already exists
         $check_query = "SELECT id FROM admin_users WHERE username = ? OR email = ?";
         $check_stmt = $conn->prepare($check_query);
@@ -607,6 +614,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             color: var(--primary-blue);
         }
 
+        .password-strength {
+            height: 5px;
+            border-radius: 3px;
+            margin-top: 8px;
+            background: #e9ecef;
+            overflow: hidden;
+        }
+
+        .password-strength-bar {
+            height: 100%;
+            width: 0;
+            transition: all 0.3s ease;
+        }
+
+        .password-strength-weak { background: #dc3545; width: 33%; }
+        .password-strength-medium { background: #ffc107; width: 66%; }
+        .password-strength-strong { background: #28a745; width: 100%; }
+
+        .password-requirements {
+            margin: 8px 0 0;
+            padding-left: 18px;
+            font-size: 0.85rem;
+            color: var(--medium-gray);
+        }
+
+        .password-requirements li.met {
+            color: #198754;
+        }
+
         @media (max-width: 768px) {
             .registration-wrapper {
                 flex-direction: column;
@@ -709,7 +745,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <label for="password" class="form-label">Password</label>
                         <input type="password" class="form-control" id="password" name="password" required>
                         <i class="fas fa-eye password-toggle-icon" id="togglePassword"></i>
-                        <small class="text-muted">Minimum 8 characters</small>
+                        <small class="text-muted"><?php echo htmlspecialchars($passwordPolicy['hint']); ?></small>
+                        <div class="password-strength">
+                            <div class="password-strength-bar" id="registerStrengthBar"></div>
+                        </div>
+                        <ul class="password-requirements mb-0">
+                            <li id="registerReqLength"><?php echo htmlspecialchars($passwordPolicy['requirements']['length']); ?></li>
+                            <li id="registerReqUppercase"><?php echo htmlspecialchars($passwordPolicy['requirements']['uppercase']); ?></li>
+                            <li id="registerReqNumber"><?php echo htmlspecialchars($passwordPolicy['requirements']['number']); ?></li>
+                            <li id="registerReqSpecial"><?php echo htmlspecialchars($passwordPolicy['requirements']['special']); ?></li>
+                        </ul>
                     </div>
 
                     <div class="mb-3 password-toggle">
@@ -734,6 +779,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        const registerPasswordPolicy = <?php echo json_encode($passwordPolicy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+        function evaluateRegisterPasswordChecks(passwordValue) {
+            return {
+                length: passwordValue.length >= registerPasswordPolicy.minLength,
+                uppercase: /[A-Z]/.test(passwordValue),
+                number: /[0-9]/.test(passwordValue),
+                special: /[^A-Za-z0-9]/.test(passwordValue)
+            };
+        }
+
+        function resolveRegisterStrengthClass(checks) {
+            const score = [checks.length, checks.uppercase, checks.number, checks.special].filter(Boolean).length;
+            if (score <= 1) {
+                return 'password-strength-weak';
+            }
+            if (score <= 3) {
+                return 'password-strength-medium';
+            }
+            return 'password-strength-strong';
+        }
+
+        function updateRegisterPasswordIndicator(passwordValue) {
+            const checks = evaluateRegisterPasswordChecks(passwordValue);
+            const strengthBar = document.getElementById('registerStrengthBar');
+            document.getElementById('registerReqLength').classList.toggle('met', checks.length);
+            document.getElementById('registerReqUppercase').classList.toggle('met', checks.uppercase);
+            document.getElementById('registerReqNumber').classList.toggle('met', checks.number);
+            document.getElementById('registerReqSpecial').classList.toggle('met', checks.special);
+
+            strengthBar.className = 'password-strength-bar';
+            if (passwordValue.length > 0) {
+                strengthBar.classList.add(resolveRegisterStrengthClass(checks));
+            }
+
+            return checks;
+        }
+
+        function isRegisterPasswordPolicySatisfied(checks) {
+            return checks.length && checks.uppercase && checks.number && checks.special;
+        }
+
         // Profile picture preview
         document.getElementById('profile_picture').addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -773,20 +860,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         });
 
+        document.getElementById('password').addEventListener('input', function() {
+            updateRegisterPasswordIndicator(this.value);
+        });
+
         // Form validation
         document.querySelector('form').addEventListener('submit', function(e) {
             const password = document.getElementById('password').value;
             const confirmPassword = document.getElementById('confirm_password').value;
-            
+            const checks = updateRegisterPasswordIndicator(password);
+             
             if (password !== confirmPassword) {
                 e.preventDefault();
                 alert('Passwords do not match!');
                 return false;
             }
-            
-            if (password.length < 8) {
+
+            if (!isRegisterPasswordPolicySatisfied(checks)) {
                 e.preventDefault();
-                alert('Password must be at least 8 characters long!');
+                alert(registerPasswordPolicy.hint);
                 return false;
             }
             

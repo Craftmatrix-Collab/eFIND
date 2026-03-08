@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 include 'includes/config.php';
+require_once __DIR__ . '/includes/password_policy.php';
+$passwordPolicy = getPasswordPolicyClientConfig();
 
 // Debug: Log session state (remove in production)
 error_log("Profile Access - Session ID: " . session_id());
@@ -232,7 +234,7 @@ try {
                                 <i class="fas fa-eye"></i>
                             </button>
                         </div>
-                        <div class="form-text">Minimum 8 characters with at least one number and one special character</div>
+                        <div class="form-text"><?php echo htmlspecialchars($passwordPolicy['hint']); ?></div>
                     </div>
                     <div class="mb-3">
                         <label for="confirmPassword" class="form-label">Confirm New Password</label>
@@ -276,6 +278,15 @@ try {
     }
 </style>
 <script>
+const profilePasswordPolicy = <?php echo json_encode($passwordPolicy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+function validateProfilePasswordRules(value) {
+    return value.length >= profilePasswordPolicy.minLength
+        && /[A-Z]/.test(value)
+        && /[0-9]/.test(value)
+        && /[^A-Za-z0-9]/.test(value);
+}
+
 // Toggle password visibility
 document.querySelectorAll('.toggle-password').forEach(button => {
     button.addEventListener('click', function() {
@@ -294,15 +305,10 @@ document.querySelectorAll('.toggle-password').forEach(button => {
 document.getElementById('passwordChangeForm').addEventListener('submit', function(e) {
     const newPassword = document.getElementById('newPassword').value;
     const confirmPassword = document.getElementById('confirmPassword').value;
-    // Basic validation
-    if (newPassword.length < 8) {
+
+    if (!validateProfilePasswordRules(newPassword)) {
         e.preventDefault();
-        alert('Password must be at least 8 characters long.');
-        return false;
-    }
-    if (!/[0-9]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
-        e.preventDefault();
-        alert('Password must contain at least one number and one special character.');
+        alert(profilePasswordPolicy.hint);
         return false;
     }
     if (newPassword !== confirmPassword) {
