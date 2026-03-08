@@ -1222,6 +1222,17 @@ $count_stmt->close();
         .table tbody tr.selected-for-delete td {
             background-color: rgba(220, 53, 69, 0.18) !important;
         }
+        .table-cell-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.35;
+            max-height: calc(1.35em * 2);
+        }
         .action-buttons {
             display: flex;
             gap: 8px;
@@ -1923,24 +1934,23 @@ $count_stmt->close();
                                                 <?php echo !empty($executive_order['reference_number']) ? htmlspecialchars($executive_order['reference_number']) : 'N/A'; ?>
                                             </span>
                                         </td> -->
-                                        <td class="title text-start"><?php echo htmlspecialchars($executive_order['title']); ?></td>
+                                        <?php $titleText = htmlspecialchars($executive_order['title']); ?>
+                                        <td class="title text-start">
+                                            <div class="table-cell-clamp-2" title="<?php echo $titleText; ?>"><?php echo $titleText; ?></div>
+                                        </td>
                                         <td class="date-posted" data-date="<?php echo $executive_order['date_posted']; ?>">
                                             <?php echo date('M d, Y', strtotime($executive_order['date_posted'])); ?>
                                         </td>
                                         <td class="executive_order-date" data-date="<?php echo $executive_order['executive_order_date']; ?>">
                                             <?php echo date('M d, Y', strtotime($executive_order['executive_order_date'])); ?>
                                         </td>
-                                        <td class="executive_order-number"><?php echo htmlspecialchars($executive_order['executive_order_number']); ?></td>
+                                        <?php $orderNumberText = htmlspecialchars($executive_order['executive_order_number']); ?>
+                                        <td class="executive_order-number">
+                                            <div class="table-cell-clamp-2" title="<?php echo $orderNumberText; ?>"><?php echo $orderNumberText; ?></div>
+                                        </td>
                                         <td class="content-preview text-start">
-                                            <?php
-                                            $content = htmlspecialchars($executive_order['content'] ?? 'N/A');
-                                            if (strlen($content) > 50): ?>
-                                                <span class="truncated-text" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo $content; ?>">
-                                                    <?php echo substr($content, 0, 50) . '...'; ?>
-                                                </span>
-                                            <?php else: ?>
-                                                <?php echo $content; ?>
-                                            <?php endif; ?>
+                                            <?php $content = htmlspecialchars($executive_order['content'] ?? 'N/A'); ?>
+                                            <div class="table-cell-clamp-2" title="<?php echo $content; ?>"><?php echo $content; ?></div>
                                         </td>
                                         <td>
                                             <?php if (!empty($executive_order['image_path'])): ?>

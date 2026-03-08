@@ -406,10 +406,15 @@ unset($_SESSION['error'], $_SESSION['success']);
         }
         .data-preview {
             max-width: 360px;
-            white-space: nowrap;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
             overflow: hidden;
             text-overflow: ellipsis;
-            display: inline-block;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.35;
+            max-height: calc(1.35em * 2);
             cursor: help;
         }
         .floating-shapes {

@@ -1179,6 +1179,17 @@ $count_stmt->close();
         .table tbody tr.selected-for-delete td {
             background-color: rgba(220, 53, 69, 0.18) !important;
         }
+        .table-cell-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.35;
+            max-height: calc(1.35em * 2);
+        }
         .action-buttons {
             display: flex;
             gap: 8px;
@@ -1962,23 +1973,23 @@ $count_stmt->close();
                                                 <?php echo !empty($resolution['reference_number']) ? htmlspecialchars($resolution['reference_number']) : 'N/A'; ?>
                                             </span>
                                         </td> -->
-                                        <td class="title text-start"><?php echo htmlspecialchars($resolution['title']); ?></td>
-                                        <td><?php echo htmlspecialchars($resolution['resolution_number']); ?></td>
+                                        <?php $titleText = htmlspecialchars($resolution['title']); ?>
+                                        <td class="title text-start">
+                                            <div class="table-cell-clamp-2" title="<?php echo $titleText; ?>"><?php echo $titleText; ?></div>
+                                        </td>
+                                        <?php $resolutionNumberText = htmlspecialchars($resolution['resolution_number']); ?>
+                                        <td>
+                                            <div class="table-cell-clamp-2" title="<?php echo $resolutionNumberText; ?>"><?php echo $resolutionNumberText; ?></div>
+                                        </td>
                                         <td class="date-posted" data-date="<?php echo $resolution['date_posted']; ?>">
                                             <?php echo date('M d, Y', strtotime($resolution['date_posted'])); ?>
                                         </td>
                                         <td class="resolution-date" data-date="<?php echo $resolution['resolution_date']; ?>">
                                             <?php echo date('M d, Y', strtotime($resolution['resolution_date'])); ?>
                                         </td>
-                                        <td class="content-preview text-start" title="<?php echo htmlspecialchars($resolution['content'] ?? 'N/A'); ?>">
-                                            <?php
-                                            $content = htmlspecialchars($resolution['content'] ?? 'N/A');
-                                            if (strlen($content) > 20) {
-                                                echo substr($content, 0, 20) . '...';
-                                            } else {
-                                                echo $content;
-                                            }
-                                            ?>
+                                        <td class="content-preview text-start">
+                                            <?php $content = htmlspecialchars($resolution['content'] ?? 'N/A'); ?>
+                                            <div class="table-cell-clamp-2" title="<?php echo $content; ?>"><?php echo $content; ?></div>
                                         </td>
                                         <td>
                                             <?php if (!empty($resolution['image_path'])): ?>

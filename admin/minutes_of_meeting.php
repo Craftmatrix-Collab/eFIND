@@ -1143,6 +1143,17 @@ $count_stmt->close();
         .table tbody tr.selected-for-delete td {
             background-color: rgba(220, 53, 69, 0.18) !important;
         }
+        .table-cell-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.35;
+            max-height: calc(1.35em * 2);
+        }
         .action-buttons {
             display: flex;
             gap: 8px;
@@ -1919,24 +1930,24 @@ $count_stmt->close();
                                                 <?php echo !empty($minute['reference_number']) ? htmlspecialchars($minute['reference_number']) : 'N/A'; ?>
                                             </span>
                                         </td> -->
-                                        <td class="title text-start"><?php echo htmlspecialchars($minute['title']); ?></td>
+                                        <?php $titleText = htmlspecialchars($minute['title']); ?>
+                                        <td class="title text-start">
+                                            <div class="table-cell-clamp-2" title="<?php echo $titleText; ?>"><?php echo $titleText; ?></div>
+                                        </td>
                                         <td class="date-posted" data-date="<?php echo $minute['date_posted']; ?>">
                                             <?php echo date('M d, Y', strtotime($minute['date_posted'])); ?>
                                         </td>
                                         <td class="meeting-date" data-date="<?php echo $minute['meeting_date']; ?>">
                                             <?php echo date('M d, Y', strtotime($minute['meeting_date'])); ?>
                                         </td>
-                                        <td class="meeting-number"><?php echo htmlspecialchars($minute['session_number']); ?></td>
-                                        <td class="content-preview text-start" title="<?php echo htmlspecialchars($minute['content'] ?? 'N/A'); ?>">
-    <?php
-    $content = htmlspecialchars($minute['content'] ?? 'N/A');
-    if (strlen($content) > 20) {
-        echo substr($content, 0, 20) . '...';
-    } else {
-        echo $content;
-    }
-    ?>
-</td>
+                                        <?php $meetingNumberText = htmlspecialchars($minute['session_number']); ?>
+                                        <td class="meeting-number">
+                                            <div class="table-cell-clamp-2" title="<?php echo $meetingNumberText; ?>"><?php echo $meetingNumberText; ?></div>
+                                        </td>
+                                        <td class="content-preview text-start">
+                                            <?php $content = htmlspecialchars($minute['content'] ?? 'N/A'); ?>
+                                            <div class="table-cell-clamp-2" title="<?php echo $content; ?>"><?php echo $content; ?></div>
+                                        </td>
 
                                         <td>
                                             <?php if (!empty($minute['image_path'])): ?>
