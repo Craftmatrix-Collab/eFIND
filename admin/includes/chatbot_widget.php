@@ -160,31 +160,6 @@ if ($chatbot_profile_picture_raw !== '') {
         box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16);
     }
 
-    .chatbot-close-btn {
-        width: 34px;
-        height: 34px;
-        border: 1px solid var(--chatbot-border);
-        border-radius: 10px;
-        padding: 0;
-        color: #4B5563;
-        background: var(--chatbot-surface);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background 0.2s ease, transform 0.2s ease;
-    }
-
-    .chatbot-close-btn:hover {
-        background: var(--chatbot-bg);
-        transform: scale(1.03);
-    }
-
-    .chatbot-close-btn:focus-visible {
-        outline: 2px solid rgba(0, 132, 255, 0.28);
-        outline-offset: 2px;
-    }
-
     .chatbot-messages {
         flex: 1;
         min-height: 0;
@@ -700,9 +675,6 @@ if ($chatbot_profile_picture_raw !== '') {
                 <p class="chatbot-status">Online</p>
             </div>
         </div>
-        <button class="chatbot-close-btn" onclick="toggleChatbot()">
-            <i class="fas fa-times"></i>
-        </button>
     </div>
     
     <!-- Messages Area -->
