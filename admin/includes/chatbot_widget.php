@@ -331,12 +331,10 @@ if ($chatbot_profile_picture_raw !== '') {
         font-weight: 700;
     }
 
-    .bot-message .message-bubble {
-        border-left: 3px solid var(--chatbot-message-border-accent);
-    }
-
+    .bot-message .message-bubble,
     .user-message .message-bubble {
-        border-right: 3px solid var(--chatbot-message-border-accent);
+        border-color: var(--chatbot-message-border);
+        background: var(--chatbot-message-bg);
     }
 
     .message-time {
