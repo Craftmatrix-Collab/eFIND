@@ -85,21 +85,30 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
             ?>
                     <span class="text-white"><?php echo htmlspecialchars($full_name); ?></span>
                 </a>
+                <?php
+                // Generate security tokens if missing
+                if (!isset($_SESSION['logout_token'])) {
+                    $_SESSION['logout_token'] = bin2hex(random_bytes(32));
+                }
+                if (!isset($_SESSION['csrf_token'])) {
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                }
+                $canAccessDocumentBackup = function_exists('isSuperAdmin') && isSuperAdmin();
+                ?>
                 <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="profileDropdown">
                     <li><a class="dropdown-item" href="javascript:void(0);" data-bs-toggle="modal" data-bs-target="#profileModal"><i class="fas fa-user me-2"></i>Profile</a></li>
                     <li><a class="dropdown-item" href="javascript:void(0);" data-bs-toggle="modal" data-bs-target="#helpModal"><i class="fas fa-circle-question me-2"></i>Help</a></li>
-                    <?php if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true): ?>
+                    <?php if ($canAccessDocumentBackup): ?>
+                    <li>
+                        <form method="post" action="backup_documents.php" class="m-0">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                            <button type="submit" class="dropdown-item">
+                                <i class="fas fa-database me-2" aria-hidden="true"></i>Backup Documents
+                            </button>
+                        </form>
+                    </li>
                     <?php endif; ?>
                     <li><hr class="dropdown-divider"></li>
-                    <?php
-                    // Generate logout CSRF token if not exists
-                    if (!isset($_SESSION['logout_token'])) {
-                        $_SESSION['logout_token'] = bin2hex(random_bytes(32));
-                    }
-                    if (!isset($_SESSION['csrf_token'])) {
-                        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                    }
-                    ?>
                     <li><a class="dropdown-item text-danger" href="logout.php?token=<?php echo urlencode($_SESSION['logout_token']); ?>" aria-label="Logout from your account"><i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout</a></li>
                 </ul>
             </li>
