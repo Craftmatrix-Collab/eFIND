@@ -1242,9 +1242,14 @@ $count_stmt->close();
             padding: 20px;
             text-align: center;
             background-color: rgba(67, 97, 238, 0.05);
+            transition: border-color 0.2s ease, background-color 0.2s ease;
         }
         .file-upload:hover {
             background-color: rgba(67, 97, 238, 0.1);
+        }
+        .file-upload.drag-active {
+            border-color: var(--primary-blue);
+            background-color: rgba(67, 97, 238, 0.14);
         }
         .current-file {
             margin-top: 10px;
@@ -2171,7 +2176,7 @@ $count_stmt->close();
                             </div>
 
                             <div id="mom-desktop-upload">
-                                <div class="file-upload">
+                                <div class="file-upload" id="momAddFileUploadZone">
                                     <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFilesWithAutoFill(this)">
                                     <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
                                 </div>
@@ -2259,7 +2264,7 @@ $count_stmt->close();
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Image Files (JPG, PNG)</label>
-                            <div class="file-upload">
+                            <div class="file-upload" id="momEditFileUploadZone">
                                 <input type="file" class="form-control" id="editImageFile" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFiles(this, 'edit')">
                                 <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2).</small>
                             </div>
@@ -3488,6 +3493,69 @@ $count_stmt->close();
             }
             window.addEventListener('resize', updateTableHeight);
             window.addEventListener('load', updateTableHeight);
+
+            function assignDroppedFilesToInput(input, files) {
+                if (!input || !files || files.length === 0) {
+                    return false;
+                }
+                if (typeof DataTransfer === 'undefined') {
+                    alert('Drag-and-drop is not supported in this browser. Please use file selection.');
+                    return false;
+                }
+                const transfer = new DataTransfer();
+                Array.from(files).forEach((file) => transfer.items.add(file));
+                input.files = transfer.files;
+                return input.files.length > 0;
+            }
+
+            function bindDragDropUploadZone(zoneId, inputId, onDropProcess) {
+                const zone = document.getElementById(zoneId);
+                const input = document.getElementById(inputId);
+                if (!zone || !input) {
+                    return;
+                }
+
+                const setActive = (active) => zone.classList.toggle('drag-active', active);
+                ['dragenter', 'dragover'].forEach((eventName) => {
+                    zone.addEventListener(eventName, function(event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setActive(true);
+                    });
+                });
+                ['dragleave', 'dragend'].forEach((eventName) => {
+                    zone.addEventListener(eventName, function(event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (!zone.contains(event.relatedTarget)) {
+                            setActive(false);
+                        }
+                    });
+                });
+                zone.addEventListener('drop', async function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setActive(false);
+
+                    const droppedFiles = event.dataTransfer ? event.dataTransfer.files : null;
+                    if (!droppedFiles || droppedFiles.length === 0) {
+                        return;
+                    }
+                    if (!assignDroppedFilesToInput(input, droppedFiles)) {
+                        return;
+                    }
+                    if (typeof onDropProcess === 'function') {
+                        await onDropProcess(input);
+                    }
+                });
+            }
+
+            bindDragDropUploadZone('momAddFileUploadZone', 'image_file', async function(input) {
+                await processFilesWithAutoFill(input);
+            });
+            bindDragDropUploadZone('momEditFileUploadZone', 'editImageFile', async function(input) {
+                await processFiles(input, 'edit');
+            });
 
             // Client-side validation for file type
             document.getElementById('addMinuteForm').addEventListener('submit', function(e) {
