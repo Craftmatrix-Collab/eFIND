@@ -311,6 +311,14 @@ if ($chatbot_profile_picture_raw !== '') {
         align-items: flex-end;
     }
 
+    .chatbot-widget .chatbot-message.user-message,
+    .chatbot-widget .chatbot-message.bot-message {
+        background: transparent;
+        color: inherit;
+        border: 0;
+        box-shadow: none;
+    }
+
     .message-bubble {
         max-width: 100%;
         border-radius: 14px;
