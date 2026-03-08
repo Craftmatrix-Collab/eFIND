@@ -2177,7 +2177,7 @@ $count_stmt->close();
 
                             <div id="mom-desktop-upload">
                                 <div class="file-upload" id="momAddFileUploadZone">
-                                    <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFilesWithAutoFill(this)">
+                                    <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png,.gif,.bmp" multiple onchange="processFilesWithAutoFill(this)">
                                     <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
                                 </div>
                                 <div id="ocrProcessing" class="mt-2" style="display: none;">
@@ -2263,9 +2263,9 @@ $count_stmt->close();
                             <textarea class="form-control" id="editContent" name="content" rows="4"></textarea>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Image Files (JPG, PNG)</label>
+                            <label class="form-label">Image Files (JPG, PNG, GIF, BMP)</label>
                             <div class="file-upload" id="momEditFileUploadZone">
-                                <input type="file" class="form-control" id="editImageFile" name="image_file[]" accept=".jpg,.jpeg,.png" multiple onchange="processFiles(this, 'edit')">
+                                <input type="file" class="form-control" id="editImageFile" name="image_file[]" accept=".jpg,.jpeg,.png,.gif,.bmp" multiple onchange="processFiles(this, 'edit')">
                                 <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2).</small>
                             </div>
                             <div id="currentImageInfo" class="current-file"></div>
@@ -3508,11 +3508,60 @@ $count_stmt->close();
                 return input.files.length > 0;
             }
 
+            const allowedUploadMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
+            const allowedUploadExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp'];
+
+            function isAllowedUploadFile(file) {
+                if (!file) {
+                    return false;
+                }
+                const fileName = String(file.name || '');
+                const extension = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
+                const hasAllowedExtension = allowedUploadExtensions.includes(extension);
+                const mimeType = String(file.type || '').toLowerCase();
+                if (!hasAllowedExtension) {
+                    return false;
+                }
+                if (mimeType === '') {
+                    return false;
+                }
+                return allowedUploadMimeTypes.includes(mimeType);
+            }
+
+            function validateSelectedImageFiles(files) {
+                const list = Array.from(files || []);
+                if (list.length === 0) {
+                    return { valid: true };
+                }
+                const invalidFiles = list.filter((file) => !isAllowedUploadFile(file));
+                if (invalidFiles.length === 0) {
+                    return { valid: true };
+                }
+                const preview = invalidFiles
+                    .slice(0, 3)
+                    .map((file) => file.name || 'unnamed file')
+                    .join(', ');
+                return {
+                    valid: false,
+                    message: `Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.${preview ? ` Invalid: ${preview}` : ''}`,
+                };
+            }
+
             function bindDragDropUploadZone(zoneId, inputId, onDropProcess) {
                 const zone = document.getElementById(zoneId);
                 const input = document.getElementById(inputId);
                 if (!zone || !input) {
                     return;
+                }
+                const targetForm = input.form instanceof HTMLFormElement ? input.form : null;
+                if (targetForm && targetForm.dataset.efindDropValidationGuard !== '1') {
+                    targetForm.dataset.efindDropValidationGuard = '1';
+                    targetForm.addEventListener('submit', function(event) {
+                        if (targetForm.dataset.efindDropValidationPending === '1') {
+                            event.preventDefault();
+                            alert('Please wait while uploaded files are being validated.');
+                        }
+                    });
                 }
 
                 const setActive = (active) => zone.classList.toggle('drag-active', active);
@@ -3523,7 +3572,7 @@ $count_stmt->close();
                         setActive(true);
                     });
                 });
-                ['dragleave', 'dragend'].forEach((eventName) => {
+                ['dragleave'].forEach((eventName) => {
                     zone.addEventListener(eventName, function(event) {
                         event.preventDefault();
                         event.stopPropagation();
@@ -3541,34 +3590,45 @@ $count_stmt->close();
                     if (!droppedFiles || droppedFiles.length === 0) {
                         return;
                     }
-                    if (!assignDroppedFilesToInput(input, droppedFiles)) {
-                        return;
+                    if (targetForm) {
+                        targetForm.dataset.efindDropValidationPending = '1';
                     }
-                    if (typeof onDropProcess === 'function') {
-                        await onDropProcess(input);
+                    try {
+                        const fileValidation = validateSelectedImageFiles(droppedFiles);
+                        if (!fileValidation.valid) {
+                            alert(fileValidation.message);
+                            return;
+                        }
+                        if (!assignDroppedFilesToInput(input, droppedFiles)) {
+                            return;
+                        }
+                        if (typeof onDropProcess === 'function') {
+                            await onDropProcess(input, { skipValidation: true });
+                        }
+                    } finally {
+                        if (targetForm) {
+                            targetForm.dataset.efindDropValidationPending = '0';
+                        }
                     }
                 });
             }
 
-            bindDragDropUploadZone('momAddFileUploadZone', 'image_file', async function(input) {
-                await processFilesWithAutoFill(input);
+            bindDragDropUploadZone('momAddFileUploadZone', 'image_file', async function(input, options) {
+                await processFilesWithAutoFill(input, options);
             });
-            bindDragDropUploadZone('momEditFileUploadZone', 'editImageFile', async function(input) {
-                await processFiles(input, 'edit');
+            bindDragDropUploadZone('momEditFileUploadZone', 'editImageFile', async function(input, options) {
+                await processFiles(input, 'edit', options);
             });
 
             // Client-side validation for file type
             document.getElementById('addMinuteForm').addEventListener('submit', function(e) {
                 const fileInput = document.getElementById('image_file');
                 if (fileInput.files.length > 0) {
-                    for (let i = 0; i < fileInput.files.length; i++) {
-                        const file = fileInput.files[i];
-                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
-                        if (!allowedTypes.includes(file.type)) {
-                            e.preventDefault();
-                            alert('Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.');
-                            return;
-                        }
+                    const fileValidation = validateSelectedImageFiles(fileInput.files);
+                    if (!fileValidation.valid) {
+                        e.preventDefault();
+                        alert(fileValidation.message);
+                        return;
                     }
                 }
             });
@@ -3577,14 +3637,11 @@ $count_stmt->close();
             document.getElementById('editMinuteForm').addEventListener('submit', function(e) {
                 const fileInput = document.getElementById('editImageFile');
                 if (fileInput.files.length > 0) {
-                    for (let i = 0; i < fileInput.files.length; i++) {
-                        const file = fileInput.files[i];
-                        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
-                        if (!allowedTypes.includes(file.type)) {
-                            e.preventDefault();
-                            alert('Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.');
-                            return;
-                        }
+                    const fileValidation = validateSelectedImageFiles(fileInput.files);
+                    if (!fileValidation.valid) {
+                        e.preventDefault();
+                        alert(fileValidation.message);
+                        return;
                     }
                 }
             });
@@ -3707,10 +3764,59 @@ $count_stmt->close();
                 .trim();
         }
 
+        function validateSelectedImageFilesForOcr(files) {
+            const list = Array.from(files || []);
+            if (list.length === 0) {
+                return { valid: true };
+            }
+            const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp'];
+            const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp'];
+            const invalidFiles = list.filter((file) => {
+                const fileName = String(file.name || '');
+                const extension = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
+                const hasAllowedExtension = allowedExtensions.includes(extension);
+                if (!hasAllowedExtension) {
+                    return true;
+                }
+                const mimeType = String(file.type || '').toLowerCase();
+                return mimeType === '' || !allowedMimeTypes.includes(mimeType);
+            });
+            if (invalidFiles.length === 0) {
+                return { valid: true };
+            }
+            const preview = invalidFiles
+                .slice(0, 3)
+                .map((file) => file.name || 'unnamed file')
+                .join(', ');
+            return {
+                valid: false,
+                message: `Invalid file type. Only JPG, PNG, GIF, and BMP files are allowed.${preview ? ` Invalid: ${preview}` : ''}`,
+            };
+        }
+
         // Function to process files with auto-fill
-        async function processFilesWithAutoFill(input) {
+        async function processFilesWithAutoFill(input, options = {}) {
             const files = input.files;
             if (!files || files.length === 0) return;
+            const shouldValidateFiles = !(options && options.skipValidation === true);
+            if (shouldValidateFiles) {
+                const fileValidation = validateSelectedImageFilesForOcr(files);
+                if (!fileValidation.valid) {
+                    alert(fileValidation.message);
+                    return;
+                }
+            }
+            if (typeof window.efindHandleDuplicateImageSelection === 'function') {
+                const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
+                    documentType: 'minutes',
+                    allowFieldId: 'allowDuplicateMinuteImages',
+                    strictNoDuplicates: true,
+                    formId: 'addMinuteForm'
+                });
+                if (duplicateState && !duplicateState.proceed) {
+                    return;
+                }
+            }
 
             const processingElement = document.getElementById('ocrProcessing');
             processingElement.style.display = 'block';
@@ -3827,24 +3933,6 @@ $count_stmt->close();
                     processedFiles++;
                 }
 
-                if (typeof window.efindHandleDuplicateImageSelection === 'function') {
-                    const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
-                        documentType: 'minutes',
-                        allowFieldId: 'allowDuplicateMinuteImages',
-                        strictNoDuplicates: true,
-                        formId: 'addMinuteForm'
-                    });
-                    if (duplicateState && !duplicateState.proceed) {
-                        processingElement.innerHTML = `
-                            <div class="alert alert-warning">
-                                <i class="fas fa-exclamation-triangle me-2"></i>
-                                This file has already been uploaded. Please upload a different file.
-                            </div>
-                        `;
-                        return;
-                    }
-                }
-
                 if (combinedText.trim().length > 0) {
                     const detectedFields = analyzeDocumentContent(combinedText);
                     processingElement.innerHTML = `
@@ -3904,7 +3992,7 @@ $count_stmt->close();
         }
 
         // Function to process files for edit form
-        async function processFiles(input, formType = 'edit') {
+        async function processFiles(input, formType = 'edit', options = {}) {
             const allowFieldId = formType === 'edit' ? 'allowDuplicateMinuteEditImages' : 'allowDuplicateMinuteImages';
             if (typeof window.efindHandleDuplicateImageSelection === 'function') {
                 const duplicateState = await window.efindHandleDuplicateImageSelection(input, {
@@ -3916,6 +4004,14 @@ $count_stmt->close();
                 }
             }
             const files = input.files;
+            const shouldValidateFiles = !(options && options.skipValidation === true);
+            if (shouldValidateFiles) {
+                const fileValidation = validateSelectedImageFilesForOcr(files);
+                if (!fileValidation.valid) {
+                    alert(fileValidation.message);
+                    return;
+                }
+            }
             if (!files || files.length === 0) return;
 
             const processingId = formType === 'add' ? 'ocrProcessing' : 'editOcrProcessing';
