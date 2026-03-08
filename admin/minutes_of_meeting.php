@@ -1251,6 +1251,18 @@ $count_stmt->close();
             border-color: var(--primary-blue);
             background-color: rgba(67, 97, 238, 0.14);
         }
+        .dropzone-instruction {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-weight: 600;
+            color: var(--primary-blue);
+        }
+        .file-upload.drag-active .dropzone-instruction {
+            color: #2246c6;
+        }
         .current-file {
             margin-top: 10px;
             font-size: 0.9rem;
@@ -2177,6 +2189,7 @@ $count_stmt->close();
 
                             <div id="mom-desktop-upload">
                                 <div class="file-upload" id="momAddFileUploadZone">
+                                    <div class="dropzone-instruction"><i class="fas fa-upload" aria-hidden="true"></i>Drop files here or click to browse</div>
                                     <input type="file" class="form-control" id="image_file" name="image_file[]" accept=".jpg,.jpeg,.png,.gif,.bmp" multiple onchange="processFilesWithAutoFill(this)">
                                     <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2). The system will automatically detect and fill fields from all documents.</small>
                                 </div>
@@ -2265,6 +2278,7 @@ $count_stmt->close();
                         <div class="mb-3">
                             <label class="form-label">Image Files (JPG, PNG, GIF, BMP)</label>
                             <div class="file-upload" id="momEditFileUploadZone">
+                                <div class="dropzone-instruction"><i class="fas fa-upload" aria-hidden="true"></i>Drop files here or click to browse</div>
                                 <input type="file" class="form-control" id="editImageFile" name="image_file[]" accept=".jpg,.jpeg,.png,.gif,.bmp" multiple onchange="processFiles(this, 'edit')">
                                 <small class="text-muted">Max file size: 5MB per file. You can upload multiple images (e.g., page 1, page 2).</small>
                             </div>
