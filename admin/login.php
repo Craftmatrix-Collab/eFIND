@@ -869,7 +869,7 @@ checkActivityLogsTable();
 
         body {
             font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #f5f7fa, #e4e8f0);
+            background: radial-gradient(circle at 20% 20%, #edf2ff 0%, #e4e8f0 45%, #dbe3f7 100%);
             color: var(--dark-gray);
             min-height: 100vh;
             display: flex;
@@ -883,9 +883,11 @@ checkActivityLogsTable();
         .login-wrapper {
             display: flex;
             flex-direction: column;
-            background-color: var(--white);
+            background-color: rgba(255, 255, 255, 0.92);
             border-radius: 16px;
-            box-shadow: var(--box-shadow);
+            border: 1px solid rgba(67, 97, 238, 0.12);
+            box-shadow: 0 16px 40px rgba(24, 34, 79, 0.18);
+            backdrop-filter: blur(6px);
             overflow: hidden;
             width: 100%;
             max-width: 100%;
@@ -910,6 +912,16 @@ checkActivityLogsTable();
             position: relative;
             overflow: hidden;
             min-height: 180px;
+        }
+
+        .logo-caption {
+            font-size: 0.8rem;
+            opacity: 0.9;
+            margin-top: 10px;
+            margin-bottom: 0;
+            z-index: 2;
+            max-width: 260px;
+            line-height: 1.35;
         }
 
         .logo-section::before {
@@ -1025,11 +1037,22 @@ checkActivityLogsTable();
             width: 100%;
             max-width: 100%;
             position: relative;
-            padding: 0 5px;
+            padding: 16px 14px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 14px;
+            border: 1px solid rgba(67, 97, 238, 0.14);
+            box-shadow: 0 10px 24px rgba(43, 45, 66, 0.08);
         }
 
         .login-form::before {
             display: none; /* Hide decorative border on mobile */
+        }
+
+        .form-helper-text {
+            color: #6f7aa5;
+            font-size: 0.82rem;
+            margin-bottom: 16px;
+            line-height: 1.45;
         }
 
         .form-control {
@@ -1043,6 +1066,34 @@ checkActivityLogsTable();
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
             width: 100%;
             -webkit-appearance: none; /* Remove iOS styling */
+        }
+
+        .input-control {
+            position: relative;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #7b84ad;
+            font-size: 0.95rem;
+            pointer-events: none;
+            transition: color 0.2s ease;
+            z-index: 2;
+        }
+
+        .input-control .form-control {
+            padding-left: 42px;
+        }
+
+        .input-control.password-input .form-control {
+            padding-right: 52px;
+        }
+
+        .input-control:focus-within .input-icon {
+            color: var(--primary-blue);
         }
 
         .form-control:focus {
@@ -1121,26 +1172,36 @@ checkActivityLogsTable();
 
         .password-toggle-icon {
             position: absolute;
-            right: 12px;
-            top: 70%;
+            right: 10px;
+            top: 50%;
             transform: translateY(-50%);
             cursor: pointer;
             color: var(--medium-gray);
             transition: all 0.2s;
             background: rgba(0, 0, 0, 0.05);
-            width: 36px;
-            height: 36px;
+            border: none;
+            width: 34px;
+            height: 34px;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
             -webkit-tap-highlight-color: transparent;
+            z-index: 3;
         }
 
         .password-toggle-icon:active {
             color: var(--primary-blue);
             background: rgba(67, 97, 238, 0.15);
             transform: translateY(-50%) scale(0.95);
+        }
+
+        .caps-lock-warning {
+            display: none;
+            text-align: left;
+            font-size: 0.78rem;
+            margin-top: 6px;
+            color: #b45309;
         }
 
         .forgot-password {
@@ -1206,13 +1267,17 @@ checkActivityLogsTable();
             padding: 10px 12px;
             margin-bottom: 15px;
             font-size: 0.8rem;
-            text-align: center;
+            text-align: left;
             line-height: 1.4;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
         }
 
         .security-notice i {
             color: var(--primary-blue);
-            margin-right: 5px;
+            margin-right: 0;
+            margin-top: 1px;
         }
 
         .floating-shapes {
@@ -1338,17 +1403,18 @@ checkActivityLogsTable();
 
             .login-form {
                 max-width: 400px;
-                padding: 0;
+                padding: 20px 18px;
+                border-radius: 18px;
             }
 
             .login-form::before {
                 display: block;
                 content: "";
                 position: absolute;
-                top: -20px;
-                left: -20px;
-                right: -20px;
-                bottom: -20px;
+                top: -10px;
+                left: -10px;
+                right: -10px;
+                bottom: -10px;
                 border: 2px dashed rgba(67, 97, 238, 0.2);
                 border-radius: 16px;
                 z-index: -1;
@@ -1381,8 +1447,8 @@ checkActivityLogsTable();
             }
 
             .password-toggle-icon {
-                width: 30px;
-                height: 30px;
+                width: 32px;
+                height: 32px;
             }
 
             .password-toggle-icon:hover {
@@ -1448,6 +1514,11 @@ checkActivityLogsTable();
                 height: 120px;
                 top: 50%;
                 right: 20%;
+            }
+
+            .logo-caption {
+                font-size: 0.92rem;
+                max-width: 300px;
             }
 
             @keyframes float {
@@ -1522,6 +1593,7 @@ checkActivityLogsTable();
         <div class="logo-section">
             <img src="images/eFind_logo5.png" alt="Poblacion South Logo">
             <h1>Welcome to eFIND System</h1>
+            <p class="logo-caption">Secure access portal for barangay document intelligence and records management.</p>
         </div>
         
         <div class="login-section">
@@ -1556,16 +1628,29 @@ checkActivityLogsTable();
 
                 <form method="post" action="login.php">
                     <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_GET['redirect'] ?? $_POST['redirect'] ?? ''); ?>">
+                    <p class="form-helper-text">Sign in with your official account credentials to continue.</p>
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" name="username" required
-                               value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username']) : ''; ?>">
+                        <div class="input-control">
+                            <span class="input-icon"><i class="fas fa-user"></i></span>
+                            <input type="text" class="form-control" id="username" name="username" autocomplete="username" required
+                                   placeholder="Enter your username"
+                                   value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username']) : ''; ?>">
+                        </div>
                     </div>
 
                     <div class="mb-3 password-toggle">
                         <label for="password" class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                        <i class="fas fa-eye password-toggle-icon" id="togglePassword"></i>
+                        <div class="input-control password-input">
+                            <span class="input-icon"><i class="fas fa-lock"></i></span>
+                            <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required placeholder="Enter your password">
+                            <button type="button" class="password-toggle-icon" id="togglePassword" aria-label="Show password" aria-pressed="false">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <div class="caps-lock-warning" id="capsLockWarning">
+                            <i class="fas fa-exclamation-triangle me-1"></i>Caps Lock is ON.
+                        </div>
                     </div>
 
                     <div class="forgot-password">
@@ -1586,17 +1671,38 @@ checkActivityLogsTable();
     
     <script>
         // Password toggle functionality
-        document.getElementById('togglePassword').addEventListener('click', function() {
-            const passwordInput = document.getElementById('password');
-            const icon = this;
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                icon.classList.replace('fa-eye', 'fa-eye-slash');
-            } else {
-                passwordInput.type = 'password';
-                icon.classList.replace('fa-eye-slash', 'fa-eye');
-            }
-        });
+        const passwordInput = document.getElementById('password');
+        const togglePasswordButton = document.getElementById('togglePassword');
+        const togglePasswordIcon = togglePasswordButton ? togglePasswordButton.querySelector('i') : null;
+        const capsLockWarning = document.getElementById('capsLockWarning');
+
+        if (togglePasswordButton && passwordInput && togglePasswordIcon) {
+            togglePasswordButton.addEventListener('click', function() {
+                if (passwordInput.type === 'password') {
+                    passwordInput.type = 'text';
+                    togglePasswordIcon.classList.replace('fa-eye', 'fa-eye-slash');
+                    togglePasswordButton.setAttribute('aria-label', 'Hide password');
+                    togglePasswordButton.setAttribute('aria-pressed', 'true');
+                } else {
+                    passwordInput.type = 'password';
+                    togglePasswordIcon.classList.replace('fa-eye-slash', 'fa-eye');
+                    togglePasswordButton.setAttribute('aria-label', 'Show password');
+                    togglePasswordButton.setAttribute('aria-pressed', 'false');
+                }
+            });
+        }
+
+        if (passwordInput && capsLockWarning) {
+            const updateCapsLockWarning = function(event) {
+                const isCapsLockOn = event.getModifierState && event.getModifierState('CapsLock');
+                capsLockWarning.style.display = isCapsLockOn ? 'block' : 'none';
+            };
+            passwordInput.addEventListener('keyup', updateCapsLockWarning);
+            passwordInput.addEventListener('keydown', updateCapsLockWarning);
+            passwordInput.addEventListener('blur', function() {
+                capsLockWarning.style.display = 'none';
+            });
+        }
 
         // Focus on username field when page loads
         document.addEventListener('DOMContentLoaded', function() {
@@ -1604,18 +1710,27 @@ checkActivityLogsTable();
         });
 
         // Form validation
-        document.querySelector('form').addEventListener('submit', function(e) {
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value.trim();
-            
-            if (!username || !password) {
-                e.preventDefault();
-                alert('Both username and password are required!');
-                return false;
-            }
-            
-            return true;
-        });
+        const loginForm = document.querySelector('.login-form form');
+        if (loginForm) {
+            loginForm.addEventListener('submit', function(e) {
+                const username = document.getElementById('username').value.trim();
+                const password = passwordInput.value.trim();
+                
+                if (!username || !password) {
+                    e.preventDefault();
+                    alert('Both username and password are required!');
+                    return false;
+                }
+
+                const loginButton = loginForm.querySelector('.btn-login');
+                if (loginButton) {
+                    loginButton.disabled = true;
+                    loginButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Signing in...';
+                }
+                
+                return true;
+            });
+        }
 
         // Floating shapes animation
         const shapes = document.querySelectorAll('.shape');
