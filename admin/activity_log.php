@@ -781,7 +781,24 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
             position: sticky;
             top: 100px;
             z-index: 99;
-        }.table-info {
+        }
+        .activity-filter-form .row {
+            align-items: flex-end;
+        }
+        .activity-filter-form .form-control,
+        .activity-filter-form .form-select,
+        .activity-filter-form .activity-filter-btn,
+        .activity-filter-form .activity-reset-btn {
+            height: 44px;
+        }
+        .activity-filter-form .activity-filter-btn,
+        .activity-filter-form .activity-reset-btn {
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .table-info {
             padding: 10px 20px;
             background-color: var(--light-blue);
             border-top-left-radius: 16px;
@@ -1286,9 +1303,9 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
             </div>
             <!-- Filter Box -->
             <div class="filter-box">
-                <form method="GET" action="" id="filterForm">
-                    <div class="row g-3">
-                        <div class="col-md-3">
+                <form method="GET" action="" id="filterForm" class="activity-filter-form">
+                    <div class="row g-2">
+                        <div class="col-lg-3 col-md-6">
                             <label for="filter_action" class="form-label">Action Type</label>
                             <select class="form-select" id="filter_action" name="filter_action">
                                 <option value="">All Actions</option>
@@ -1299,15 +1316,15 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-lg-2 col-md-6">
                             <label for="filter_user" class="form-label">User</label>
                             <input type="text" class="form-control" id="filter_user" name="filter_user" value="<?php echo htmlspecialchars($filter_user); ?>" placeholder="User name">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-lg-2 col-md-6">
                             <label for="filter_date" class="form-label">Date</label>
                             <input type="date" class="form-control" id="filter_date" name="filter_date" value="<?php echo htmlspecialchars($filter_date); ?>">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-lg-2 col-md-6">
                             <label for="sort_by" class="form-label">Sort By</label>
                             <select name="sort_by" id="sort_by" class="form-select" onchange="updateSort()">
                                 <option value="log_time_desc" <?php echo $sort_by === 'log_time_desc' ? 'selected' : ''; ?>>Date (Newest)</option>
@@ -1318,13 +1335,13 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                                 <option value="action_desc" <?php echo $sort_by === 'action_desc' ? 'selected' : ''; ?>>Action (Z-A)</option>
                             </select>
                         </div>
-                        <div class="col-md-1 d-flex align-items-end gap-3">
-                            <button type="submit" class="btn btn-primary-custom w-100 h-75">
+                        <div class="col-lg-1 col-md-6 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary-custom w-100 activity-filter-btn">
                                 <i class="fas fa-filter me-1"></i> Filter
                             </button>
                         </div>
-                        <div class="col-md-2 d-flex align-items-end gap-3">
-                            <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-outline-secondary w-100 h-75 d-flex align-items-center justify-content-center">
+                        <div class="col-lg-2 col-md-6 d-flex align-items-end">
+                            <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-outline-secondary w-100 activity-reset-btn">
                                 <i class="fas fa-refresh me-1"></i> Reset
                             </a>
                         </div>
