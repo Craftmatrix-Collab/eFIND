@@ -13,6 +13,7 @@ if (empty($_SESSION['csrf_token'])) {
 include(__DIR__ . '/includes/auth.php');
 include(__DIR__ . '/includes/config.php');
 include(__DIR__ . '/includes/logger.php');
+include(__DIR__ . '/includes/print_date_range_helper.php');
 
 // Check if user is logged in - redirect to login if not
 if (!isLoggedIn()) {
@@ -137,13 +138,14 @@ END";
 
 // Handle print action
 if (isset($_GET['print']) && $_GET['print'] === '1') {
-    $printStartDate = $_GET['print_start_date'] ?? '';
-    $printEndDate = $_GET['print_end_date'] ?? '';
+    [$printStartDate, $printEndDate, $printDateRangeError] = getValidatedPrintDateRange(
+        $_GET['print_start_date'] ?? '',
+        $_GET['print_end_date'] ?? ''
+    );
     $printUserRole = $_GET['print_user_role'] ?? '';
 
-    // Validate date range
-    if (!empty($printStartDate) && !empty($printEndDate) && strtotime($printStartDate) > strtotime($printEndDate)) {
-        die("End date must be after start date.");
+    if ($printDateRangeError !== null) {
+        die($printDateRangeError);
     }
 
     // Build query with filters for print
@@ -156,20 +158,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     $printParams = [];
     $printTypes = '';
 
-    if (!empty($printStartDate) && !empty($printEndDate)) {
-        $printConditions[] = "DATE(al.log_time) BETWEEN ? AND ?";
-        $printParams[] = $printStartDate;
-        $printParams[] = $printEndDate;
-        $printTypes .= 'ss';
-    } elseif (!empty($printStartDate)) {
-        $printConditions[] = "DATE(al.log_time) >= ?";
-        $printParams[] = $printStartDate;
-        $printTypes .= 's';
-    } elseif (!empty($printEndDate)) {
-        $printConditions[] = "DATE(al.log_time) <= ?";
-        $printParams[] = $printEndDate;
-        $printTypes .= 's';
-    }
+    appendPrintDateRangeConditions('al.log_time', $printStartDate, $printEndDate, $printConditions, $printParams, $printTypes);
 
     if (!empty($printUserRole)) {
         $printConditions[] = "al.user_role = ?";
@@ -1558,15 +1547,15 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                 const endDate = document.getElementById('modalPrintEndDate').value;
 
                 // Validate date range
-                if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+                if (startDate && endDate && startDate > endDate) {
                     alert('End date must be after start date.');
                     return;
                 }
 
                 // Build print URL with date range
                 let printUrl = window.location.pathname + '?print=1';
-                if (startDate) printUrl += '&print_start_date=' + startDate;
-                if (endDate) printUrl += '&print_end_date=' + endDate;
+                if (startDate) printUrl += '&print_start_date=' + encodeURIComponent(startDate);
+                if (endDate) printUrl += '&print_end_date=' + encodeURIComponent(endDate);
 
                 // Open print window
                 window.open(printUrl, '_blank');

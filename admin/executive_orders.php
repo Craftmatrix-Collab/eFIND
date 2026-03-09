@@ -16,6 +16,7 @@ try {
     include(__DIR__ . '/includes/minio_helper.php');
     include(__DIR__ . '/includes/image_hash_helper.php');
     include(__DIR__ . '/includes/text_duplicate_helper.php');
+    include(__DIR__ . '/includes/print_date_range_helper.php');
 } catch (Exception $e) {
     error_log("Failed to include required files: " . $e->getMessage());
     die("System initialization error. Please contact the administrator.");
@@ -165,26 +166,12 @@ function generateReferenceNumber($conn, $executive_order_date = null) {
 
 // Handle print action
 if (isset($_GET['print']) && $_GET['print'] === '1') {
-    $printStartDate = $_GET['print_start_date'] ?? '';
-    $printEndDate = $_GET['print_end_date'] ?? '';
-
-    if (!empty($printStartDate)) {
-        $startDateObj = DateTime::createFromFormat('Y-m-d', $printStartDate);
-        if (!$startDateObj || $startDateObj->format('Y-m-d') !== $printStartDate) {
-            die("Invalid start date format. Please use YYYY-MM-DD.");
-        }
-    }
-
-    if (!empty($printEndDate)) {
-        $endDateObj = DateTime::createFromFormat('Y-m-d', $printEndDate);
-        if (!$endDateObj || $endDateObj->format('Y-m-d') !== $printEndDate) {
-            die("Invalid end date format. Please use YYYY-MM-DD.");
-        }
-    }
-    
-    // Validate date range
-    if (!empty($printStartDate) && !empty($printEndDate) && strtotime($printStartDate) > strtotime($printEndDate)) {
-        die("End date must be after start date.");
+    [$printStartDate, $printEndDate, $printDateRangeError] = getValidatedPrintDateRange(
+        $_GET['print_start_date'] ?? '',
+        $_GET['print_end_date'] ?? ''
+    );
+    if ($printDateRangeError !== null) {
+        die($printDateRangeError);
     }
 
     // Build query with filters for print
@@ -193,20 +180,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     $printParams = [];
     $printTypes = '';
 
-    if (!empty($printStartDate) && !empty($printEndDate)) {
-        $printConditions[] = "DATE(executive_order_date) BETWEEN ? AND ?";
-        $printParams[] = $printStartDate;
-        $printParams[] = $printEndDate;
-        $printTypes .= 'ss';
-    } elseif (!empty($printStartDate)) {
-        $printConditions[] = "DATE(executive_order_date) >= ?";
-        $printParams[] = $printStartDate;
-        $printTypes .= 's';
-    } elseif (!empty($printEndDate)) {
-        $printConditions[] = "DATE(executive_order_date) <= ?";
-        $printParams[] = $printEndDate;
-        $printTypes .= 's';
-    }
+    appendPrintDateRangeConditions('executive_order_date', $printStartDate, $printEndDate, $printConditions, $printParams, $printTypes);
 
     if (!empty($printConditions)) {
         $printQuery .= " AND " . implode(" AND ", $printConditions);
@@ -3182,6 +3156,10 @@ $count_stmt->close();
             document.getElementById('confirmPrint').addEventListener('click', function() {
                 const startDate = document.getElementById('printStartDate').value;
                 const endDate = document.getElementById('printEndDate').value;
+                if (startDate && endDate && startDate > endDate) {
+                    alert('End date must be after start date.');
+                    return;
+                }
                 
                 // Build print URL with date range
                 let printUrl = window.location.pathname + '?print=1';
