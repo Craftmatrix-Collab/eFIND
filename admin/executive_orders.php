@@ -1116,6 +1116,28 @@ $count_stmt->close();
             top: 12px;
             color: var(--medium-gray);
         }
+        .eo-search-form .row {
+            align-items: center;
+        }
+        .eo-search-form .search-box {
+            margin-bottom: 0;
+        }
+        .eo-search-form .search-box i {
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        .eo-search-form .form-control,
+        .eo-search-form .form-select,
+        .eo-search-form .eo-search-btn {
+            height: 44px;
+        }
+        .eo-search-form .eo-filter-select {
+            font-size: 0.85rem;
+        }
+        .eo-search-form .eo-search-btn {
+            min-width: 0;
+            white-space: nowrap;
+        }
         .table-container {
             background-color: var(--white);
             border-radius: 16px;
@@ -1803,16 +1825,16 @@ $count_stmt->close();
                 </div>
             </div>
             <!-- Search Form -->
-            <form method="GET" action="executive_orders.php" class="mb-9">
-                <div class="row">
-                    <div class="col-md-8">
+            <form method="GET" action="executive_orders.php" class="mb-2 eo-search-form">
+                <div class="row g-2">
+                    <div class="col-lg-7 col-md-6 col-12">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
                             <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any Executive Order field (title, number, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
-                    <div class="col-md-1">
-                        <select name="year" class="form-select">
+                    <div class="col-lg-2 col-md-2 col-sm-4 col-12">
+                        <select name="year" class="form-select eo-filter-select">
                             <option value="">All Years</option>
                             <?php foreach ($available_years as $y): ?>
                                 <option value="<?php echo $y['year']; ?>" <?php echo $year == $y['year'] ? 'selected' : ''; ?>>
@@ -1821,8 +1843,8 @@ $count_stmt->close();
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="col-md-2">
-                        <select name="sort_by" id="sort_by" class="form-select" onchange="updateSort()">
+                    <div class="col-lg-2 col-md-2 col-sm-4 col-12">
+                        <select name="sort_by" id="sort_by" class="form-select eo-filter-select" onchange="updateSort()">
                             <option value="executive_order_date_desc" <?php echo $sort_by === 'executive_order_date_desc' ? 'selected' : ''; ?>>Date (Newest)</option>
                             <option value="executive_order_date_asc" <?php echo $sort_by === 'executive_order_date_asc' ? 'selected' : ''; ?>>Date (Oldest)</option>
                             <option value="title_asc" <?php echo $sort_by === 'title_asc' ? 'selected' : ''; ?>>Title (A-Z)</option>
@@ -1831,8 +1853,8 @@ $count_stmt->close();
                             <option value="date_posted_desc" <?php echo $sort_by === 'date_posted_desc' ? 'selected' : ''; ?>>Date Posted (Newest)</option>
                         </select>
                     </div>
-                    <div class="col-md-1">
-                        <button type="submit" class="btn btn-primary-custom w-100" style="height: 45px; min-width: 100px;">
+                    <div class="col-lg-1 col-md-2 col-sm-4 col-12">
+                        <button type="submit" class="btn btn-primary-custom w-100 eo-search-btn">
                             <i class="fas fa-search"></i>
                         </button>
                     </div>
