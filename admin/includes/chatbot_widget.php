@@ -1067,8 +1067,19 @@ function collectDocumentMentions(message) {
     return dedupedMatches;
 }
 
+function normalizeLegacyOrdinanceTerminology(text) {
+    const normalizedText = typeof text === 'string' ? text : String(text ?? '');
+    return normalizedText
+        .replace(/\bORDINANCES\b/g, 'EXECUTIVE ORDERS')
+        .replace(/\bORDINANCE\b/g, 'EXECUTIVE ORDER')
+        .replace(/\bOrdinances\b/g, 'Executive Orders')
+        .replace(/\bOrdinance\b/g, 'Executive Order')
+        .replace(/\bordinances\b/g, 'executive orders')
+        .replace(/\bordinance\b/g, 'executive order');
+}
+
 function normalizeBotMessage(message) {
-    const normalizedMessage = String(message ?? '').replace(/\r\n?/g, '\n');
+    const normalizedMessage = normalizeLegacyOrdinanceTerminology(message).replace(/\r\n?/g, '\n');
     const filteredLines = normalizedMessage.split('\n').filter((line) => {
         const normalizedLine = line.replace(/^\s*[*\-•]\s*/, '').trim().toLowerCase();
         return !normalizedLine.startsWith('**anticipated needs:**')
@@ -1373,19 +1384,25 @@ function addSourcesToChat(sources, persist = true) {
     if (!Array.isArray(sources) || sources.length === 0) {
         return;
     }
+    const sanitizedSources = sources
+        .map((source) => normalizeLegacyOrdinanceTerminology(source))
+        .filter((source) => String(source).trim() !== '');
+    if (sanitizedSources.length === 0) {
+        return;
+    }
     
     const messagesContainer = document.getElementById('chatbotMessages');
     
     const sourcesDiv = document.createElement('div');
     sourcesDiv.className = 'chatbot-sources-note';
-    sourcesDiv.innerHTML = `<strong>Sources:</strong> ${sources.map((source, index) => `${index + 1}. ${escapeHtml(source)}`).join(', ')}`;
+    sourcesDiv.innerHTML = `<strong>Sources:</strong> ${sanitizedSources.map((source, index) => `${index + 1}. ${escapeHtml(source)}`).join(', ')}`;
     messagesContainer.appendChild(sourcesDiv);
     scrollChatbotToLatestMessage(persist ? 'smooth' : 'auto');
     
     if (persist) {
         chatbotHistory.push({
             type: 'sources',
-            sources: sources
+            sources: sanitizedSources
         });
         persistChatHistory();
     }

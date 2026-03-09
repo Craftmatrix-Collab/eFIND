@@ -457,6 +457,73 @@ class BarangayChatbotAPI {
 
         return $cleanParts;
     }
+
+    private function applyOrdinanceReplacementByCase(string $matchedText, string $lowercaseReplacement, string $titleCaseReplacement, string $uppercaseReplacement): string
+    {
+        if ($matchedText === strtoupper($matchedText)) {
+            return $uppercaseReplacement;
+        }
+        if ($matchedText === strtolower($matchedText)) {
+            return $lowercaseReplacement;
+        }
+        return $titleCaseReplacement;
+    }
+
+    private function normalizeLegacyOrdinanceTerminology($text): string
+    {
+        $normalizedText = (string)$text;
+        $normalizedText = preg_replace_callback('/\bordinances\b/i', function ($matches) {
+            return $this->applyOrdinanceReplacementByCase(
+                (string)$matches[0],
+                'executive orders',
+                'Executive Orders',
+                'EXECUTIVE ORDERS'
+            );
+        }, $normalizedText);
+        $normalizedText = preg_replace_callback('/\bordinance\b/i', function ($matches) {
+            return $this->applyOrdinanceReplacementByCase(
+                (string)$matches[0],
+                'executive order',
+                'Executive Order',
+                'EXECUTIVE ORDER'
+            );
+        }, $normalizedText);
+        return $normalizedText;
+    }
+
+    private function normalizeLegacyOrdinanceValue($value)
+    {
+        if (is_string($value) || is_numeric($value)) {
+            return $this->normalizeLegacyOrdinanceTerminology($value);
+        }
+
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->normalizeLegacyOrdinanceValue($item);
+        }
+
+        return $value;
+    }
+
+    private function sanitizeChatbotResponsePayload(array $payload): array
+    {
+        foreach (['output', 'response', 'message'] as $key) {
+            if (isset($payload[$key])) {
+                $payload[$key] = $this->normalizeLegacyOrdinanceValue($payload[$key]);
+            }
+        }
+
+        if (isset($payload['sources']) && is_array($payload['sources'])) {
+            $payload['sources'] = array_values(array_map(function ($source) {
+                return $this->normalizeLegacyOrdinanceValue($source);
+            }, $payload['sources']));
+        }
+
+        return $payload;
+    }
     
     private function handleChat() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -489,6 +556,10 @@ class BarangayChatbotAPI {
         try {
             // Send to n8n webhook with full context
             $n8nResponse = $this->sendToN8N($input);
+            if (!is_array($n8nResponse)) {
+                $n8nResponse = ['output' => (string)$n8nResponse];
+            }
+            $n8nResponse = $this->sanitizeChatbotResponsePayload($n8nResponse);
             
             $this->log("N8N response received successfully");
             
