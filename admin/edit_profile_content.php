@@ -246,13 +246,28 @@ try {
         border-radius: 10px 0 0 10px;
         background: #f4f7ff;
         color: #6b76a8;
+        font-size: 0.85rem;
+        padding: 0.5rem 0.7rem;
     }
     .profile-email-group .form-control {
         border-left: 0;
+        font-size: 0.9rem;
+        min-height: 42px;
     }
     .profile-email-group .btn {
         border-radius: 0 10px 10px 0;
         font-weight: 600;
+        font-size: 0.82rem;
+        padding: 0.45rem 0.72rem;
+        line-height: 1.1;
+        white-space: nowrap;
+    }
+    #profileEmailVerifiedBadge .badge {
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    #profileEmailOtpTimer {
+        font-size: 0.78rem;
     }
     .otp-verification-box {
         border: 1px dashed rgba(67, 97, 238, 0.45);
