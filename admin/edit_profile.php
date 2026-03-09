@@ -274,7 +274,6 @@ unset($_SESSION['success'], $_SESSION['error']);
             color: var(--primary-blue);
         }
 
-        .profile-email-input-group .input-group-text,
         .profile-email-group .input-group-text {
             border: 2px solid var(--light-blue);
             border-right: 0;
@@ -285,7 +284,6 @@ unset($_SESSION['success'], $_SESSION['error']);
             padding: 0.5rem 0.7rem;
         }
 
-        .profile-email-input-group .form-control,
         .profile-email-group .form-control {
             border-left: 0;
             font-size: 0.9rem;
@@ -293,7 +291,9 @@ unset($_SESSION['success'], $_SESSION['error']);
         }
 
         .profile-email-input-group .form-control {
-            border-radius: 0 10px 10px 0;
+            font-size: 0.9rem;
+            min-height: 44px;
+            border-radius: 10px;
         }
 
         .profile-email-group .btn {
@@ -577,7 +577,6 @@ unset($_SESSION['success'], $_SESSION['error']);
                                     <div class="col-md-6 mb-3">
                                         <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
                                         <div class="input-group profile-email-input-group">
-                                            <span class="input-group-text"><i class="fas fa-envelope"></i></span>
                                             <input type="email" class="form-control" id="email" name="email"
                                                    value="<?php echo htmlspecialchars($user['email']); ?>" required>
                                         </div>
