@@ -8,6 +8,32 @@ $error = '';
 $message = '';
 $passwordPolicy = getPasswordPolicyClientConfig();
 
+function ensurePasswordResetAccountLockColumns($tableName) {
+    global $conn;
+
+    if (!in_array($tableName, ['admin_users', 'users'], true) || !isset($conn) || !($conn instanceof mysqli)) {
+        return;
+    }
+
+    $migrations = [
+        'failed_login_attempts' => "ALTER TABLE {$tableName} ADD COLUMN failed_login_attempts INT NOT NULL DEFAULT 0",
+        'account_locked' => "ALTER TABLE {$tableName} ADD COLUMN account_locked TINYINT(1) NOT NULL DEFAULT 0",
+        'account_locked_at' => "ALTER TABLE {$tableName} ADD COLUMN account_locked_at DATETIME NULL",
+        'failed_window_started_at' => "ALTER TABLE {$tableName} ADD COLUMN failed_window_started_at DATETIME NULL",
+        'lockout_until' => "ALTER TABLE {$tableName} ADD COLUMN lockout_until DATETIME NULL",
+        'lockout_level' => "ALTER TABLE {$tableName} ADD COLUMN lockout_level INT NOT NULL DEFAULT 0",
+    ];
+
+    foreach ($migrations as $columnName => $migrationSql) {
+        $columnCheck = $conn->query("SHOW COLUMNS FROM {$tableName} LIKE '{$columnName}'");
+        if (!$columnCheck || (int)$columnCheck->num_rows === 0) {
+            if (!$conn->query($migrationSql)) {
+                error_log("Reset-password lock column migration failed ({$tableName}.{$columnName}): " . $conn->error);
+            }
+        }
+    }
+}
+
 // Accept either session-based auth (from OTP flow) or token-based auth (legacy)
 $use_session_auth = false;
 $token = ''; // always defined to avoid undefined-variable notice in form action
@@ -76,9 +102,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
         // admin_users stores password in 'password_hash'; staff users table uses 'password'
         $pass_column = ($user_table_param === 'admin_users') ? 'password_hash' : 'password';
+        ensurePasswordResetAccountLockColumns($user_table_param);
         
-        // Update password and clear reset token
-        $update_query = "UPDATE $user_table_param SET $pass_column = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?";
+        // Update password, clear reset token, and unlock account state.
+        $update_query = "UPDATE $user_table_param SET $pass_column = ?, reset_token = NULL, reset_expires = NULL, failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL, failed_window_started_at = NULL, lockout_until = NULL, lockout_level = 0 WHERE id = ?";
         $stmt = $conn->prepare($update_query);
         
         if ($stmt) {

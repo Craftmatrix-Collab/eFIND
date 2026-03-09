@@ -41,6 +41,33 @@ function canEditManagedProfile(int $targetId, string $targetType, bool $isSupera
         && $targetType === $currentActorType;
 }
 
+function ensureUsersAccountLockColumns(string $tableName): void
+{
+    global $conn;
+
+    if (!in_array($tableName, ['users', 'admin_users'], true) || !isset($conn) || !($conn instanceof mysqli)) {
+        return;
+    }
+
+    $migrations = [
+        'failed_login_attempts' => "ALTER TABLE {$tableName} ADD COLUMN failed_login_attempts INT NOT NULL DEFAULT 0",
+        'account_locked' => "ALTER TABLE {$tableName} ADD COLUMN account_locked TINYINT(1) NOT NULL DEFAULT 0",
+        'account_locked_at' => "ALTER TABLE {$tableName} ADD COLUMN account_locked_at DATETIME NULL",
+        'failed_window_started_at' => "ALTER TABLE {$tableName} ADD COLUMN failed_window_started_at DATETIME NULL",
+        'lockout_until' => "ALTER TABLE {$tableName} ADD COLUMN lockout_until DATETIME NULL",
+        'lockout_level' => "ALTER TABLE {$tableName} ADD COLUMN lockout_level INT NOT NULL DEFAULT 0",
+    ];
+
+    foreach ($migrations as $columnName => $migrationSql) {
+        $columnCheck = $conn->query("SHOW COLUMNS FROM {$tableName} LIKE '{$columnName}'");
+        if (!$columnCheck || (int)$columnCheck->num_rows === 0) {
+            if (!$conn->query($migrationSql)) {
+                error_log("Users lock column migration failed ({$tableName}.{$columnName}): " . $conn->error);
+            }
+        }
+    }
+}
+
 // ── AJAX: Send email verification OTP ────────────────────────────────────────
 if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
     header('Content-Type: application/json');
@@ -440,7 +467,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'reset_attempts' && isset($_GE
         exit();
     }
 
-    $resetStmt = $conn->prepare("UPDATE $table SET failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL WHERE id = ? LIMIT 1");
+    ensureUsersAccountLockColumns($table);
+    $resetStmt = $conn->prepare("UPDATE $table SET failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL, failed_window_started_at = NULL, lockout_until = NULL, lockout_level = 0 WHERE id = ? LIMIT 1");
     if (!$resetStmt) {
         $_SESSION['error'] = "Error preparing reset: " . $conn->error;
         header("Location: " . $_SERVER['PHP_SELF']);
@@ -674,7 +702,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($stmt->execute()) {
                 if ($is_superadmin_users_page) {
-                    $resetLockStmt = $conn->prepare("UPDATE $table SET failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL WHERE id = ? LIMIT 1");
+                    ensureUsersAccountLockColumns($table);
+                    $resetLockStmt = $conn->prepare("UPDATE $table SET failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL, failed_window_started_at = NULL, lockout_until = NULL, lockout_level = 0 WHERE id = ? LIMIT 1");
                     if ($resetLockStmt) {
                         $resetLockStmt->bind_param("i", $id);
                         $resetLockStmt->execute();
