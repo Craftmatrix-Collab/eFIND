@@ -1,6 +1,8 @@
 <?php
 $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
 $enableTiptapAddContent = in_array($currentPage, ['executive_orders.php', 'resolutions.php', 'minutes_of_meeting.php'], true);
+$tiptapAddContentPath = __DIR__ . '/../assets/js/tiptap-add-content.js';
+$tiptapAddContentVersion = file_exists($tiptapAddContentPath) ? (string) filemtime($tiptapAddContentPath) : '1';
 ?>
 <!-- Mobile-upload live notification toast -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:9999" id="upload-toast-container"></div>
@@ -56,7 +58,7 @@ $enableTiptapAddContent = in_array($currentPage, ['executive_orders.php', 'resol
 </script>
 <?php if ($enableTiptapAddContent): ?>
 <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
-<script type="module" src="assets/js/tiptap-add-content.js"></script>
+<script type="module" src="assets/js/tiptap-add-content.js?v=<?php echo $tiptapAddContentVersion; ?>"></script>
 <?php endif; ?>
 
 <footer class="bg-darkblue text-white py-3 site-footer" style="background-color: #002147;">
