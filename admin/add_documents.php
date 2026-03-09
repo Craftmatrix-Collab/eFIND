@@ -240,6 +240,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--primary-blue);
             margin-bottom: 10px;
         }
+
+        .auto-fill-section {
+            display: none;
+            margin-top: 12px;
+            border-radius: 10px;
+            border: 1px solid #dbe4ff;
+            background: #f6f8ff;
+            padding: 12px 14px;
+        }
+
+        .auto-fill-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .auto-fill-icon {
+            color: var(--primary-blue);
+            margin-top: 2px;
+        }
+
+        .auto-fill-status {
+            font-weight: 600;
+            font-size: 0.9rem;
+            line-height: 1.3;
+        }
+
+        .auto-fill-details {
+            font-size: 0.82rem;
+            color: #5f6988;
+            margin-top: 2px;
+            line-height: 1.35;
+        }
+
+        .auto-fill-section.status-processing {
+            border-color: #c7d8ff;
+            background: #eef3ff;
+        }
+
+        .auto-fill-section.status-processing .auto-fill-status {
+            color: #2f4cb2;
+        }
+
+        .auto-fill-section.status-success {
+            border-color: #b8ead2;
+            background: #eefbf4;
+        }
+
+        .auto-fill-section.status-success .auto-fill-status {
+            color: #1f7a4f;
+        }
+
+        .auto-fill-section.status-warning {
+            border-color: #ffe1a8;
+            background: #fff9ea;
+        }
+
+        .auto-fill-section.status-warning .auto-fill-status {
+            color: #9a6800;
+        }
+
+        .auto-fill-section.status-danger {
+            border-color: #f5c2c7;
+            background: #fff0f1;
+        }
+
+        .auto-fill-section.status-danger .auto-fill-status {
+            color: #b02a37;
+        }
         
         @media (max-width: 768px) {
             .document-form-container {
@@ -321,6 +390,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <input type="file" id="document_file" name="document_file" class="d-none" required>
                                     <div id="file-name" class="mt-2 text-primary fw-bold"></div>
                                 </div>
+                                <div id="autoFillSection" class="auto-fill-section">
+                                    <div class="auto-fill-header">
+                                        <i class="fas fa-robot auto-fill-icon"></i>
+                                        <div>
+                                            <div id="autoFillStatus" class="auto-fill-status"></div>
+                                            <div id="autoFillDetails" class="auto-fill-details"></div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             
                             <div class="d-flex justify-content-between">
@@ -340,9 +418,238 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         $(document).ready(function() {
-            // Show/hide reference number field based on document type
-            $('#document_type').change(function() {
-                const type = $(this).val();
+            const $documentType = $('#document_type');
+            const $title = $('#title');
+            const $referenceNumber = $('#reference_number');
+            const $sessionNumber = $('#session_number');
+            const $autoFillSection = $('#autoFillSection');
+            const $autoFillStatus = $('#autoFillStatus');
+            const $autoFillDetails = $('#autoFillDetails');
+            const supportedAutoFillExtensions = ['pdf', 'doc', 'docx'];
+            let activeAutoFillRequest = 0;
+
+            function setAutoFillStatus(type, message, details = '') {
+                $autoFillSection
+                    .removeClass('status-processing status-success status-warning status-danger')
+                    .addClass('status-' + type)
+                    .show();
+
+                $autoFillStatus.text(message);
+                $autoFillDetails.text(details);
+            }
+
+            function clearAutoFillStatus() {
+                $autoFillSection
+                    .removeClass('status-processing status-success status-warning status-danger')
+                    .hide();
+                $autoFillStatus.text('');
+                $autoFillDetails.text('');
+            }
+
+            function normalizeExtractedText(text) {
+                return String(text || '')
+                    .replace(/\r/g, '\n')
+                    .replace(/\n{3,}/g, '\n\n')
+                    .replace(/[ \t]{2,}/g, ' ')
+                    .trim();
+            }
+
+            function extractDocumentTitle(text) {
+                const ignoredLinePatterns = [
+                    /^page\s+\d+/i,
+                    /^republic of the philippines/i,
+                    /^province of/i,
+                    /^city of/i,
+                    /^municipality of/i,
+                    /^barangay/i,
+                    /^executive\s+order/i,
+                    /^resolution/i,
+                    /^minutes of/i,
+                    /^session\s*(no\.?|number)/i,
+                    /^whereas[,:\s]/i
+                ];
+
+                const lines = text
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter((line) => line.length >= 8 && line.length <= 180);
+
+                for (const line of lines) {
+                    if (ignoredLinePatterns.some((pattern) => pattern.test(line))) {
+                        continue;
+                    }
+                    const letterCount = (line.match(/[A-Za-z]/g) || []).length;
+                    if (letterCount >= 6) {
+                        return line.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9).,\- ]+$/g, '').trim();
+                    }
+                }
+
+                return '';
+            }
+
+            function extractDocumentNumber(text, documentType) {
+                const typePatterns = {
+                    executive_order: [
+                        /Executive\s*Order\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i,
+                        /\bEO\s*(?:No\.?|Number|#)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i
+                    ],
+                    resolution: [
+                        /Resolution\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i
+                    ],
+                    meeting_minutes: [
+                        /Session\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i,
+                        /Meeting\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i,
+                        /Minutes\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i
+                    ]
+                };
+
+                const fallbackPatterns = [
+                    /Executive\s*Order\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i,
+                    /Resolution\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i,
+                    /Session\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i,
+                    /Meeting\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]*)/i
+                ];
+
+                const patterns = typePatterns[documentType] || [];
+                const orderedPatterns = patterns.concat(fallbackPatterns);
+
+                for (const pattern of orderedPatterns) {
+                    const match = text.match(pattern);
+                    if (!match || !match[1]) {
+                        continue;
+                    }
+                    const cleanedNumber = match[1].replace(/[),.;:\s]+$/g, '').trim();
+                    if (cleanedNumber.length >= 2) {
+                        return cleanedNumber;
+                    }
+                }
+
+                return '';
+            }
+
+            function applyDetectedFields(detected, documentType) {
+                const appliedFields = [];
+
+                if (detected.title && !$title.val().trim()) {
+                    $title.val(detected.title);
+                    appliedFields.push('Title');
+                }
+
+                if (detected.documentNumber) {
+                    if (documentType === 'meeting_minutes') {
+                        if (!$sessionNumber.val().trim()) {
+                            $sessionNumber.val(detected.documentNumber);
+                            appliedFields.push('Session Number');
+                        }
+                    } else if (!$referenceNumber.val().trim()) {
+                        $referenceNumber.val(detected.documentNumber);
+                        appliedFields.push('Reference Number');
+                    }
+                }
+
+                return appliedFields;
+            }
+
+            async function runAutoFillFromFile(file) {
+                if (!file) {
+                    clearAutoFillStatus();
+                    return;
+                }
+
+                const extension = (file.name.split('.').pop() || '').toLowerCase();
+                if (!supportedAutoFillExtensions.includes(extension)) {
+                    setAutoFillStatus(
+                        'warning',
+                        'Auto-fill skipped for this file type.',
+                        'Smart extraction currently supports PDF, DOC, and DOCX files only.'
+                    );
+                    return;
+                }
+
+                const requestId = ++activeAutoFillRequest;
+                setAutoFillStatus(
+                    'processing',
+                    'Analyzing document...',
+                    'Detecting title and document number from the uploaded file.'
+                );
+
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('extract_text', '1');
+                    formData.append('use_ocr', '1');
+                    formData.append('force_upload', '1');
+
+                    const response = await fetch('../upload_handler.php?action=upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+
+                    if (requestId !== activeAutoFillRequest) {
+                        return;
+                    }
+
+                    if (!response.ok || !result.success) {
+                        setAutoFillStatus(
+                            'danger',
+                            'Auto-fill failed.',
+                            result.message || 'Unable to process the uploaded file for extraction.'
+                        );
+                        return;
+                    }
+
+                    const extractionResult = result.extraction || {};
+                    const extractedText = normalizeExtractedText(extractionResult.text || '');
+                    if (!extractionResult.success || !extractedText) {
+                        setAutoFillStatus(
+                            'warning',
+                            'No readable text detected.',
+                            'Please fill in the fields manually for this document.'
+                        );
+                        return;
+                    }
+
+                    const documentType = $documentType.val();
+                    const detectedData = {
+                        title: extractDocumentTitle(extractedText),
+                        documentNumber: extractDocumentNumber(extractedText, documentType)
+                    };
+
+                    const appliedFields = applyDetectedFields(detectedData, documentType);
+                    if (appliedFields.length > 0) {
+                        setAutoFillStatus(
+                            'success',
+                            'Document details detected successfully.',
+                            'Auto-filled: ' + appliedFields.join(', ') + '. You can still edit them before saving.'
+                        );
+                    } else if (detectedData.title || detectedData.documentNumber) {
+                        setAutoFillStatus(
+                            'warning',
+                            'Detected document details were not applied.',
+                            'The matching fields already contain values. Clear a field if you want to apply auto-fill.'
+                        );
+                    } else {
+                        setAutoFillStatus(
+                            'warning',
+                            'Could not detect title or number.',
+                            'Please enter the title and number manually for this file.'
+                        );
+                    }
+                } catch (error) {
+                    if (requestId !== activeAutoFillRequest) {
+                        return;
+                    }
+                    setAutoFillStatus(
+                        'danger',
+                        'Auto-fill failed.',
+                        error.message || 'An unexpected error occurred while analyzing the document.'
+                    );
+                }
+            }
+
+            function applyDocumentTypeLayout() {
+                const type = $documentType.val();
                 if (type === 'meeting_minutes') {
                     $('#reference_number_field').hide();
                     $('#reference_number').removeAttr('required');
@@ -360,6 +667,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $('#meeting_date_field').addClass('d-none');
                     $('#meeting_date').removeAttr('required');
                     $('label[for="date_issued"]').text('Date Issued');
+
                     if (type === 'executive_order') {
                         $('#reference_number_label').text('Executive Order Number *');
                     } else if (type === 'resolution') {
@@ -369,39 +677,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $('#reference_number').removeAttr('required');
                     }
                 }
+            }
+
+            $documentType.on('change', function() {
+                applyDocumentTypeLayout();
+                const fileInput = $('#document_file')[0];
+                const selectedFile = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+                runAutoFillFromFile(selectedFile);
             });
-            
-            // Display selected file name
-            $('#document_file').change(function() {
-                if (this.files && this.files[0]) {
-                    $('#file-name').text(this.files[0].name);
-                }
+
+            $('#document_file').on('change', function() {
+                const selectedFile = this.files && this.files[0] ? this.files[0] : null;
+                $('#file-name').text(selectedFile ? selectedFile.name : '');
+                runAutoFillFromFile(selectedFile);
             });
-            
-            // Drag and drop functionality
+
             const fileUploadContainer = $('.file-upload-container')[0];
-            
-            fileUploadContainer.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                fileUploadContainer.style.borderColor = '#4361ee';
-                fileUploadContainer.style.backgroundColor = '#e8f0fe';
-            });
-            
-            fileUploadContainer.addEventListener('dragleave', () => {
-                fileUploadContainer.style.borderColor = '#8d99ae';
-                fileUploadContainer.style.backgroundColor = 'transparent';
-            });
-            
-            fileUploadContainer.addEventListener('drop', (e) => {
-                e.preventDefault();
-                fileUploadContainer.style.borderColor = '#8d99ae';
-                fileUploadContainer.style.backgroundColor = 'transparent';
-                
-                if (e.dataTransfer.files.length) {
-                    document.getElementById('document_file').files = e.dataTransfer.files;
-                    $('#file-name').text(e.dataTransfer.files[0].name);
-                }
-            });
+            if (fileUploadContainer) {
+                fileUploadContainer.addEventListener('dragover', (event) => {
+                    event.preventDefault();
+                    fileUploadContainer.style.borderColor = '#4361ee';
+                    fileUploadContainer.style.backgroundColor = '#e8f0fe';
+                });
+
+                fileUploadContainer.addEventListener('dragleave', () => {
+                    fileUploadContainer.style.borderColor = '#8d99ae';
+                    fileUploadContainer.style.backgroundColor = 'transparent';
+                });
+
+                fileUploadContainer.addEventListener('drop', (event) => {
+                    event.preventDefault();
+                    fileUploadContainer.style.borderColor = '#8d99ae';
+                    fileUploadContainer.style.backgroundColor = 'transparent';
+
+                    if (event.dataTransfer.files.length) {
+                        document.getElementById('document_file').files = event.dataTransfer.files;
+                        $('#document_file').trigger('change');
+                    }
+                });
+            }
+
+            applyDocumentTypeLayout();
         });
     </script>
 </body>
