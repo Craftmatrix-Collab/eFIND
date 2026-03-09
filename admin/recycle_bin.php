@@ -339,10 +339,14 @@ if ($stmt) {
 function recycleDocumentTypeLabel(string $originalTable): string {
     switch ($originalTable) {
         case 'executive_orders':
+        case 'executive_order':
             return 'Executive Order';
         case 'resolutions':
+        case 'resolution':
             return 'Resolution';
         case 'minutes_of_meeting':
+        case 'minutes':
+        case 'meeting':
             return 'Minutes of Meeting';
         default:
             return 'Document';
@@ -786,7 +790,7 @@ unset($_SESSION['error'], $_SESSION['success']);
                         <thead class="table-dark">
                             <tr>
                                 <th style="width: 7%;">ID</th>
-                                <th style="width: 15%;">Original Table</th>
+                                <th style="width: 15%;">Document Type</th>
                                 <th style="width: 8%;">Original ID</th>
                                 <th style="width: 15%;">Deleted By</th>
                                 <th style="width: 15%;">Deleted At</th>
@@ -804,7 +808,7 @@ unset($_SESSION['error'], $_SESSION['success']);
                                 <?php foreach ($entries as $entry): ?>
                                     <tr>
                                         <td><?php echo (int)$entry['id']; ?></td>
-                                        <td><span class="badge bg-primary"><?php echo htmlspecialchars((string)$entry['original_table']); ?></span></td>
+                                        <td><span class="badge bg-primary"><?php echo htmlspecialchars(recycleDocumentTypeLabel((string)$entry['original_table'])); ?></span></td>
                                         <td><?php echo (int)$entry['original_id']; ?></td>
                                         <td><?php echo htmlspecialchars((string)($entry['deleted_by'] ?? 'N/A')); ?></td>
                                         <td><?php echo !empty($entry['deleted_at']) ? date('M d, Y h:i:s A', strtotime($entry['deleted_at'])) : 'N/A'; ?></td>
