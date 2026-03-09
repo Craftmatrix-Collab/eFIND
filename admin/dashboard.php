@@ -1731,17 +1731,24 @@ if ($showLoginWelcomeModal) {
 
             <?php if ($showLoginWelcomeModal): ?>
             <div class="modal fade login-welcome-modal" id="loginWelcomeModal" tabindex="-1" aria-labelledby="loginWelcomeModalTitle" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
                     <div class="modal-content">
                         <div class="modal-header">
-                            <h5 class="modal-title" id="loginWelcomeModalTitle">Welcome to eFIND</h5>
+                            <h5 class="modal-title" id="loginWelcomeModalTitle">Barangay Poblacion South Vision and Mission</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
                             <div class="text-center mb-3">
                                 <img src="images/logo_pbsth.png" alt="Barangay Poblacion South Logo" style="width:72px;height:72px;object-fit:contain;">
                             </div>
-                            <p id="loginWelcomeModalMessage" class="mb-2 text-center fw-semibold">Loading your dashboard tips...</p>
+                            <div class="small">
+                                <h6 class="fw-bold text-uppercase mb-2">VISION</h6>
+                                <p class="mb-3 text-start">BARANGAY POBLACION SOUTH, THE TRADING AND COMMERCIAL CENTER IN THE PROVINCE OF NUEVA VIZCAYA WITH GOD LOVING, HEALTHY AND EDUCATED PEOPLE LIVING HARMONIOUSLY IN A PROGRESSIVE AND BALANCED ENVIRONMENT GOVERNED BY A RESPONSIBLE, ACCOUNTABLE AND RIGHTEOUS LEADERSHIP.</p>
+                                <h6 class="fw-bold text-uppercase mb-2">MISSION</h6>
+                                <p class="mb-2 text-start">TO ENHANCE HUMAN RESOURCES AS CREDIBLE PUBLIC SERVANTS INSTILLING IN THEM THE VALUE OF PROFESSIONALSM, ETHICS AND COMPETENCE.</p>
+                                <p class="mb-2 text-start">TO HAVE AN EQUAL ACCESS TO ALL BASIC SERVICES THROUGH GOOD GOVERNANCE AND CAMARADERIES.</p>
+                                <p class="mb-2 text-start">TO ENHANCE AND ASSIST IN LIVELIHOOD OPPORTUNITIES TO UPLIFT STANDARD OF LIVING.</p>
+                            </div>
                             <small class="text-muted d-block text-center">This message will close automatically in 5 seconds.</small>
                         </div>
                     </div>
@@ -1749,26 +1756,9 @@ if ($showLoginWelcomeModal) {
             </div>
             <script>
                 document.addEventListener('DOMContentLoaded', function () {
-                    const welcomeTips = [
-                        { title: 'Welcome to eFIND', message: 'Manage Executive Orders, Resolutions, and Minutes in one place.' },
-                        { title: 'Quick Start', message: 'Use Search plus Type and Year filters to find records faster.' },
-                        { title: 'Search Tip', message: 'You can search by title, document number, reference number, or content.' },
-                        { title: 'Before You Upload', message: 'Review title, number, and date first for better data quality.' }
-                    ];
-
                     const modalElement = document.getElementById('loginWelcomeModal');
                     if (!modalElement || !window.bootstrap || !bootstrap.Modal) {
                         return;
-                    }
-
-                    const selectedTip = welcomeTips[Math.floor(Math.random() * welcomeTips.length)];
-                    const titleElement = document.getElementById('loginWelcomeModalTitle');
-                    const messageElement = document.getElementById('loginWelcomeModalMessage');
-                    if (titleElement) {
-                        titleElement.textContent = selectedTip.title;
-                    }
-                    if (messageElement) {
-                        messageElement.textContent = selectedTip.message;
                     }
 
                     const welcomeModal = bootstrap.Modal.getOrCreateInstance(modalElement);

@@ -191,9 +191,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
             (int)$entry['original_id']
         );
         if (function_exists('logDocumentAction')) {
-            logDocumentAction('restore', $restoredDocumentType, $restoredDocumentTitle, $restoredDocumentId, $restoreLogDetails);
+            logDocumentAction('restore_document', $restoredDocumentType, $restoredDocumentTitle, $restoredDocumentId, $restoreLogDetails);
         } elseif (function_exists('logActivity')) {
-            logActivity('restore', "Document restored: {$restoredDocumentTitle}", $restoreLogDetails, null, $restoredDocumentId, $restoredDocumentType);
+            logActivity('restore_document', "Document restored: {$restoredDocumentTitle}", $restoreLogDetails, null, $restoredDocumentId, $restoredDocumentType);
         }
         $_SESSION['success'] = "Record restored successfully.";
     } catch (Throwable $e) {

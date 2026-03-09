@@ -46,9 +46,16 @@ function normalizeActivityActionValue(string $value): string {
     return $normalized;
 }
 
+function canonicalizeActivityAction(string $normalizedAction): string {
+    if ($normalizedAction === 'restore' || $normalizedAction === 'restore_document') {
+        return 'restore_document';
+    }
+    return $normalizedAction;
+}
+
 function resolveEffectiveActivityAction(string $action, ?string $description = null): string {
-    $normalizedAction = normalizeActivityActionValue($action);
-    $normalizedDescription = normalizeActivityActionValue((string)$description);
+    $normalizedAction = canonicalizeActivityAction(normalizeActivityActionValue($action));
+    $normalizedDescription = canonicalizeActivityAction(normalizeActivityActionValue((string)$description));
     if (preg_match('/^\d+$/', $normalizedAction) && $normalizedDescription !== 'unknown') {
         return $normalizedDescription;
     }
@@ -71,7 +78,8 @@ function getActivityActionBadgeClass(string $effectiveAction): string {
         case 'ocr_edit': return 'badge-ocr_edit';
         case 'ocr_update': return 'badge-ocr_update';
         case 'delete': return 'badge-delete';
-        case 'restore': return 'badge-restore';
+        case 'restore':
+        case 'restore_document': return 'badge-restore';
         case 'user_delete': return 'badge-user_delete';
         case 'download': return 'badge-download';
         case 'view': return 'badge-view';
@@ -98,7 +106,8 @@ function getActivityActionLabel(string $effectiveAction): string {
         'ocr_edit' => 'OCR Edit',
         'ocr_update' => 'OCR Update',
         'delete' => 'Delete',
-        'restore' => 'Restore',
+        'restore' => 'Restore Document',
+        'restore_document' => 'Restore Document',
         'user_delete' => 'User Delete',
         'download' => 'Download',
         'view' => 'View',
@@ -129,13 +138,19 @@ function isSystemActivityAction(string $effectiveAction): bool {
     ], true);
 }
 
-$effectiveActionSql = "CASE
+$baseEffectiveActionSql = "CASE
     WHEN LOWER(TRIM(al.action)) REGEXP '^[0-9]+$'
          AND LOWER(TRIM(al.description)) REGEXP '^[a-z0-9_]+$'
         THEN LOWER(TRIM(al.description))
     WHEN LOWER(TRIM(al.action)) REGEXP '^[a-z0-9_]+$'
         THEN LOWER(TRIM(al.action))
     ELSE 'unknown'
+END";
+
+$effectiveActionSql = "CASE
+    WHEN ({$baseEffectiveActionSql}) IN ('restore', 'restore_document')
+        THEN 'restore_document'
+    ELSE ({$baseEffectiveActionSql})
 END";
 
 // Handle print action
