@@ -691,6 +691,39 @@ function normalizeNavbarProfilePicturePath(path) {
 }
 
 const browserExitCsrfToken = <?php echo json_encode((string)($_SESSION['csrf_token'] ?? '')); ?>;
+const inactivityAutoLogoutUrl = <?php echo json_encode('logout.php?token=' . urlencode((string)($_SESSION['logout_token'] ?? ''))); ?>;
+const inactivityAutoLogoutMs = 30 * 60 * 1000;
+let inactivityAutoLogoutTimer = null;
+
+function resetInactivityAutoLogoutTimer() {
+    if (!inactivityAutoLogoutUrl) {
+        return;
+    }
+    if (inactivityAutoLogoutTimer) {
+        clearTimeout(inactivityAutoLogoutTimer);
+    }
+    inactivityAutoLogoutTimer = setTimeout(function() {
+        window.location.href = inactivityAutoLogoutUrl;
+    }, inactivityAutoLogoutMs);
+}
+
+function initInactivityAutoLogout() {
+    if (window.__efindInactivityAutoLogoutInitialized) {
+        return;
+    }
+    window.__efindInactivityAutoLogoutInitialized = true;
+
+    ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(function(eventName) {
+        window.addEventListener(eventName, resetInactivityAutoLogoutTimer, { capture: true });
+    });
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            resetInactivityAutoLogoutTimer();
+        }
+    });
+
+    resetInactivityAutoLogoutTimer();
+}
 
 function markBrowserExitPendingLogout() {
     if (!browserExitCsrfToken || window.__efindBrowserExitMarked === true || !navigator.sendBeacon) {
@@ -706,6 +739,7 @@ function markBrowserExitPendingLogout() {
 window.addEventListener('pagehide', function() {
     markBrowserExitPendingLogout();
 }, { capture: true });
+initInactivityAutoLogout();
 
 function initNavbarJQueryHandlers() {
     $(document).ready(function() {

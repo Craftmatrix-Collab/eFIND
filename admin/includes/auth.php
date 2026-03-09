@@ -7,8 +7,12 @@ if (!defined('PRIMARY_LOGIN_SESSION_TABLE')) {
     define('PRIMARY_LOGIN_SESSION_TABLE', 'primary_login_sessions');
 }
 
+if (!defined('PRIMARY_INACTIVITY_TIMEOUT_SECONDS')) {
+    define('PRIMARY_INACTIVITY_TIMEOUT_SECONDS', 1800);
+}
+
 if (!defined('PRIMARY_BROWSER_EXIT_GRACE_SECONDS')) {
-    define('PRIMARY_BROWSER_EXIT_GRACE_SECONDS', 30);
+    define('PRIMARY_BROWSER_EXIT_GRACE_SECONDS', PRIMARY_INACTIVITY_TIMEOUT_SECONDS);
 }
 
 function getAuthConnection() {
@@ -56,6 +60,20 @@ function isBrowserExitPendingExpired($pendingAt): bool {
     }
 
     return (time() - $pendingTs) > PRIMARY_BROWSER_EXIT_GRACE_SECONDS;
+}
+
+function isPrimarySessionInactive($lastActiveAt): bool {
+    $lastActiveValue = trim((string)$lastActiveAt);
+    if ($lastActiveValue === '' || $lastActiveValue === '0000-00-00 00:00:00') {
+        return false;
+    }
+
+    $lastActiveTs = strtotime($lastActiveValue);
+    if ($lastActiveTs === false) {
+        return false;
+    }
+
+    return (time() - $lastActiveTs) > PRIMARY_INACTIVITY_TIMEOUT_SECONDS;
 }
 
 function ensurePrimaryLoginSessionTable(mysqli $conn) {
@@ -422,6 +440,17 @@ function markPrimaryLoginSessionPendingBrowserExit(mysqli $conn): bool {
     return $ok;
 }
 
+function invalidatePrimaryLoginSessionRecord(mysqli $conn, string $accountKey, string $sessionToken): void {
+    $invalidateStmt = $conn->prepare(
+        "DELETE FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? AND session_token = ? LIMIT 1"
+    );
+    if ($invalidateStmt) {
+        $invalidateStmt->bind_param('ss', $accountKey, $sessionToken);
+        $invalidateStmt->execute();
+        $invalidateStmt->close();
+    }
+}
+
 function validatePrimaryLoginSession(mysqli $conn) {
     $context = getPrimaryAccountContext();
     $sessionToken = (string)($_SESSION['primary_session_token'] ?? '');
@@ -436,8 +465,8 @@ function validatePrimaryLoginSession(mysqli $conn) {
 
     $supportsBrowserExitPending = supportsBrowserExitPendingColumn($conn);
     $selectSql = $supportsBrowserExitPending
-        ? "SELECT session_token, browser_exit_pending_at FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1"
-        : "SELECT session_token FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1";
+        ? "SELECT session_token, browser_exit_pending_at, updated_at FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1"
+        : "SELECT session_token, updated_at FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1";
     $stmt = $conn->prepare($selectSql);
     if (!$stmt) {
         error_log('Failed to prepare primary login session validation: ' . $conn->error);
@@ -455,15 +484,14 @@ function validatePrimaryLoginSession(mysqli $conn) {
         return false;
     }
 
+    if (isPrimarySessionInactive($row['updated_at'] ?? null)) {
+        invalidatePrimaryLoginSessionRecord($conn, $accountKey, $sessionToken);
+        destroyAuthSession();
+        return false;
+    }
+
     if ($supportsBrowserExitPending && isBrowserExitPendingExpired($row['browser_exit_pending_at'] ?? null)) {
-        $invalidateStmt = $conn->prepare(
-            "DELETE FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? AND session_token = ? LIMIT 1"
-        );
-        if ($invalidateStmt) {
-            $invalidateStmt->bind_param('ss', $accountKey, $sessionToken);
-            $invalidateStmt->execute();
-            $invalidateStmt->close();
-        }
+        invalidatePrimaryLoginSessionRecord($conn, $accountKey, $sessionToken);
         destroyAuthSession();
         return false;
     }
