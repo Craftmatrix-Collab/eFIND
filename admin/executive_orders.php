@@ -1906,7 +1906,7 @@ $count_stmt->close();
                                         </td>
                                         <td class="content-preview text-start">
                                             <?php $content = htmlspecialchars($executive_order['content'] ?? 'N/A'); ?>
-                                            <div class="table-cell-clamp-2" title="<?php echo $content; ?>"><?php echo $content; ?></div>
+                                            <div class="table-cell-clamp-2"><?php echo $content; ?></div>
                                         </td>
                                         <td>
                                             <?php if (!empty($executive_order['image_path'])): ?>

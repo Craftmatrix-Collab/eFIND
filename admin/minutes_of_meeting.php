@@ -1909,7 +1909,7 @@ $count_stmt->close();
                                         </td>
                                         <td class="content-preview text-start">
                                             <?php $content = htmlspecialchars($minute['content'] ?? 'N/A'); ?>
-                                            <div class="table-cell-clamp-2" title="<?php echo $content; ?>"><?php echo $content; ?></div>
+                                            <div class="table-cell-clamp-2"><?php echo $content; ?></div>
                                         </td>
 
                                         <td>
