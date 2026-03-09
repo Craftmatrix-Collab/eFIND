@@ -31,8 +31,20 @@ function recycleBindParams($stmt, $types, array &$values) {
     return call_user_func_array([$stmt, 'bind_param'], $bind);
 }
 
+function recycleBuildUrl(int $page, int $tableLimit, string $search = ''): string {
+    $params = [
+        'page' => $page,
+        'table_limit' => $tableLimit,
+    ];
+    if ($search !== '') {
+        $params['search'] = $search;
+    }
+    return 'recycle_bin.php?' . http_build_query($params);
+}
+
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 10;
+$search_query = trim((string)($_GET['search'] ?? ''));
 if (!in_array($table_limit, $valid_limits, true)) {
     $table_limit = 10;
 }
@@ -40,20 +52,21 @@ if (!in_array($table_limit, $valid_limits, true)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'restore') {
     $return_page = max(1, intval($_POST['return_page'] ?? 1));
     $return_limit = intval($_POST['return_limit'] ?? 10);
+    $return_search = trim((string)($_POST['return_search'] ?? ''));
     if (!in_array($return_limit, $valid_limits, true)) {
         $return_limit = 10;
     }
 
     if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
         $_SESSION['error'] = "CSRF token validation failed.";
-        header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+        header("Location: " . recycleBuildUrl($return_page, $return_limit, $return_search));
         exit();
     }
 
     $recycle_id = intval($_POST['recycle_id'] ?? 0);
     if ($recycle_id <= 0) {
         $_SESSION['error'] = "Invalid recycle entry.";
-        header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+        header("Location: " . recycleBuildUrl($return_page, $return_limit, $return_search));
         exit();
     }
 
@@ -202,27 +215,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
         $_SESSION['error'] = $e->getMessage();
     }
 
-    header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+    header("Location: " . recycleBuildUrl($return_page, $return_limit, $return_search));
     exit();
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'permanent_delete') {
     $return_page = max(1, intval($_POST['return_page'] ?? 1));
     $return_limit = intval($_POST['return_limit'] ?? 10);
+    $return_search = trim((string)($_POST['return_search'] ?? ''));
     if (!in_array($return_limit, $valid_limits, true)) {
         $return_limit = 10;
     }
 
     if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
         $_SESSION['error'] = "CSRF token validation failed.";
-        header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+        header("Location: " . recycleBuildUrl($return_page, $return_limit, $return_search));
         exit();
     }
 
     $recycle_id = intval($_POST['recycle_id'] ?? 0);
     if ($recycle_id <= 0) {
         $_SESSION['error'] = "Invalid recycle entry.";
-        header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+        header("Location: " . recycleBuildUrl($return_page, $return_limit, $return_search));
         exit();
     }
 
@@ -266,17 +280,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'perma
         $_SESSION['error'] = $e->getMessage();
     }
 
-    header("Location: recycle_bin.php?page={$return_page}&table_limit={$return_limit}");
+    header("Location: " . recycleBuildUrl($return_page, $return_limit, $return_search));
     exit();
 }
 
 $offset = ($page - 1) * $table_limit;
 
+$whereClauses = [];
+$searchParams = [];
+$searchTypes = '';
+if ($search_query !== '') {
+    $searchLike = '%' . $search_query . '%';
+    $whereClauses[] = "(CAST(rb.original_id AS CHAR) LIKE ? OR rb.original_table LIKE ? OR rb.deleted_by LIKE ? OR " .
+        "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(rb.data, '$.executive_order_number')), '') LIKE ? OR " .
+        "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(rb.data, '$.resolution_number')), '') LIKE ? OR " .
+        "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(rb.data, '$.session_number')), '') LIKE ?)";
+    $searchParams = [$searchLike, $searchLike, $searchLike, $searchLike, $searchLike, $searchLike];
+    $searchTypes = str_repeat('s', count($searchParams));
+}
+
+$whereSql = '';
+if (!empty($whereClauses)) {
+    $whereSql = ' WHERE ' . implode(' AND ', $whereClauses);
+}
+
 $total_entries = 0;
-$countResult = $conn->query("SELECT COUNT(*) AS total FROM recycle_bin");
-if ($countResult) {
-    $row = $countResult->fetch_assoc();
+$countSql = "SELECT COUNT(*) AS total FROM recycle_bin rb" . $whereSql;
+$countStmt = $conn->prepare($countSql);
+if ($countStmt) {
+    if ($searchTypes !== '') {
+        recycleBindParams($countStmt, $searchTypes, $searchParams);
+    }
+    $countStmt->execute();
+    $row = $countStmt->get_result()->fetch_assoc();
     $total_entries = (int)($row['total'] ?? 0);
+    $countStmt->close();
 }
 
 $total_pages = max(1, (int)ceil($total_entries / $table_limit));
@@ -286,30 +324,51 @@ if ($page > $total_pages) {
 }
 
 $entries = [];
-$stmt = $conn->prepare("SELECT id, original_table, original_id, data, deleted_by, deleted_at, restored_at FROM recycle_bin ORDER BY deleted_at DESC LIMIT ? OFFSET ?");
+$stmt = $conn->prepare("SELECT rb.id, rb.original_table, rb.original_id, rb.data, rb.deleted_by, rb.deleted_at, rb.restored_at FROM recycle_bin rb" . $whereSql . " ORDER BY rb.deleted_at DESC LIMIT ? OFFSET ?");
 if ($stmt) {
-    $stmt->bind_param("ii", $table_limit, $offset);
+    $dataParams = $searchParams;
+    $dataParams[] = $table_limit;
+    $dataParams[] = $offset;
+    $dataTypes = $searchTypes . 'ii';
+    recycleBindParams($stmt, $dataTypes, $dataParams);
     $stmt->execute();
     $entries = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 }
 
-function recycleDataPreview($jsonData) {
-    if ($jsonData === null || $jsonData === '') {
-        return 'No data';
+function recycleDocumentTypeLabel(string $originalTable): string {
+    switch ($originalTable) {
+        case 'executive_orders':
+            return 'Executive Order';
+        case 'resolutions':
+            return 'Resolution';
+        case 'minutes_of_meeting':
+            return 'Minutes of Meeting';
+        default:
+            return 'Document';
+    }
+}
+
+function recycleDocumentNumber(string $originalTable, $jsonData): string {
+    $decoded = json_decode((string)$jsonData, true);
+    if (!is_array($decoded)) {
+        return 'N/A';
     }
 
-    $normalized = (string)$jsonData;
-    $decoded = json_decode($normalized, true);
-    if (json_last_error() === JSON_ERROR_NONE) {
-        $normalized = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($originalTable === 'executive_orders') {
+        $number = trim((string)($decoded['executive_order_number'] ?? ''));
+        return $number !== '' ? $number : 'N/A';
+    }
+    if ($originalTable === 'resolutions') {
+        $number = trim((string)($decoded['resolution_number'] ?? ''));
+        return $number !== '' ? $number : 'N/A';
+    }
+    if ($originalTable === 'minutes_of_meeting') {
+        $number = trim((string)($decoded['session_number'] ?? ''));
+        return $number !== '' ? $number : 'N/A';
     }
 
-    if (strlen($normalized) > 120) {
-        return substr($normalized, 0, 117) . '...';
-    }
-
-    return $normalized;
+    return 'N/A';
 }
 
 $error = isset($_SESSION['error']) ? $_SESSION['error'] : '';
@@ -437,7 +496,7 @@ unset($_SESSION['error'], $_SESSION['success']);
         .table tr:hover td {
             background-color: rgba(67, 97, 238, 0.05);
         }
-        .data-preview {
+        .document-number-preview {
             max-width: 360px;
             display: -webkit-box;
             -webkit-line-clamp: 2;
@@ -448,7 +507,9 @@ unset($_SESSION['error'], $_SESSION['success']);
             word-break: break-word;
             line-height: 1.35;
             max-height: calc(1.35em * 2);
-            cursor: help;
+        }
+        .search-form {
+            min-width: min(420px, 100%);
         }
         .floating-shapes {
             position: fixed;
@@ -681,6 +742,9 @@ unset($_SESSION['error'], $_SESSION['success']);
                         <?php endforeach; ?>
                     </select>
                     <input type="hidden" name="page" value="1">
+                    <?php if ($search_query !== ''): ?>
+                        <input type="hidden" name="search" value="<?php echo htmlspecialchars($search_query); ?>">
+                    <?php endif; ?>
                 </form>
             </div>
 
@@ -697,11 +761,23 @@ unset($_SESSION['error'], $_SESSION['success']);
                 </div>
             <?php endif; ?>
 
-            <div class="table-info d-flex justify-content-between align-items-center">
+            <div class="table-info d-flex justify-content-between align-items-center gap-2 flex-wrap">
                 <div>
                     <i class="fas fa-trash-restore-alt me-2"></i>
                     Showing <?php echo count($entries); ?> of <?php echo $total_entries; ?> recycled records
                 </div>
+                <form method="GET" class="d-flex align-items-center gap-2 search-form">
+                    <input type="hidden" name="table_limit" value="<?php echo (int)$table_limit; ?>">
+                    <input type="hidden" name="page" value="1">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                        <input type="text" name="search" class="form-control" placeholder="Search document number..." value="<?php echo htmlspecialchars($search_query); ?>">
+                        <button type="submit" class="btn btn-primary">Search</button>
+                        <?php if ($search_query !== ''): ?>
+                            <a class="btn btn-outline-secondary" href="?<?php echo htmlspecialchars(http_build_query(['page' => 1, 'table_limit' => $table_limit])); ?>">Clear</a>
+                        <?php endif; ?>
+                    </div>
+                </form>
             </div>
 
             <div class="table-container">
@@ -715,7 +791,7 @@ unset($_SESSION['error'], $_SESSION['success']);
                                 <th style="width: 15%;">Deleted By</th>
                                 <th style="width: 15%;">Deleted At</th>
                                 <th style="width: 15%;">Restored At</th>
-                                <th style="width: 18%;">Data</th>
+                                <th style="width: 18%;">Document Number</th>
                                 <th style="width: 10%;">Action</th>
                             </tr>
                         </thead>
@@ -741,8 +817,13 @@ unset($_SESSION['error'], $_SESSION['success']);
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-start">
-                                            <span class="data-preview" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo htmlspecialchars((string)$entry['data']); ?>">
-                                                <?php echo htmlspecialchars(recycleDataPreview($entry['data'])); ?>
+                                            <?php
+                                            $recycleTable = (string)$entry['original_table'];
+                                            $documentTypeLabel = recycleDocumentTypeLabel($recycleTable);
+                                            $documentNumber = recycleDocumentNumber($recycleTable, $entry['data']);
+                                            ?>
+                                            <span class="document-number-preview">
+                                                <?php echo htmlspecialchars($documentTypeLabel); ?> No.: <?php echo htmlspecialchars($documentNumber); ?>
                                             </span>
                                         </td>
                                         <td>
@@ -754,6 +835,7 @@ unset($_SESSION['error'], $_SESSION['success']);
                                                         <input type="hidden" name="recycle_id" value="<?php echo (int)$entry['id']; ?>">
                                                         <input type="hidden" name="return_page" value="<?php echo (int)$page; ?>">
                                                         <input type="hidden" name="return_limit" value="<?php echo (int)$table_limit; ?>">
+                                                        <input type="hidden" name="return_search" value="<?php echo htmlspecialchars($search_query); ?>">
                                                         <button type="submit" class="btn btn-sm btn-primary">
                                                             <i class="fas fa-undo me-1"></i>Restore
                                                         </button>
@@ -767,6 +849,7 @@ unset($_SESSION['error'], $_SESSION['success']);
                                                     <input type="hidden" name="recycle_id" value="<?php echo (int)$entry['id']; ?>">
                                                     <input type="hidden" name="return_page" value="<?php echo (int)$page; ?>">
                                                     <input type="hidden" name="return_limit" value="<?php echo (int)$table_limit; ?>">
+                                                    <input type="hidden" name="return_search" value="<?php echo htmlspecialchars($search_query); ?>">
                                                     <button type="submit" class="btn btn-sm btn-danger">
                                                         <i class="fas fa-trash-alt me-1"></i>Delete
                                                     </button>
@@ -787,7 +870,7 @@ unset($_SESSION['error'], $_SESSION['success']);
                     <ul class="pagination pagination-sm mb-0">
                         <?php for ($p = 1; $p <= $total_pages; $p++): ?>
                             <li class="page-item <?php echo $p === $page ? 'active' : ''; ?>">
-                                <a class="page-link" href="?page=<?php echo $p; ?>&table_limit=<?php echo $table_limit; ?>">
+                                <a class="page-link" href="?<?php echo htmlspecialchars(http_build_query(['page' => $p, 'table_limit' => $table_limit, 'search' => $search_query])); ?>">
                                     <?php echo $p; ?>
                                 </a>
                             </li>
@@ -797,13 +880,5 @@ unset($_SESSION['error'], $_SESSION['success']);
             <?php endif; ?>
         </div>
     </div>
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl);
-            });
-        });
-    </script>
 </body>
 </html>
