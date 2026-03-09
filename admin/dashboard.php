@@ -443,14 +443,14 @@ if ($showLoginWelcomeModal) {
             padding: 20px;
             margin-top: 0;
             transition: all 0.3s;
-            margin-bottom: 60px;
+            margin-bottom: 110px;
         }
         /* Responsive Layout */
         @media (max-width: 992px) {
             .dashboard-container {
                 margin-left: 0;
                 padding: 15px;
-                margin-bottom: 60px;
+                margin-bottom: 110px;
             }
         }
         .page-header {
@@ -595,6 +595,14 @@ if ($showLoginWelcomeModal) {
             margin-bottom: 30px;
             overflow: hidden;
         }
+        .documents-table-section .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            min-height: 320px;
+            max-height: calc(100vh - 400px);
+            overflow-y: auto;
+            display: block;
+        }
         .documents-table-section .card-header {
             background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
             color: var(--white);
@@ -612,6 +620,10 @@ if ($showLoginWelcomeModal) {
                 padding: 12px 15px;
                 flex-direction: column;
                 align-items: flex-start;
+            }
+            .documents-table-section .table-responsive {
+                min-height: 220px;
+                max-height: calc(100vh - 350px);
             }
         }
         .table-controls {
@@ -1200,7 +1212,7 @@ if ($showLoginWelcomeModal) {
             box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
             z-index: 100;
             border-radius: 0 0 16px 16px;
-            margin-bottom: 50px;
+            margin-bottom: 90px;
         }
         .pagination-info {
             font-weight: 600;
