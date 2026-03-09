@@ -533,6 +533,27 @@ if ($showLoginWelcomeModal) {
             top: 12px;
             color: var(--medium-gray);
         }
+        .dashboard-search-form .row {
+            align-items: center;
+        }
+        .dashboard-search-form .search-box {
+            margin-bottom: 0;
+        }
+        .dashboard-search-form .search-box i {
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        .dashboard-search-form .form-control,
+        .dashboard-search-form .form-select,
+        .dashboard-search-form .dashboard-search-btn {
+            height: 44px;
+        }
+        .dashboard-search-form .dashboard-filter-select {
+            font-size: 0.85rem;
+        }
+        .dashboard-search-form .dashboard-search-btn {
+            white-space: nowrap;
+        }
         .stat-card {
             background: var(--white);
             border-radius: 12px;
@@ -1499,24 +1520,24 @@ if ($showLoginWelcomeModal) {
 </div>
 
             <!-- Search Form -->
-            <form method="GET" action="dashboard.php" class="mb-2">
-                <div class="row g-3">
-                    <div class="col-md-9">
+            <form method="GET" action="dashboard.php" class="mb-2 dashboard-search-form">
+                <div class="row g-2">
+                    <div class="col-lg-6 col-md-6 col-12">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
                             <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="<?php echo htmlspecialchars($dashboard_search_placeholder); ?>" value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
-                    <div class="col-md-1">
-                        <select name="document_type" class="form-select">
+                    <div class="col-lg-2 col-md-2 col-sm-4 col-12">
+                        <select name="document_type" class="form-select dashboard-filter-select">
                             <option value="">All Types</option>
                             <option value="executive_order" <?php echo $document_type === 'executive_order' ? 'selected' : ''; ?>>Executive Orders</option>
                             <option value="resolution" <?php echo $document_type === 'resolution' ? 'selected' : ''; ?>>Resolutions</option>
                             <option value="meeting" <?php echo $document_type === 'meeting' ? 'selected' : ''; ?>>Meeting Minutes</option>
                         </select>
                     </div>
-                    <div class="col-md-1">
-                        <select name="year" class="form-select">
+                    <div class="col-lg-2 col-md-2 col-sm-4 col-12">
+                        <select name="year" class="form-select dashboard-filter-select">
                             <option value="">All Years</option>
                             <?php foreach ($available_years as $y): ?>
                                 <option value="<?php echo $y['year']; ?>" <?php echo $year == $y['year'] ? 'selected' : ''; ?>>
@@ -1525,8 +1546,8 @@ if ($showLoginWelcomeModal) {
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="col-md-1">
-                        <button type="submit" class="btn btn-primary w-100">
+                    <div class="col-lg-2 col-md-2 col-sm-4 col-12">
+                        <button type="submit" class="btn btn-primary w-100 dashboard-search-btn">
                             <i class="fas fa-search me-2"></i>Search
                         </button>
                     </div>
