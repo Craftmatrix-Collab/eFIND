@@ -979,6 +979,28 @@ $count_stmt->close();
             top: 12px;
             color: var(--medium-gray);
         }
+        .users-search-form .row {
+            align-items: center;
+        }
+        .users-search-form .search-box {
+            margin-bottom: 0;
+        }
+        .users-search-form .search-box i {
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        .users-search-form .form-control,
+        .users-search-form .form-select,
+        .users-search-form .users-search-btn {
+            height: 44px;
+        }
+        .users-search-form .users-sort-select {
+            font-size: 0.85rem;
+        }
+        .users-search-form .users-search-btn {
+            white-space: nowrap;
+            min-width: 0;
+        }
        .table-container {
             background-color: var(--white);
             border-radius: 16px;
@@ -1527,16 +1549,16 @@ $count_stmt->close();
                 </div>
             </div>
             <!-- Search Form -->
-            <form method="GET" action="users.php" class="mb-0">
-                <div class="row">
-                    <div class="col-md-9">
+            <form method="GET" action="users.php" class="mb-0 users-search-form">
+                <div class="row g-2">
+                    <div class="col-lg-8 col-md-7 col-12">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
                             <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search users..." value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
-                    <div class="col-md-2">
-                        <select name="sort_by" id="sort_by" class="form-select" onchange="updateSort()">
+                    <div class="col-lg-3 col-md-3 col-sm-8 col-12">
+                        <select name="sort_by" id="sort_by" class="form-select users-sort-select" onchange="updateSort()">
                             <option value="full_name_asc" <?php echo $sort_by === 'full_name_asc' ? 'selected' : ''; ?>>Name (A-Z)</option>
                             <option value="full_name_desc" <?php echo $sort_by === 'full_name_desc' ? 'selected' : ''; ?>>Name (Z-A)</option>
                             <option value="email_asc" <?php echo $sort_by === 'email_asc' ? 'selected' : ''; ?>>Email (A-Z)</option>
@@ -1545,8 +1567,8 @@ $count_stmt->close();
                             <option value="username_desc" <?php echo $sort_by === 'username_desc' ? 'selected' : ''; ?>>Username (Z-A)</option>
                         </select>
                     </div>
-                    <div class="col-md-1">
-                        <button type="submit" class="btn btn-primary-custom w-100">
+                    <div class="col-lg-1 col-md-2 col-sm-4 col-12">
+                        <button type="submit" class="btn btn-primary-custom w-100 users-search-btn">
                             <i class="fas fa-search me-1"></i> Search
                         </button>
                     </div>
