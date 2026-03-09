@@ -274,6 +274,7 @@ unset($_SESSION['success'], $_SESSION['error']);
             color: var(--primary-blue);
         }
 
+        .profile-email-input-group .input-group-text,
         .profile-email-group .input-group-text {
             border: 2px solid var(--light-blue);
             border-right: 0;
@@ -284,10 +285,15 @@ unset($_SESSION['success'], $_SESSION['error']);
             padding: 0.5rem 0.7rem;
         }
 
+        .profile-email-input-group .form-control,
         .profile-email-group .form-control {
             border-left: 0;
             font-size: 0.9rem;
             min-height: 44px;
+        }
+
+        .profile-email-input-group .form-control {
+            border-radius: 0 10px 10px 0;
         }
 
         .profile-email-group .btn {
@@ -298,6 +304,16 @@ unset($_SESSION['success'], $_SESSION['error']);
             padding: 0.45rem 0.75rem;
             line-height: 1.1;
             white-space: nowrap;
+        }
+
+        .profile-send-otp-btn {
+            margin-top: 0.55rem;
+            border-width: 2px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            padding: 0.45rem 0.85rem;
+            line-height: 1.1;
         }
 
         #profileEmailVerifiedBadge .badge {
@@ -560,15 +576,15 @@ unset($_SESSION['success'], $_SESSION['error']);
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
-                                        <div class="input-group profile-email-group">
+                                        <div class="input-group profile-email-input-group">
                                             <span class="input-group-text"><i class="fas fa-envelope"></i></span>
                                             <input type="email" class="form-control" id="email" name="email"
                                                    value="<?php echo htmlspecialchars($user['email']); ?>" required>
-                                            <button class="btn btn-outline-primary" type="button" id="profileSendOtpBtn">
-                                                <i class="fas fa-paper-plane me-1"></i> Send OTP
-                                            </button>
                                         </div>
-                                        <div id="profileEmailVerifiedBadge" class="mt-1 d-none">
+                                        <button class="btn btn-outline-primary profile-send-otp-btn" type="button" id="profileSendOtpBtn">
+                                            <i class="fas fa-paper-plane me-1"></i> Send OTP
+                                        </button>
+                                        <div id="profileEmailVerifiedBadge" class="mt-2 d-none">
                                             <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Email Verified</span>
                                         </div>
                                     </div>
