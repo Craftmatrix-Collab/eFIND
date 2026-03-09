@@ -6,6 +6,8 @@ const PAGE_LABELS = {
   'resolutions.php': 'resolution',
   'minutes_of_meeting.php': 'minutes',
 };
+const currentPageName = window.location.pathname.split('/').pop() || '';
+const ENABLE_TIPTAP_EXPORT_DOWNLOADS = currentPageName === 'executive_orders.php';
 
 const editorRegistry = new Map();
 let latestDuplicateComparison = null;
@@ -909,20 +911,25 @@ function initTiptapForTextarea(textarea) {
   const editorEl = document.createElement('div');
   editorEl.className = 'efind-tiptap-editor';
 
-  const exportActions = document.createElement('div');
-  exportActions.className = 'd-flex justify-content-end flex-wrap gap-2 p-2 pt-0';
-  exportActions.innerHTML = `
-    <button type="button" class="btn btn-sm btn-outline-danger" data-tt-download="pdf">
-      <i class="fas fa-file-pdf me-1"></i>Download PDF
-    </button>
-    <button type="button" class="btn btn-sm btn-outline-primary" data-tt-download="docx">
-      <i class="fas fa-file-word me-1"></i>Download DOCX
-    </button>
-  `;
+  let exportActions = null;
+  if (ENABLE_TIPTAP_EXPORT_DOWNLOADS) {
+    exportActions = document.createElement('div');
+    exportActions.className = 'd-flex justify-content-end flex-wrap gap-2 p-2 pt-0';
+    exportActions.innerHTML = `
+      <button type="button" class="btn btn-sm btn-outline-danger" data-tt-download="pdf">
+        <i class="fas fa-file-pdf me-1"></i>Download PDF
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-primary" data-tt-download="docx">
+        <i class="fas fa-file-word me-1"></i>Download DOCX
+      </button>
+    `;
+  }
 
   wrapper.appendChild(toolbar);
   wrapper.appendChild(editorEl);
-  wrapper.appendChild(exportActions);
+  if (exportActions) {
+    wrapper.appendChild(exportActions);
+  }
   textarea.insertAdjacentElement('afterend', wrapper);
   textarea.classList.add('d-none');
 
@@ -1011,13 +1018,15 @@ function initTiptapForTextarea(textarea) {
     });
   }
 
-  const pdfButton = exportActions.querySelector('[data-tt-download="pdf"]');
-  const docxButton = exportActions.querySelector('[data-tt-download="docx"]');
-  if (pdfButton) {
-    pdfButton.addEventListener('click', () => exportEditorToPdf(editor, form));
-  }
-  if (docxButton) {
-    docxButton.addEventListener('click', () => exportEditorToDocx(editor, form));
+  if (exportActions) {
+    const pdfButton = exportActions.querySelector('[data-tt-download="pdf"]');
+    const docxButton = exportActions.querySelector('[data-tt-download="docx"]');
+    if (pdfButton) {
+      pdfButton.addEventListener('click', () => exportEditorToPdf(editor, form));
+    }
+    if (docxButton) {
+      docxButton.addEventListener('click', () => exportEditorToDocx(editor, form));
+    }
   }
 
   editorRegistry.set(textarea.id, { editor, syncFromTextarea });
