@@ -550,6 +550,25 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
     animation: dropdownFadeIn 0.2s ease-in-out;
 }
 
+/* Keep data tables visually stable across admin pages */
+:root {
+    --efind-stable-table-min-width: 1200px;
+}
+
+.management-container .table-responsive,
+.dashboard-container .table-responsive {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.management-container .table-responsive > table.table,
+.dashboard-container .table-responsive > table.table,
+.dashboard-container .table-responsive > table.documents-table {
+    width: 100% !important;
+    min-width: var(--efind-stable-table-min-width) !important;
+    table-layout: fixed !important;
+}
+
 @keyframes dropdownFadeIn {
     from {
         opacity: 0;
