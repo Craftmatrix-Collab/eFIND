@@ -1102,6 +1102,9 @@ if ($showLoginWelcomeModal) {
         .login-welcome-modal.fade .modal-dialog {
             transition: transform 1.2s ease-out;
         }
+        .login-welcome-modal .modal-dialog {
+            max-width: 560px;
+        }
         #ocrLoading {
             background-color: #f8f9fa;
             padding: 15px;
@@ -1731,7 +1734,7 @@ if ($showLoginWelcomeModal) {
 
             <?php if ($showLoginWelcomeModal): ?>
             <div class="modal fade login-welcome-modal" id="loginWelcomeModal" tabindex="-1" aria-labelledby="loginWelcomeModalTitle" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title" id="loginWelcomeModalTitle">Barangay Poblacion South Vision and Mission</h5>
