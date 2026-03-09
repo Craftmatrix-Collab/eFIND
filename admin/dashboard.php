@@ -1744,10 +1744,10 @@ if ($showLoginWelcomeModal) {
                             <div class="text-center mb-3">
                                 <img src="images/logo_pbsth.png" alt="Barangay Poblacion South Logo" style="width:72px;height:72px;object-fit:contain;">
                             </div>
-                            <div class="small">
-                                <h6 class="fw-bold text-uppercase mb-2">VISION</h6>
+                            <div class="small text-start">
+                                <h6 class="fw-bold text-uppercase mb-2 text-start">VISION</h6>
                                 <p class="mb-3 text-start">BARANGAY POBLACION SOUTH, THE TRADING AND COMMERCIAL CENTER IN THE PROVINCE OF NUEVA VIZCAYA WITH GOD LOVING, HEALTHY AND EDUCATED PEOPLE LIVING HARMONIOUSLY IN A PROGRESSIVE AND BALANCED ENVIRONMENT GOVERNED BY A RESPONSIBLE, ACCOUNTABLE AND RIGHTEOUS LEADERSHIP.</p>
-                                <h6 class="fw-bold text-uppercase mb-2">MISSION</h6>
+                                <h6 class="fw-bold text-uppercase mb-2 text-start">MISSION</h6>
                                 <p class="mb-2 text-start">TO ENHANCE HUMAN RESOURCES AS CREDIBLE PUBLIC SERVANTS INSTILLING IN THEM THE VALUE OF PROFESSIONALSM, ETHICS AND COMPETENCE.</p>
                                 <p class="mb-2 text-start">TO HAVE AN EQUAL ACCESS TO ALL BASIC SERVICES THROUGH GOOD GOVERNANCE AND CAMARADERIES.</p>
                                 <p class="mb-2 text-start">TO ENHANCE AND ASSIST IN LIVELIHOOD OPPORTUNITIES TO UPLIFT STANDARD OF LIVING.</p>
