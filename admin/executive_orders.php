@@ -1937,7 +1937,7 @@ $count_stmt->close();
                                 <?php
                                 $filled = count($executive_orders);
                                 for ($i = $filled; $i < $table_limit; $i++): ?>
-                                    <tr class="filler-row"><td colspan="9">&nbsp;</td></tr>
+                                    <tr class="filler-row"><td colspan="8">&nbsp;</td></tr>
                                 <?php endfor; ?>
                             <?php endif; ?>
                         </tbody>
