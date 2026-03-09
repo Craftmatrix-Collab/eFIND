@@ -1607,27 +1607,28 @@ $count_stmt->close();
                                             </span>
                                         </td>
                                         <td>
-                                            <?php if (!empty($user['profile_picture'])): ?>
-                                                <?php
-                                                $profilePicturePath = trim((string)$user['profile_picture']);
+                                            <?php
+                                            $profilePicturePath = trim((string)($user['profile_picture'] ?? ''));
+                                            $profilePictureSrc = 'images/profile.jpg';
+                                            if ($profilePicturePath !== '') {
                                                 if (preg_match('#^(https?:)?//#i', $profilePicturePath) || stripos($profilePicturePath, 'data:image/') === 0) {
                                                     $profilePictureSrc = $profilePicturePath;
+                                                } elseif (preg_match('#^/?images/#i', $profilePicturePath)) {
+                                                    $profilePictureSrc = ltrim($profilePicturePath, '/');
                                                 } else {
                                                     $profilePictureSrc = 'uploads/profiles/' . basename($profilePicturePath);
                                                 }
-                                                if (strpos($profilePictureSrc, 'data:') !== 0) {
-                                                    $profilePictureSrc .= (strpos($profilePictureSrc, '?') === false ? '?t=' : '&t=') . time();
-                                                }
-                                                ?>
-                                                <img src="<?php echo htmlspecialchars($profilePictureSrc); ?>"
-                                                     alt="Profile Picture"
-                                                     class="rounded-circle"
-                                                     width="40"
-                                                     height="40"
-                                                     onerror="this.onerror=null; this.src='assets/img/default-profile.png';">
-                                            <?php else: ?>
-                                                <span class="text-muted">N/A</span>
-                                            <?php endif; ?>
+                                            }
+                                            if (strpos($profilePictureSrc, 'data:') !== 0 && !preg_match('#^images/#i', $profilePictureSrc)) {
+                                                $profilePictureSrc .= (strpos($profilePictureSrc, '?') === false ? '?t=' : '&t=') . time();
+                                            }
+                                            ?>
+                                            <img src="<?php echo htmlspecialchars($profilePictureSrc); ?>"
+                                                 alt="Profile Picture"
+                                                 class="rounded-circle"
+                                                 width="40"
+                                                 height="40"
+                                                 onerror="this.onerror=null; this.src='images/profile.jpg';">
                                         </td>
                                         <td>
                                             <?php
@@ -1985,9 +1986,11 @@ $count_stmt->close();
             window.location.href = url.toString();
         }
         function normalizeProfilePicturePath(path) {
-            if (!path) return '';
+            if (!path) return 'images/profile.jpg';
             if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:')) return path;
-            return path.startsWith('uploads/profiles/') ? path : `uploads/profiles/${path.replace(/^\/+/, '')}`;
+            if (/^\/?images\//i.test(path)) return path.replace(/^\/+/, '');
+            const normalizedPath = path.startsWith('uploads/profiles/') ? path : `uploads/profiles/${path.replace(/^\/+/, '')}`;
+            return normalizedPath || 'images/profile.jpg';
         }
         const usersPasswordPolicy = <?php echo json_encode($passwordPolicy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 
@@ -2133,18 +2136,19 @@ $count_stmt->close();
                             }
                             userTypeField.value = user.user_type;
                             const currentProfilePictureInfo = document.getElementById('currentProfilePictureInfo');
-                            if (user.profile_picture) {
-                                currentProfilePictureInfo.innerHTML = `
-                                    <strong>Current Profile Picture:</strong><br>
-                                    <img src="${normalizeProfilePicturePath(user.profile_picture)}?t=${new Date().getTime()}"
-                                         alt="Profile Picture"
-                                         class="rounded-circle mt-2"
-                                         width="60"
-                                         height="60">
-                                `;
-                            } else {
-                                currentProfilePictureInfo.innerHTML = '<strong>No profile picture uploaded</strong>';
-                            }
+                            const normalizedProfilePicture = normalizeProfilePicturePath(user.profile_picture || '');
+                            const profilePictureSrc = /^\/?images\//i.test(normalizedProfilePicture) || normalizedProfilePicture.startsWith('data:')
+                                ? normalizedProfilePicture
+                                : `${normalizedProfilePicture}${normalizedProfilePicture.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
+                            currentProfilePictureInfo.innerHTML = `
+                                <strong>Current Profile Picture:</strong><br>
+                                <img src="${profilePictureSrc}"
+                                     alt="Profile Picture"
+                                     class="rounded-circle mt-2"
+                                     width="60"
+                                     height="60"
+                                     onerror="this.onerror=null; this.src='images/profile.jpg';">
+                            `;
                             const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
                             editModal.show();
                         })

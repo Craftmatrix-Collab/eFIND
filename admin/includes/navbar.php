@@ -89,22 +89,20 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
             // Check if session variables exist before using them
             $profile_picture = trim((string)($_SESSION['profile_picture'] ?? ''));
             $full_name = $_SESSION['full_name'] ?? 'Admin';
-            $profile_path = '';
+            $profile_path = 'images/profile.jpg';
             if ($profile_picture !== '') {
                 if (preg_match('#^(https?:)?//#i', $profile_picture) || stripos($profile_picture, 'data:image/') === 0) {
                     $profile_path = $profile_picture;
+                } elseif (preg_match('#^/?images/#i', $profile_picture)) {
+                    $profile_path = ltrim($profile_picture, '/');
                 } else {
                     $profile_path = 'uploads/profiles/' . basename($profile_picture);
                 }
-                if (strpos($profile_path, 'data:') !== 0) {
-                    $profile_path .= (strpos($profile_path, '?') === false ? '?t=' : '&t=') . time();
-                }
             }
-            if ($profile_path !== '') {
-                echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null;this.src=\'images/eFind_logo.png\';">';
-            } else {
-                echo '<i class="fas fa-user-circle me-2" style="font-size: 1.5rem;"></i>';
+            if (strpos($profile_path, 'data:') !== 0 && !preg_match('#^images/#i', $profile_path)) {
+                $profile_path .= (strpos($profile_path, '?') === false ? '?t=' : '&t=') . time();
             }
+            echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null;this.src=\'images/profile.jpg\';">';
             ?>
                     <span class="text-white"><?php echo htmlspecialchars($full_name); ?></span>
                 </a>
@@ -191,29 +189,25 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                                 <div class="mb-3">
                                     <?php
                                     $_np_profile_raw = trim((string)($_np['profile_picture'] ?? ''));
-                                    $_np_profile_path = '';
+                                    $_np_profile_path = 'images/profile.jpg';
                                     if ($_np_profile_raw !== '') {
                                         if (preg_match('#^(https?:)?//#i', $_np_profile_raw) || stripos($_np_profile_raw, 'data:image/') === 0) {
                                             $_np_profile_path = $_np_profile_raw;
+                                        } elseif (preg_match('#^/?images/#i', $_np_profile_raw)) {
+                                            $_np_profile_path = ltrim($_np_profile_raw, '/');
                                         } else {
                                             $_np_profile_path = 'uploads/profiles/' . basename($_np_profile_raw);
                                         }
-                                        if (strpos($_np_profile_path, 'data:') !== 0) {
-                                            $_np_profile_path .= (strpos($_np_profile_path, '?') === false ? '?t=' : '&t=') . time();
-                                        }
+                                    }
+                                    if (strpos($_np_profile_path, 'data:') !== 0 && !preg_match('#^images/#i', $_np_profile_path)) {
+                                        $_np_profile_path .= (strpos($_np_profile_path, '?') === false ? '?t=' : '&t=') . time();
                                     }
                                     ?>
-                                    <?php if (!empty($_np_profile_path)): ?>
-                                        <img src="<?php echo htmlspecialchars($_np_profile_path); ?>"
-                                             class="img-thumbnail rounded-circle"
-                                             style="width:150px;height:150px;object-fit:cover;border:3px solid #4361ee;"
-                                             alt="Profile Picture"
-                                             onerror="this.onerror=null;this.src='images/eFind_logo.png';">
-                                    <?php else: ?>
-                                        <div class="rounded-circle d-inline-flex align-items-center justify-content-center bg-light" style="width:150px;height:150px;border:3px solid #dee2e6;">
-                                            <i class="fas fa-user fa-4x text-secondary"></i>
-                                        </div>
-                                    <?php endif; ?>
+                                    <img src="<?php echo htmlspecialchars($_np_profile_path); ?>"
+                                         class="img-thumbnail rounded-circle"
+                                         style="width:150px;height:150px;object-fit:cover;border:3px solid #4361ee;"
+                                         alt="Profile Picture"
+                                         onerror="this.onerror=null;this.src='images/profile.jpg';">
                                 </div>
                                 <h4 class="mb-1"><?php echo htmlspecialchars($_np['full_name']); ?></h4>
                                 <p class="text-muted mb-3"><?php echo htmlspecialchars($_np_role_label); ?></p>
@@ -747,12 +741,15 @@ function showToast(message, type = 'success') {
 }
 
 function normalizeNavbarProfilePicturePath(path) {
-    if (!path) return '';
+    if (!path) return 'images/profile.jpg';
     if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:')) {
         return path;
     }
+    if (/^\/?images\//i.test(path)) {
+        return path.replace(/^\/+/, '');
+    }
     const file = path.split('/').pop().replace(/^\/+/, '');
-    return file ? `uploads/profiles/${file}` : '';
+    return file ? `uploads/profiles/${file}` : 'images/profile.jpg';
 }
 
 const browserExitCsrfToken = <?php echo json_encode((string)($_SESSION['csrf_token'] ?? '')); ?>;
@@ -894,7 +891,7 @@ function initNavbarJQueryHandlers() {
                                 // Replace icon with image
                                 $('.nav-link.dropdown-toggle i.fa-user-circle').replaceWith(
                                     '<img src="' + profileSrc + 
-                                    '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null;this.src=\'images/eFind_logo.png\';">'
+                                    '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null;this.src=\'images/profile.jpg\';">'
                                 );
                             }
                         }

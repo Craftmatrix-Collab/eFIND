@@ -1,15 +1,17 @@
 <?php
 $chatbot_profile_picture_raw = trim((string)($_SESSION['profile_picture'] ?? ''));
-$chatbot_profile_picture_path = '';
+$chatbot_profile_picture_path = 'images/profile.jpg';
 if ($chatbot_profile_picture_raw !== '') {
     if (preg_match('#^(https?:)?//#i', $chatbot_profile_picture_raw) || stripos($chatbot_profile_picture_raw, 'data:image/') === 0) {
         $chatbot_profile_picture_path = $chatbot_profile_picture_raw;
+    } elseif (preg_match('#^/?images/#i', $chatbot_profile_picture_raw)) {
+        $chatbot_profile_picture_path = ltrim($chatbot_profile_picture_raw, '/');
     } else {
         $chatbot_profile_picture_path = 'uploads/profiles/' . basename($chatbot_profile_picture_raw);
     }
-    if (strpos($chatbot_profile_picture_path, 'data:') !== 0) {
-        $chatbot_profile_picture_path .= (strpos($chatbot_profile_picture_path, '?') === false ? '?t=' : '&t=') . time();
-    }
+}
+if (strpos($chatbot_profile_picture_path, 'data:') !== 0 && !preg_match('#^images/#i', $chatbot_profile_picture_path)) {
+    $chatbot_profile_picture_path .= (strpos($chatbot_profile_picture_path, '?') === false ? '?t=' : '&t=') . time();
 }
 ?>
 <!-- AI Chatbot Widget for Executive Orders, Resolutions, and Meeting Minutes -->
