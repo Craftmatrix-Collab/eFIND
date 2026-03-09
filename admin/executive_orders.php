@@ -397,7 +397,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <tbody>';
 
     if (empty($printExecutiveOrders)) {
-        echo '<tr><td colspan="5" style="text-align: center;">No executive_orders found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="5" style="text-align: center;">No Executive Orders found for the selected criteria.</td></tr>';
     } else {
         $count = 0;
         foreach ($printExecutiveOrders as $executive_order) {
@@ -1808,7 +1808,7 @@ $count_stmt->close();
                     <div class="col-md-8">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
-                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any executive_order field (title, number, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
+                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any Executive Order field (title, number, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-md-1">
@@ -1878,7 +1878,7 @@ $count_stmt->close();
                         <tbody id="executive_ordersTableBody">
                             <?php if (empty($executive_orders)): ?>
                                 <tr>
-                                    <td colspan="8" class="text-center py-4">No executive_orders found</td>
+                                    <td colspan="8" class="text-center py-4">No Executive Orders found</td>
                                 </tr>
                             <?php else: ?>
                                 <?php $row_num = $offset + 1; ?>

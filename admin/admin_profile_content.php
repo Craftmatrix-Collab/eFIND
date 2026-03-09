@@ -24,6 +24,15 @@ try {
     $user_id = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
     $is_admin = isset($_SESSION['admin_id']);
     $table = $is_admin ? 'admin_users' : 'users';
+    $sessionRole = strtolower((string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? '')));
+    $roleLabel = 'Staff';
+    if ($sessionRole === 'superadmin' || (function_exists('isSuperAdmin') && isSuperAdmin())) {
+        $roleLabel = 'Superadmin';
+    } elseif ($is_admin || in_array($sessionRole, ['admin', 'administrator'], true)) {
+        $roleLabel = 'Administrator';
+    } elseif ($sessionRole !== '') {
+        $roleLabel = ucwords(str_replace('_', ' ', $sessionRole));
+    }
     
     // Debug logging
     error_log("Fetching profile - User ID: $user_id, Table: $table, Is Admin: " . ($is_admin ? 'YES' : 'NO'));
@@ -33,9 +42,13 @@ try {
         throw new Exception("Database connection lost. Please try again.");
     }
     
-    $query = "SELECT id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at
-              FROM $table
-              WHERE id = ?";
+    $selectColumns = "id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at";
+    if ($table === 'admin_users') {
+        $selectColumns .= ", is_verified";
+    } else {
+        $selectColumns .= ", NULL AS is_verified";
+    }
+    $query = "SELECT {$selectColumns} FROM $table WHERE id = ?";
     $stmt = $conn->prepare($query);
     
     if (!$stmt) {
@@ -52,6 +65,7 @@ try {
         error_log("Profile NOT FOUND for user_id: $user_id in table: $table");
         throw new Exception("Profile not found. Your account may have been deleted.");
     }
+    $isEmailVerified = isset($user['is_verified']) && (int)$user['is_verified'] === 1;
 
     $lastActiveAt = null;
     if (function_exists('getAccountLastActiveTimestamp')) {
@@ -123,7 +137,7 @@ try {
                 <?php endif; ?>
             </div>
                 <h4 class="mb-1"><?php echo htmlspecialchars($user['full_name']); ?></h4>
-                <p class="text-muted mb-3"><?php echo $is_admin ? 'Administrator' : 'Staff'; ?></p>
+                <p class="text-muted mb-3"><?php echo htmlspecialchars($roleLabel); ?></p>
                 <div class="card bg-light p-3">
                     <div class="d-flex justify-content-between small">
                         <span>Member since:</span>
@@ -161,7 +175,12 @@ try {
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <h6 class="small text-muted mb-1">Email Address</h6>
-                        <p><?php echo htmlspecialchars($user['email']); ?></p>
+                        <p class="d-flex align-items-center gap-2 mb-0">
+                            <span><?php echo htmlspecialchars($user['email']); ?></span>
+                            <?php if ($isEmailVerified): ?>
+                                <span class="text-success" title="Email Verified"><i class="fas fa-check-circle"></i></span>
+                            <?php endif; ?>
+                        </p>
                     </div>
                     <div class="col-md-6 mb-3">
                         <h6 class="small text-muted mb-1">Contact Number</h6>

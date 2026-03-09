@@ -23,7 +23,7 @@ $user = $result->fetch_assoc();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Profile</title>
+    <title>User Profile</title>
     <link rel="icon" type="image/png" href="images/eFind_logo.png">
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -98,7 +98,7 @@ $user = $result->fetch_assoc();
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="text-center">Admin Profile</h3>
+                        <h3 class="text-center">User Profile</h3>
                     </div>
                     <div class="card-body text-center">
                         <div class="mb-4">

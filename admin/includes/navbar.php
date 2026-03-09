@@ -5,10 +5,25 @@ $_navbar_password_policy = getPasswordPolicyClientConfig();
 $_navbar_profile = null;
 $_navbar_last_active = null;
 $_navbar_password_changed = null;
+$_navbar_role_label = 'Staff';
+$_navbar_session_role = strtolower((string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? '')));
+if ($_navbar_session_role === 'superadmin' || (function_exists('isSuperAdmin') && isSuperAdmin())) {
+    $_navbar_role_label = 'Superadmin';
+} elseif (isset($_SESSION['admin_id']) || in_array($_navbar_session_role, ['admin', 'administrator'], true)) {
+    $_navbar_role_label = 'Administrator';
+} elseif ($_navbar_session_role !== '') {
+    $_navbar_role_label = ucwords(str_replace('_', ' ', $_navbar_session_role));
+}
 if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id']))) {
     $_navbar_uid   = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
     $_navbar_table = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
-    $_navbar_stmt  = $conn->prepare("SELECT id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at FROM {$_navbar_table} WHERE id = ?");
+    $_navbar_select_fields = "id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at";
+    if ($_navbar_table === 'admin_users') {
+        $_navbar_select_fields .= ", is_verified";
+    } else {
+        $_navbar_select_fields .= ", NULL AS is_verified";
+    }
+    $_navbar_stmt  = $conn->prepare("SELECT {$_navbar_select_fields} FROM {$_navbar_table} WHERE id = ?");
     if ($_navbar_stmt) {
         $_navbar_stmt->bind_param("i", $_navbar_uid);
         $_navbar_stmt->execute();
@@ -151,12 +166,18 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="profileModalLabel">Admin Profile</h5>
+                <h5 class="modal-title" id="profileModalLabel">User Profile</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="profileModalBody">
                 <?php if ($_navbar_profile): ?>
-                <?php $_np = $_navbar_profile; $_is_admin = isset($_SESSION['admin_id']); $_np_last_active = $_navbar_last_active; $_np_password_changed = $_navbar_password_changed; ?>
+                <?php
+                $_np = $_navbar_profile;
+                $_np_last_active = $_navbar_last_active;
+                $_np_password_changed = $_navbar_password_changed;
+                $_np_role_label = $_navbar_role_label;
+                $_np_is_email_verified = isset($_np['is_verified']) && (int)$_np['is_verified'] === 1;
+                ?>
                 <div class="row">
                     <div class="col-lg-4">
                         <div class="card mb-4">
@@ -189,7 +210,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                                     <?php endif; ?>
                                 </div>
                                 <h4 class="mb-1"><?php echo htmlspecialchars($_np['full_name']); ?></h4>
-                                <p class="text-muted mb-3"><?php echo $_is_admin ? 'Administrator' : 'Staff'; ?></p>
+                                <p class="text-muted mb-3"><?php echo htmlspecialchars($_np_role_label); ?></p>
                                 <div class="card bg-light p-3">
                                     <div class="d-flex justify-content-between small mb-1">
                                         <span>Member since:</span>
@@ -222,7 +243,12 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <h6 class="small text-muted mb-1">Email Address</h6>
-                                        <p><?php echo htmlspecialchars($_np['email']); ?></p>
+                                        <p class="d-flex align-items-center gap-2 mb-0">
+                                            <span><?php echo htmlspecialchars($_np['email']); ?></span>
+                                            <?php if ($_np_is_email_verified): ?>
+                                                <span class="text-success" title="Email Verified"><i class="fas fa-check-circle"></i></span>
+                                            <?php endif; ?>
+                                        </p>
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <h6 class="small text-muted mb-1">Contact Number</h6>
