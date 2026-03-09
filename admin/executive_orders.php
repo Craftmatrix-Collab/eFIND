@@ -175,7 +175,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     }
 
     // Build query with filters for print
-    $printQuery = "SELECT id, title, executive_order_number, date_posted, executive_order_date, content FROM executive_orders WHERE 1=1";
+    $printQuery = "SELECT id, title, executive_order_number, date_posted, executive_order_date FROM executive_orders WHERE 1=1";
     $printConditions = [];
     $printParams = [];
     $printTypes = '';
@@ -310,19 +310,12 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 border-radius: 3px;
                 font-size: 9px;
             }
-            .content-preview {
-                max-width: 150px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
             .col-id { width: 5%; }
             .col-ref { width: 12%; }
             .col-title { width: 20%; }
             .col-date-posted { width: 10%; }
             .col-executive_order-date { width: 10%; }
             .col-number { width: 12%; }
-            .col-content { width: 20%; }
             
             @media print {
                 body { 
@@ -399,13 +392,12 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                         <th class="col-date-posted">Date Posted</th>
                         <th class="col-executive_order-date">Executive Order Date</th>
                         <th class="col-number">Executive Order Number</th>
-                        <th class="col-content">Content Preview</th>
                     </tr>
                 </thead>
                 <tbody>';
 
     if (empty($printExecutiveOrders)) {
-        echo '<tr><td colspan="7" style="text-align: center;">No executive_orders found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="5" style="text-align: center;">No executive_orders found for the selected criteria.</td></tr>';
     } else {
         $count = 0;
         foreach ($printExecutiveOrders as $executive_order) {
@@ -419,7 +411,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     <th class="col-date-posted">Date Posted</th>
                     <th class="col-executive_order-date">Executive Order Date</th>
                     <th class="col-number">Executive Order Number</th>
-                    <th class="col-content">Content Preview</th>
                 </tr></thead><tbody>';
             }
             
@@ -430,16 +421,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <td>' . date('M d, Y', strtotime($executive_order['date_posted'])) . '</td>
                 <td>' . date('M d, Y', strtotime($executive_order['executive_order_date'])) . '</td>
                 <td>' . htmlspecialchars($executive_order['executive_order_number']) . '</td>
-                <td class="content-preview" title="' . htmlspecialchars($executive_order['content'] ?? 'N/A') . '">';
-                
-            $content = htmlspecialchars($executive_order['content'] ?? 'N/A');
-            if (strlen($content) > 50) {
-                echo substr($content, 0, 50) . '...';
-            } else {
-                echo $content;
-            }
-            
-            echo '</td></tr>';
+            </tr>';
         }
     }
 

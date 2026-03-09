@@ -148,7 +148,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         die($printDateRangeError);
     }
     // Build query with filters for print
-    $printQuery = "SELECT id, title, resolution_number, date_posted, resolution_date, content, reference_number FROM resolutions WHERE 1=1";
+    $printQuery = "SELECT id, title, resolution_number, date_posted, resolution_date, reference_number FROM resolutions WHERE 1=1";
     $printConditions = [];
     $printParams = [];
     $printTypes = '';
@@ -278,19 +278,12 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 border-radius: 3px;
                 font-size: 9px;
             }
-            .content-preview {
-                max-width: 150px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
             .col-id { width: 5%; }
             .col-ref { width: 12%; }
             .col-title { width: 20%; }
             .col-date-posted { width: 10%; }
             .col-resolution-date { width: 10%; }
             .col-number { width: 12%; }
-            .col-content { width: 20%; }
             .col-image { width: 10%; }
             .col-actions { width: 11%; }
             @media print {
@@ -364,12 +357,11 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                         <th class="col-number">Resolution Number</th>
                         <th class="col-date-posted">Date Posted</th>
                         <th class="col-resolution-date">Resolution Date</th>
-                        <th class="col-content">Content Preview</th>
                     </tr>
                 </thead>
                 <tbody>';
     if (empty($printResolutions)) {
-        echo '<tr><td colspan="7" style="text-align: center;">No resolutions found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="6" style="text-align: center;">No resolutions found for the selected criteria.</td></tr>';
     } else {
         $count = 0;
         foreach ($printResolutions as $resolution) {
@@ -382,7 +374,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     <th class="col-number">Resolution Number</th>
                     <th class="col-date-posted">Date Posted</th>
                     <th class="col-resolution-date">Resolution Date</th>
-                    <th class="col-content">Content Preview</th>
                 </tr></thead><tbody>';
             }
             echo '<tr>
@@ -392,14 +383,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <td>' . htmlspecialchars($resolution['resolution_number']) . '</td>
                 <td>' . date('M d, Y', strtotime($resolution['date_posted'])) . '</td>
                 <td>' . date('M d, Y', strtotime($resolution['resolution_date'])) . '</td>
-                <td class="content-preview" title="' . htmlspecialchars($resolution['content'] ?? 'N/A') . '">';
-            $content = htmlspecialchars($resolution['content'] ?? 'N/A');
-            if (strlen($content) > 20) {
-                echo substr($content, 0, 20) . '...';
-            } else {
-                echo $content;
-            }
-            echo '</td>
             </tr>';
         }
     }

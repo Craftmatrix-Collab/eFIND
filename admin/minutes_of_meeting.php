@@ -228,7 +228,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     if ($printDateRangeError !== null) {
         die($printDateRangeError);
     }
-    $printQuery = "SELECT id, title, session_number, date_posted, meeting_date, content FROM minutes_of_meeting WHERE 1=1";
+    $printQuery = "SELECT id, title, session_number, date_posted, meeting_date FROM minutes_of_meeting WHERE 1=1";
     $printConditions = [];
     $printParams = [];
     $printTypes = '';
@@ -275,14 +275,12 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             .badge-primary { background-color: #cce7ff; color: #004085; }
             .badge-danger { background-color: #f8d7da; color: #721c24; }
             .reference-number { font-weight: 600; color: #0056b3; background-color: rgba(0, 86, 179, 0.1); padding: 2px 6px; border-radius: 3px; font-size: 9px; }
-            .content-preview { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .col-id { width: 5%; }
             .col-ref { width: 12%; }
             .col-title { width: 20%; }
             .col-date-posted { width: 10%; }
             .col-meeting-date { width: 10%; }
             .col-number { width: 12%; }
-            .col-content { width: 20%; }
             .col-image { width: 10%; }
             .col-actions { width: 11%; }
             @media print {
@@ -324,16 +322,15 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     <tr>
                         <th class="col-id">ID</th>
                         <!-- <th class="col-ref">Reference No.</th> -->
-                        <th class="col-title">Title</th>
-                        <th class="col-date-posted">Date Posted</th>
-                        <th class="col-meeting-date">Meeting Date</th>
-                        <th class="col-number">Session Number</th>
-                        <th class="col-content">Content Preview</th>
-                    </tr>
-                </thead>
-                <tbody>';
+                         <th class="col-title">Title</th>
+                         <th class="col-date-posted">Date Posted</th>
+                         <th class="col-meeting-date">Meeting Date</th>
+                         <th class="col-number">Session Number</th>
+                     </tr>
+                 </thead>
+                 <tbody>';
     if (empty($printMinutes)) {
-        echo '<tr><td colspan="6" style="text-align: center;">No minutes found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="5" style="text-align: center;">No minutes found for the selected criteria.</td></tr>';
     } else {
         $count = 0;
         foreach ($printMinutes as $minute) {
@@ -342,12 +339,11 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 echo '</tbody></table></div><div class="page-break"></div><div class="table-container"><table><thead><tr>
                     <th class="col-id">ID</th>
                     <!-- <th class="col-ref">Reference No.</th> -->
-                    <th class="col-title">Title</th>
-                    <th class="col-date-posted">Date Posted</th>
-                    <th class="col-meeting-date">Meeting Date</th>
-                    <th class="col-number">Session Number</th>
-                    <th class="col-content">Content Preview</th>
-                </tr></thead><tbody>';
+                     <th class="col-title">Title</th>
+                     <th class="col-date-posted">Date Posted</th>
+                     <th class="col-meeting-date">Meeting Date</th>
+                     <th class="col-number">Session Number</th>
+                 </tr></thead><tbody>';
             }
             echo '<tr>
                 <td>' . $count . '</td>
@@ -356,14 +352,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <td>' . date('M d, Y', strtotime($minute['date_posted'])) . '</td>
                 <td>' . date('M d, Y', strtotime($minute['meeting_date'])) . '</td>
                 <td>' . htmlspecialchars($minute['session_number']) . '</td>
-                <td class="content-preview" title="' . htmlspecialchars($minute['content'] ?? 'N/A') . '">';
-            $content = htmlspecialchars($minute['content'] ?? 'N/A');
-            if (strlen($content) > 20) {
-                echo substr($content, 0, 20) . '...';
-            } else {
-                echo $content;
-            }
-            echo '</td>
             </tr>';
         }
     }
