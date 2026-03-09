@@ -263,7 +263,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     <th>Action</th>
                     <th>Description</th>
                     <th>Document Type</th>
-                    <th>Document ID</th>
                     <th>Details</th>
                     <!-- <th>IP Address</th> -->
                     <th>Date/Time</th>
@@ -272,7 +271,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             <tbody>';
 
     if (empty($printLogs)) {
-        echo '<tr><td colspan="9" style="text-align: center;">No activity logs found for the selected criteria.</td></tr>';
+        echo '<tr><td colspan="8" style="text-align: center;">No activity logs found for the selected criteria.</td></tr>';
     } else {
         $count = 0;
         foreach ($printLogs as $log) {
@@ -293,7 +292,6 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 </td>
                 <td>' . htmlspecialchars($log['description'] ?? 'N/A') . '</td>
                 <td>' . htmlspecialchars(ucfirst(!empty($log['document_type']) ? $log['document_type'] : (isSystemActivityAction($effectiveAction) ? 'System' : 'N/A'))) . '</td>
-                <td>' . htmlspecialchars($log['document_id'] ?? 'N/A') . '</td>
                 <td>' . htmlspecialchars($log['details'] ?? 'N/A') . '</td>
                 <!-- <td>' . htmlspecialchars($log['ip_address'] ?? 'N/A') . '</td> -->
                 <td>' . formatPhilippineTime($log['log_time'] ?? $log['created_at']) . '</td>
