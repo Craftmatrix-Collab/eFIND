@@ -50,6 +50,13 @@ if (!$user) {
     exit();
 }
 
+$profileRoleLabel = 'Staff';
+if ($target_user_type === 'admin_users') {
+    $profileRoleLabel = strtolower((string)($user['username'] ?? '')) === 'superadmin' ? 'Superadmin' : 'Administrator';
+} elseif (!empty($user['role'])) {
+    $profileRoleLabel = ucwords(str_replace('_', ' ', (string)$user['role']));
+}
+
 // Generate CSRF token if not already set
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -91,7 +98,7 @@ unset($_SESSION['success'], $_SESSION['error']);
 
         body {
             font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #f5f7fa, #e4e8f0);
+            background: radial-gradient(circle at 20% 20%, #edf2ff 0%, #e8eefc 38%, #e4e8f0 100%);
             color: var(--dark-gray);
             min-height: 100vh;
             padding-top: 70px;
@@ -116,7 +123,12 @@ unset($_SESSION['success'], $_SESSION['error']);
         }
 
         .page-header {
-            margin-bottom: 30px;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: flex-start;
+            flex-wrap: wrap;
         }
 
         .page-title {
@@ -138,11 +150,33 @@ unset($_SESSION['success'], $_SESSION['error']);
             border-radius: 2px;
         }
 
+        .page-subtitle {
+            margin-top: 16px;
+            color: #5e6a8a;
+            font-size: 0.95rem;
+            max-width: 620px;
+        }
+
+        .profile-role-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, rgba(67, 97, 238, 0.14), rgba(58, 12, 163, 0.1));
+            color: var(--secondary-blue);
+            border: 1px solid rgba(67, 97, 238, 0.2);
+            border-radius: 999px;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .card {
             border: none;
-            border-radius: 16px;
-            box-shadow: var(--box-shadow);
+            border-radius: 18px;
+            box-shadow: 0 14px 30px rgba(35, 45, 95, 0.12);
             overflow: hidden;
+            border: 1px solid rgba(67, 97, 238, 0.1);
         }
 
         .card-header {
@@ -161,6 +195,8 @@ unset($_SESSION['success'], $_SESSION['error']);
             height: 200px;
             object-fit: cover;
             border: 3px solid var(--primary-blue);
+            box-shadow: 0 10px 24px rgba(41, 58, 130, 0.24);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
         .profile-picture-placeholder {
@@ -170,20 +206,120 @@ unset($_SESSION['success'], $_SESSION['error']);
             border: 3px solid var(--light-blue);
         }
 
+        .profile-picture:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 28px rgba(41, 58, 130, 0.3);
+        }
+
+        .profile-photo-title {
+            font-weight: 700;
+            color: var(--secondary-blue);
+            margin-bottom: 4px;
+        }
+
+        .profile-photo-subtitle {
+            font-size: 0.85rem;
+            color: #6f7897;
+            margin-bottom: 14px;
+        }
+
+        .btn-change-photo {
+            border-radius: 10px;
+            border-color: rgba(67, 97, 238, 0.45);
+            color: var(--primary-blue);
+            font-weight: 600;
+        }
+
+        .btn-change-photo:hover {
+            background: var(--primary-blue);
+            color: #fff;
+            border-color: var(--primary-blue);
+        }
+
         .form-label {
             font-weight: 600;
             margin-bottom: 8px;
         }
 
         .form-control, .form-select {
-            border-radius: 8px;
+            border-radius: 10px;
             border: 2px solid var(--light-blue);
-            padding: 10px 15px;
+            padding: 11px 14px;
         }
 
         .form-control:focus, .form-select:focus {
             border-color: var(--primary-blue);
             box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
+        }
+
+        .field-shell {
+            position: relative;
+        }
+
+        .field-shell .field-icon {
+            position: absolute;
+            left: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #7780a8;
+            font-size: 0.92rem;
+            pointer-events: none;
+        }
+
+        .field-shell .form-control {
+            padding-left: 38px;
+        }
+
+        .field-shell:focus-within .field-icon {
+            color: var(--primary-blue);
+        }
+
+        .profile-email-group .input-group-text {
+            border: 2px solid var(--light-blue);
+            border-right: 0;
+            border-radius: 10px 0 0 10px;
+            background: #f4f7ff;
+            color: #6b76a8;
+        }
+
+        .profile-email-group .form-control {
+            border-left: 0;
+        }
+
+        .profile-email-group .btn {
+            border-width: 2px;
+            border-radius: 0 10px 10px 0;
+            font-weight: 600;
+        }
+
+        .form-intro {
+            color: #5f6988;
+            font-size: 0.92rem;
+            margin-bottom: 18px;
+        }
+
+        .otp-verification-box {
+            border: 1px dashed rgba(67, 97, 238, 0.45);
+            border-radius: 12px;
+            background: rgba(232, 240, 254, 0.45);
+            padding: 14px;
+        }
+
+        .profile-static-note {
+            border-radius: 10px;
+            border: 1px solid rgba(13, 202, 240, 0.24);
+            background: rgba(13, 202, 240, 0.08);
+        }
+
+        .profile-photo-note {
+            border-radius: 10px;
+            border: 1px solid rgba(255, 193, 7, 0.32);
+            background: rgba(255, 193, 7, 0.12);
+        }
+
+        .profile-action-row .btn {
+            min-width: 150px;
+            border-radius: 10px;
         }
 
         .btn-primary-custom {
@@ -270,6 +406,18 @@ unset($_SESSION['success'], $_SESSION['error']);
             footer {
                 margin-left: 0;
             }
+
+            .page-header {
+                align-items: stretch;
+            }
+
+            .profile-role-badge {
+                width: fit-content;
+            }
+
+            .profile-action-row .btn {
+                flex: 1 1 auto;
+            }
         }
     </style>
 </head>
@@ -281,7 +429,14 @@ unset($_SESSION['success'], $_SESSION['error']);
         <div class="container-fluid">
             <!-- Page Header -->
             <div class="page-header">
-                <h1 class="page-title">Edit Profile</h1>
+                <div>
+                    <h1 class="page-title">Edit Profile</h1>
+                    <p class="page-subtitle">Update your account details, profile photo, and verify email changes securely through OTP.</p>
+                </div>
+                <span class="profile-role-badge">
+                    <i class="fas fa-user-shield"></i>
+                    <?php echo htmlspecialchars($profileRoleLabel); ?>
+                </span>
             </div>
 
             <!-- Alert Messages -->
@@ -319,6 +474,8 @@ unset($_SESSION['success'], $_SESSION['error']);
                     <div class="col-lg-4">
                         <div class="card mb-4">
                             <div class="card-body text-center">
+                                <h6 class="profile-photo-title">Profile Photo</h6>
+                                <p class="profile-photo-subtitle">Choose a clear square image for best results.</p>
                                 <div class="profile-picture-container mb-3">
                                     <?php
                                     $profile_picture_raw = trim((string)($user['profile_picture'] ?? ''));
@@ -343,14 +500,14 @@ unset($_SESSION['success'], $_SESSION['error']);
                                          onerror="this.onerror=null;this.src='images/profile.jpg';">
                                 </div>
                                 <div class="mb-3">
-                                    <label for="profile_picture" class="btn btn-outline-primary w-100">
+                                    <label for="profile_picture" class="btn btn-outline-primary btn-change-photo w-100">
                                         <i class="fas fa-camera me-2"></i>Change Photo
                                         <input type="file" id="profile_picture" name="profile_picture"
                                                accept="image/*" class="d-none">
                                     </label>
                                     <small class="text-muted d-block">JPEG or PNG, max 2MB</small>
                                 </div>
-                                <div class="alert alert-warning small mb-0">
+                                <div class="profile-photo-note small mb-0 p-2">
                                     <i class="fas fa-exclamation-triangle me-2"></i>
                                     Recommended size: 200x200 pixels
                                 </div>
@@ -364,22 +521,30 @@ unset($_SESSION['success'], $_SESSION['error']);
                                 <h5 class="mb-0"><i class="fas fa-user-edit me-2"></i>Edit Profile Information</h5>
                             </div>
                             <div class="card-body">
+                                <p class="form-intro">Keep your account details accurate so notifications and document activity records stay up to date.</p>
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label for="full_name" class="form-label">Full Name <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" id="full_name" name="full_name"
-                                               value="<?php echo htmlspecialchars($user['full_name'] ?? $user['name'] ?? ''); ?>" required>
+                                        <div class="field-shell">
+                                            <span class="field-icon"><i class="fas fa-id-card"></i></span>
+                                            <input type="text" class="form-control" id="full_name" name="full_name"
+                                                   value="<?php echo htmlspecialchars($user['full_name'] ?? $user['name'] ?? ''); ?>" required>
+                                        </div>
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" id="username" name="username"
-                                               value="<?php echo htmlspecialchars($user['username']); ?>" required>
+                                        <div class="field-shell">
+                                            <span class="field-icon"><i class="fas fa-user"></i></span>
+                                            <input type="text" class="form-control" id="username" name="username"
+                                                   value="<?php echo htmlspecialchars($user['username']); ?>" required>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
-                                        <div class="input-group">
+                                        <div class="input-group profile-email-group">
+                                            <span class="input-group-text"><i class="fas fa-envelope"></i></span>
                                             <input type="email" class="form-control" id="email" name="email"
                                                    value="<?php echo htmlspecialchars($user['email']); ?>" required>
                                             <button class="btn btn-outline-primary" type="button" id="profileSendOtpBtn">
@@ -392,30 +557,36 @@ unset($_SESSION['success'], $_SESSION['error']);
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label for="contact_number" class="form-label">Contact Number</label>
-                                        <input type="tel" class="form-control" id="contact_number" name="contact_number"
-                                               value="<?php echo htmlspecialchars($user['contact_number'] ?? ''); ?>">
+                                        <div class="field-shell">
+                                            <span class="field-icon"><i class="fas fa-phone"></i></span>
+                                            <input type="tel" class="form-control" id="contact_number" name="contact_number"
+                                                   value="<?php echo htmlspecialchars($user['contact_number'] ?? ''); ?>">
+                                        </div>
                                         <small class="text-muted">Format: +639XXXXXXXXX or 09XXXXXXXXX</small>
                                     </div>
                                 </div>
                                 <div class="row" id="profileEmailOtpSection" style="display:none !important">
                                     <div class="col-12 mb-3">
-                                        <label class="form-label">Enter OTP <span class="text-danger">*</span></label>
-                                        <div class="input-group">
-                                            <input type="text" class="form-control" id="profileEmailOtpInput" maxlength="6" placeholder="6-digit OTP code" inputmode="numeric">
-                                            <button class="btn btn-outline-success" type="button" id="profileVerifyEmailOtpBtn">
-                                                <i class="fas fa-check me-1"></i> Verify
-                                            </button>
+                                        <div class="otp-verification-box">
+                                            <label class="form-label">Enter OTP <span class="text-danger">*</span></label>
+                                            <div class="input-group profile-email-group">
+                                                <span class="input-group-text"><i class="fas fa-key"></i></span>
+                                                <input type="text" class="form-control" id="profileEmailOtpInput" maxlength="6" placeholder="6-digit OTP code" inputmode="numeric">
+                                                <button class="btn btn-outline-success" type="button" id="profileVerifyEmailOtpBtn">
+                                                    <i class="fas fa-check me-1"></i> Verify
+                                                </button>
+                                            </div>
+                                            <small class="text-muted" id="profileEmailOtpTimer"></small>
                                         </div>
-                                        <small class="text-muted" id="profileEmailOtpTimer"></small>
                                     </div>
                                 </div>
                                 
-                                <div class="alert alert-info mt-4">
+                                <div class="profile-static-note mt-4 p-3">
                                     <i class="fas fa-info-circle me-2"></i>
                                     To change your password, please contact the administrator or use the forgot password feature.
                                 </div>
 
-                                <div class="d-flex gap-2 mt-4">
+                                <div class="d-flex flex-wrap gap-2 mt-4 profile-action-row">
                                     <button type="submit" class="btn btn-primary-custom" id="saveProfileSubmitBtn">
                                         <i class="fas fa-save me-1"></i> Save Changes
                                     </button>
@@ -712,10 +883,16 @@ unset($_SESSION['success'], $_SESSION['error']);
                 e.preventDefault();
                 return false;
             }
+
+            const saveBtn = document.getElementById('saveProfileSubmitBtn');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
+            }
         });
 
         // Auto-hide alerts after 5 seconds
-        const alerts = document.querySelectorAll('.alert');
+        const alerts = document.querySelectorAll('.alert-container .alert');
         alerts.forEach(alert => {
             setTimeout(() => {
                 const bsAlert = new bootstrap.Alert(alert);

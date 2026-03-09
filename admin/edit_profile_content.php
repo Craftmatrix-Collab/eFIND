@@ -60,6 +60,8 @@ try {
         <div class="col-lg-4">
             <div class="card mb-4">
                 <div class="card-body text-center">
+                    <h6 class="profile-photo-title">Profile Photo</h6>
+                    <p class="profile-photo-subtitle">Choose a clear square image for best quality.</p>
                     <div class="profile-picture-container mb-3">
                         <?php
                         $profile_picture_raw = trim((string)($user['profile_picture'] ?? ''));
@@ -84,14 +86,14 @@ try {
                              onerror="this.onerror=null;this.src='images/profile.jpg';">
                     </div>
                     <div class="mb-3">
-                        <label for="profile_picture" class="btn btn-outline-primary w-100">
+                        <label for="profile_picture" class="btn btn-outline-primary btn-change-photo w-100">
                             <i class="fas fa-camera me-2"></i>Change Photo
                             <input type="file" id="profile_picture" name="profile_picture"
                                    accept="image/*" class="d-none">
                         </label>
                         <small class="text-muted d-block">JPEG or PNG, max 2MB</small>
                     </div>
-                    <div class="alert alert-warning small mb-0">
+                    <div class="profile-photo-note small mb-0 p-2">
                         <i class="fas fa-exclamation-triangle me-2"></i>
                         Recommended size: 200x200 pixels
                     </div>
@@ -104,22 +106,30 @@ try {
                     <h5 class="mb-0"><i class="fas fa-user-edit me-2"></i>Edit Profile Information</h5>
                 </div>
                 <div class="card-body">
+                    <p class="form-intro">Keep your account details updated and verify email changes using OTP before saving.</p>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="full_name" class="form-label">Full Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="full_name" name="full_name"
-                                   value="<?php echo htmlspecialchars($user['full_name']); ?>" required>
+                            <div class="field-shell">
+                                <span class="field-icon"><i class="fas fa-id-card"></i></span>
+                                <input type="text" class="form-control" id="full_name" name="full_name"
+                                       value="<?php echo htmlspecialchars($user['full_name']); ?>" required>
+                            </div>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="username" name="username"
-                                   value="<?php echo htmlspecialchars($user['username']); ?>" required>
+                            <div class="field-shell">
+                                <span class="field-icon"><i class="fas fa-user"></i></span>
+                                <input type="text" class="form-control" id="username" name="username"
+                                       value="<?php echo htmlspecialchars($user['username']); ?>" required>
+                            </div>
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
-                            <div class="input-group">
+                            <div class="input-group profile-email-group">
+                                <span class="input-group-text"><i class="fas fa-envelope"></i></span>
                                 <input type="email" class="form-control" id="email" name="email"
                                        value="<?php echo htmlspecialchars($user['email']); ?>" required>
                                 <button class="btn btn-outline-primary" type="button" id="profileSendOtpBtn">
@@ -132,24 +142,30 @@ try {
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="contact_number" class="form-label">Contact Number</label>
-                            <input type="tel" class="form-control" id="contact_number" name="contact_number"
-                                   value="<?php echo htmlspecialchars($user['contact_number'] ?? ''); ?>">
+                            <div class="field-shell">
+                                <span class="field-icon"><i class="fas fa-phone"></i></span>
+                                <input type="tel" class="form-control" id="contact_number" name="contact_number"
+                                       value="<?php echo htmlspecialchars($user['contact_number'] ?? ''); ?>">
+                            </div>
                             <small class="text-muted">Format: +639XXXXXXXXX or 09XXXXXXXXX</small>
                         </div>
                     </div>
                     <div class="row" id="profileEmailOtpSection" style="display:none !important">
                         <div class="col-12 mb-3">
-                            <label class="form-label">Enter OTP <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" id="profileEmailOtpInput" maxlength="6" placeholder="6-digit OTP code" inputmode="numeric">
-                                <button class="btn btn-outline-success" type="button" id="profileVerifyEmailOtpBtn">
-                                    <i class="fas fa-check me-1"></i> Verify
-                                </button>
+                            <div class="otp-verification-box">
+                                <label class="form-label">Enter OTP <span class="text-danger">*</span></label>
+                                <div class="input-group profile-email-group">
+                                    <span class="input-group-text"><i class="fas fa-key"></i></span>
+                                    <input type="text" class="form-control" id="profileEmailOtpInput" maxlength="6" placeholder="6-digit OTP code" inputmode="numeric">
+                                    <button class="btn btn-outline-success" type="button" id="profileVerifyEmailOtpBtn">
+                                        <i class="fas fa-check me-1"></i> Verify
+                                    </button>
+                                </div>
+                                <small class="text-muted" id="profileEmailOtpTimer"></small>
                             </div>
-                            <small class="text-muted" id="profileEmailOtpTimer"></small>
                         </div>
                     </div>
-                    <div class="alert alert-info mt-4">
+                    <div class="profile-static-note mt-4 p-3">
                         <i class="fas fa-info-circle me-2"></i>
                         To change your password, please use the <a href="#" class="alert-link" data-bs-toggle="modal" data-bs-target="#changePasswordModal">password change form</a>.
                     </div>
@@ -164,6 +180,8 @@ try {
         height: 200px;
         object-fit: cover;
         border: 3px solid #4361ee;
+        box-shadow: 0 10px 24px rgba(41, 58, 130, 0.24);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .profile-picture-placeholder {
         width: 200px;
@@ -171,8 +189,86 @@ try {
         background-color: #f8f9fa;
         border: 3px solid #dee2e6;
     }
+    .profile-picture:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 28px rgba(41, 58, 130, 0.3);
+    }
+    .profile-photo-title {
+        font-weight: 700;
+        color: #3a0ca3;
+        margin-bottom: 4px;
+    }
+    .profile-photo-subtitle {
+        font-size: 0.85rem;
+        color: #6f7897;
+        margin-bottom: 14px;
+    }
+    .btn-change-photo {
+        border-radius: 10px;
+        border-color: rgba(67, 97, 238, 0.45);
+        color: #4361ee;
+        font-weight: 600;
+    }
+    .btn-change-photo:hover {
+        background: #4361ee;
+        color: #fff;
+        border-color: #4361ee;
+    }
     .form-label {
         font-weight: 500;
+    }
+    .form-intro {
+        color: #5f6988;
+        font-size: 0.9rem;
+        margin-bottom: 16px;
+    }
+    .field-shell {
+        position: relative;
+    }
+    .field-shell .field-icon {
+        position: absolute;
+        left: 13px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #7780a8;
+        font-size: 0.92rem;
+        pointer-events: none;
+    }
+    .field-shell .form-control {
+        padding-left: 38px;
+    }
+    .field-shell:focus-within .field-icon {
+        color: #4361ee;
+    }
+    .profile-email-group .input-group-text {
+        border: 1px solid #dee2f2;
+        border-right: 0;
+        border-radius: 10px 0 0 10px;
+        background: #f4f7ff;
+        color: #6b76a8;
+    }
+    .profile-email-group .form-control {
+        border-left: 0;
+    }
+    .profile-email-group .btn {
+        border-radius: 0 10px 10px 0;
+        font-weight: 600;
+    }
+    .otp-verification-box {
+        border: 1px dashed rgba(67, 97, 238, 0.45);
+        border-radius: 12px;
+        background: rgba(232, 240, 254, 0.45);
+        padding: 14px;
+    }
+    .profile-photo-note {
+        border-radius: 10px;
+        border: 1px solid rgba(255, 193, 7, 0.32);
+        background: rgba(255, 193, 7, 0.12);
+    }
+    .profile-static-note {
+        border-radius: 10px;
+        border: 1px solid rgba(13, 202, 240, 0.24);
+        background: rgba(13, 202, 240, 0.08);
     }
     .card-header h5 {
         font-weight: 600;
