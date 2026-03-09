@@ -138,6 +138,43 @@ function isSystemActivityAction(string $effectiveAction): bool {
     ], true);
 }
 
+function resolveActivityDocumentTypeLabel(?string $documentType, string $effectiveAction, ?string $description = null, ?string $details = null): string {
+    $normalizedType = strtolower(trim((string)$documentType));
+    switch ($normalizedType) {
+        case 'executive_order':
+        case 'executive_orders':
+        case 'executive order':
+            return 'Executive Order';
+        case 'resolution':
+        case 'resolutions':
+            return 'Resolution';
+        case 'minutes':
+        case 'minute':
+        case 'meeting':
+        case 'meetings':
+        case 'minutes_of_meeting':
+        case 'minutes of meeting':
+            return 'Minutes';
+        case 'system':
+            return 'System';
+    }
+
+    $combinedText = strtolower(trim(((string)$description) . ' ' . ((string)$details)));
+    if ($combinedText !== '') {
+        if (str_contains($combinedText, 'executive order')) {
+            return 'Executive Order';
+        }
+        if (str_contains($combinedText, 'resolution')) {
+            return 'Resolution';
+        }
+        if (str_contains($combinedText, 'minutes') || str_contains($combinedText, 'meeting')) {
+            return 'Minutes';
+        }
+    }
+
+    return 'System';
+}
+
 $baseEffectiveActionSql = "CASE
     WHEN LOWER(TRIM(al.action)) REGEXP '^[0-9]+$'
          AND LOWER(TRIM(al.description)) REGEXP '^[a-z0-9_]+$'
@@ -301,6 +338,12 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 ? ($log['admin_username'] ?? $log['user_name'] ?? 'System')
                 : ($log['user_username'] ?? $log['user_name'] ?? 'System');
             $effectiveAction = resolveEffectiveActivityAction((string)($log['effective_action'] ?? $log['action'] ?? ''), (string)($log['description'] ?? ''));
+            $documentTypeLabel = resolveActivityDocumentTypeLabel(
+                $log['document_type'] ?? null,
+                $effectiveAction,
+                $log['description'] ?? null,
+                $log['details'] ?? null
+            );
             echo '<tr>
                 <td>' . $count . '</td>
                 <td>' . htmlspecialchars($resolved_user) . '</td>
@@ -309,7 +352,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                     <span class="badge ' . htmlspecialchars(getActivityActionBadgeClass($effectiveAction)) . '">' . htmlspecialchars(getActivityActionLabel($effectiveAction)) . '</span>
                 </td>
                 <td>' . htmlspecialchars($log['description'] ?? 'N/A') . '</td>
-                <td>' . htmlspecialchars(ucfirst(!empty($log['document_type']) ? $log['document_type'] : (isSystemActivityAction($effectiveAction) ? 'System' : 'N/A'))) . '</td>
+                <td>' . htmlspecialchars($documentTypeLabel) . '</td>
                 <td>' . htmlspecialchars($log['details'] ?? 'N/A') . '</td>
                 <!-- <td>' . htmlspecialchars($log['ip_address'] ?? 'N/A') . '</td> -->
                 <td>' . formatPhilippineTime($log['log_time'] ?? $log['created_at']) . '</td>
@@ -1332,6 +1375,12 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                             ? ($log['admin_username'] ?? $log['user_name'] ?? 'System')
                             : ($log['user_username'] ?? $log['user_name'] ?? 'System');
                         $effectiveAction = resolveEffectiveActivityAction((string)($log['effective_action'] ?? $log['action'] ?? ''), (string)($log['description'] ?? ''));
+                        $documentTypeLabel = resolveActivityDocumentTypeLabel(
+                            $log['document_type'] ?? null,
+                            $effectiveAction,
+                            $log['description'] ?? null,
+                            $log['details'] ?? null
+                        );
                         ?>
                         <tr>
                             <td><?php echo $row_num++; ?></td>
@@ -1358,12 +1407,10 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if (!empty($log['document_type'])): ?>
-                                    <span class="badge bg-info"><?php echo htmlspecialchars(ucfirst($log['document_type'])); ?></span>
-                                <?php elseif (isSystemActivityAction($effectiveAction)): ?>
+                                <?php if ($documentTypeLabel === 'System'): ?>
                                     <span class="badge bg-secondary">System</span>
                                 <?php else: ?>
-                                    <span class="badge bg-light text-dark">N/A</span>
+                                    <span class="badge bg-info"><?php echo htmlspecialchars($documentTypeLabel); ?></span>
                                 <?php endif; ?>
                             </td>
                             <td class="text-start small">
