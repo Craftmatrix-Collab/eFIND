@@ -60,6 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
     $allowed_tables = ['resolutions', 'executive_orders', 'minutes_of_meeting'];
 
     try {
+        $restoredDocumentId = null;
+        $restoredDocumentType = 'document';
+        $restoredDocumentTitle = 'Document';
+        $restoreLogDetails = '';
+
         $conn->begin_transaction();
 
         $entryStmt = $conn->prepare("SELECT id, original_table, original_id, data, restored_at FROM recycle_bin WHERE id = ? FOR UPDATE");
@@ -84,6 +89,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
         $record = json_decode((string)$entry['data'], true);
         if (!is_array($record) || empty($record)) {
             throw new Exception("Archived data is invalid or empty.");
+        }
+
+        $tableToDocumentType = [
+            'resolutions' => 'resolution',
+            'executive_orders' => 'executive_order',
+            'minutes_of_meeting' => 'minute',
+        ];
+        $tableToFallbackTitle = [
+            'resolutions' => 'Resolution',
+            'executive_orders' => 'Executive Order',
+            'minutes_of_meeting' => 'Minutes of Meeting',
+        ];
+        $restoredDocumentType = $tableToDocumentType[$entry['original_table']] ?? 'document';
+        $restoredDocumentTitle = trim((string)($record['title'] ?? ''));
+        if ($restoredDocumentTitle === '') {
+            $restoredDocumentTitle = $tableToFallbackTitle[$entry['original_table']] ?? 'Document';
         }
 
         $restoreId = isset($record['id']) ? (int)$record['id'] : 0;
@@ -147,6 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
             $restoreStmt->close();
             throw new Exception("Restore insert failed: " . $error);
         }
+        $restoredDocumentId = $restoreId > 0 ? $restoreId : (int)$conn->insert_id;
         $restoreStmt->close();
 
         $updateStmt = $conn->prepare("UPDATE recycle_bin SET restored_at = CURRENT_TIMESTAMP WHERE id = ? AND restored_at IS NULL");
@@ -162,6 +184,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
         $updateStmt->close();
 
         $conn->commit();
+        $restoreLogDetails = sprintf(
+            'Document restored from recycle bin entry #%d (table: %s, original_id: %d).',
+            $recycle_id,
+            $entry['original_table'],
+            (int)$entry['original_id']
+        );
+        if (function_exists('logDocumentAction')) {
+            logDocumentAction('restore', $restoredDocumentType, $restoredDocumentTitle, $restoredDocumentId, $restoreLogDetails);
+        } elseif (function_exists('logActivity')) {
+            logActivity('restore', "Document restored: {$restoredDocumentTitle}", $restoreLogDetails, null, $restoredDocumentId, $restoredDocumentType);
+        }
         $_SESSION['success'] = "Record restored successfully.";
     } catch (Throwable $e) {
         $conn->rollback();

@@ -71,6 +71,7 @@ function getActivityActionBadgeClass(string $effectiveAction): string {
         case 'ocr_edit': return 'badge-ocr_edit';
         case 'ocr_update': return 'badge-ocr_update';
         case 'delete': return 'badge-delete';
+        case 'restore': return 'badge-restore';
         case 'user_delete': return 'badge-user_delete';
         case 'download': return 'badge-download';
         case 'view': return 'badge-view';
@@ -97,6 +98,7 @@ function getActivityActionLabel(string $effectiveAction): string {
         'ocr_edit' => 'OCR Edit',
         'ocr_update' => 'OCR Update',
         'delete' => 'Delete',
+        'restore' => 'Restore',
         'user_delete' => 'User Delete',
         'download' => 'Download',
         'view' => 'View',
@@ -211,6 +213,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             .badge-view { background-color: #e2e3e5; color: #383d41; }
             .badge-update { background-color: #d1e7dd; color: #0f5132; }
             .badge-delete { background-color: #f8d7da; color: #721c24; }
+            .badge-restore { background-color: #d1e7dd; color: #0f5132; }
             .badge-profile_update { background-color: #e7d1f8; color: #5a1f7c; }
             .badge-password_change { background-color: #ffeeba; color: #856404; }
             .badge-system { background-color: #e2e3e5; color: #383d41; }
@@ -794,6 +797,7 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
         .badge-view { background-color: #e2e3e5; color: #383d41; }
         .badge-update { background-color: #d1e7dd; color: #0f5132; }
         .badge-delete { background-color: #f8d7da; color: #721c24; }
+        .badge-restore { background-color: #d1e7dd; color: #0f5132; }
         .badge-profile_update { background-color: #e7d1f8; color: #5a1f7c; }
         .badge-password_change { background-color: #ffeeba; color: #856404; }
         .badge-system { background-color: #e2e3e5; color: #383d41; }
