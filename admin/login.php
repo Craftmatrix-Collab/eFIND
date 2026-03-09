@@ -444,7 +444,7 @@ function buildWrongPasswordErrorMessage($remainingAttempts) {
     return "Invalid username or password. You have {$remaining} {$attemptWord} remaining within {$windowMinutes} minutes before your account is temporarily locked.";
 }
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Sanitize inputs
     $username = trim($_POST['username']);
     $password = $_POST['password'];
