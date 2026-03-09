@@ -105,6 +105,182 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $userName = trim((string)($_SESSION['full_name'] ?? $_SESSION['admin_username'] ?? $_SESSION['staff_username'] ?? $_SESSION['username'] ?? 'Unknown'));
     $action = trim((string)($_POST['action'] ?? ''));
 
+    // ── AJAX/POST: Delete own profile with role-based confirmation ─────────────
+    if ($action === 'delete_self_profile') {
+        if (!$isEditingOwnProfile) {
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'You can only delete your own profile.']);
+                exit;
+            }
+            $_SESSION['error'] = 'You can only delete your own profile.';
+            header("Location: $redirectUrl");
+            exit;
+        }
+
+        $confirmationPhrase = trim((string)($_POST['confirmation_phrase'] ?? ''));
+        $expectedPhrase = 'STAFF';
+        if ($isActorSuperadmin) {
+            $expectedPhrase = 'SUPERADMIN';
+        } elseif ($isActorAdmin) {
+            $expectedPhrase = 'ADMIN';
+        }
+
+        if ($confirmationPhrase !== $expectedPhrase) {
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'message' => "Confirmation text mismatch. Please type {$expectedPhrase} exactly."
+                ]);
+                exit;
+            }
+            $_SESSION['error'] = "Confirmation text mismatch. Please type {$expectedPhrase} exactly.";
+            header("Location: $redirectUrl");
+            exit;
+        }
+
+        $lookupStmt = $conn->prepare("SELECT id, username, full_name FROM $table WHERE id = ? LIMIT 1");
+        if (!$lookupStmt) {
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Failed to prepare account lookup.']);
+                exit;
+            }
+            $_SESSION['error'] = 'Failed to prepare account lookup.';
+            header("Location: $redirectUrl");
+            exit;
+        }
+
+        $lookupStmt->bind_param("i", $userId);
+        if (!$lookupStmt->execute()) {
+            $lookupStmt->close();
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Failed to verify account before deletion.']);
+                exit;
+            }
+            $_SESSION['error'] = 'Failed to verify account before deletion.';
+            header("Location: $redirectUrl");
+            exit;
+        }
+        $targetUser = $lookupStmt->get_result()->fetch_assoc();
+        $lookupStmt->close();
+
+        if (!$targetUser) {
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Profile not found or already deleted.']);
+                exit;
+            }
+            $_SESSION['error'] = 'Profile not found or already deleted.';
+            header("Location: $redirectUrl");
+            exit;
+        }
+
+        $primaryAccountType = $table === 'admin_users' ? 'admin' : 'staff';
+        $primaryAccountKey = buildPrimaryAccountKey($primaryAccountType, $userId);
+
+        if (!$conn->begin_transaction()) {
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Unable to start profile deletion transaction.']);
+                exit;
+            }
+            $_SESSION['error'] = 'Unable to start profile deletion transaction.';
+            header("Location: $redirectUrl");
+            exit;
+        }
+
+        if (ensurePrimaryLoginSessionTable($conn)) {
+            $deleteSessionStmt = $conn->prepare("DELETE FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ?");
+            if (!$deleteSessionStmt) {
+                $conn->rollback();
+                if ($is_ajax) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => 'Failed to prepare session cleanup.']);
+                    exit;
+                }
+                $_SESSION['error'] = 'Failed to prepare session cleanup.';
+                header("Location: $redirectUrl");
+                exit;
+            }
+            $deleteSessionStmt->bind_param("s", $primaryAccountKey);
+            if (!$deleteSessionStmt->execute()) {
+                $deleteSessionStmt->close();
+                $conn->rollback();
+                if ($is_ajax) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => 'Failed to clear active sessions for this account.']);
+                    exit;
+                }
+                $_SESSION['error'] = 'Failed to clear active sessions for this account.';
+                header("Location: $redirectUrl");
+                exit;
+            }
+            $deleteSessionStmt->close();
+        }
+
+        $deleteStmt = $conn->prepare("DELETE FROM $table WHERE id = ? LIMIT 1");
+        if (!$deleteStmt) {
+            $conn->rollback();
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Failed to prepare profile deletion.']);
+                exit;
+            }
+            $_SESSION['error'] = 'Failed to prepare profile deletion.';
+            header("Location: $redirectUrl");
+            exit;
+        }
+        $deleteStmt->bind_param("i", $userId);
+        if (!$deleteStmt->execute() || $deleteStmt->affected_rows < 1) {
+            $deleteError = $deleteStmt->error ?: 'Profile not deleted.';
+            $deleteStmt->close();
+            $conn->rollback();
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Failed to delete profile: ' . $deleteError]);
+                exit;
+            }
+            $_SESSION['error'] = 'Failed to delete profile: ' . $deleteError;
+            header("Location: $redirectUrl");
+            exit;
+        }
+        $deleteStmt->close();
+
+        if (!$conn->commit()) {
+            $conn->rollback();
+            if ($is_ajax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Failed to finalize profile deletion.']);
+                exit;
+            }
+            $_SESSION['error'] = 'Failed to finalize profile deletion.';
+            header("Location: $redirectUrl");
+            exit;
+        }
+
+        $deletedIdentity = trim((string)($targetUser['full_name'] ?? $targetUser['username'] ?? ('ID ' . $userId)));
+        logProfileUpdate($actorId, $userName, $userRole, 'profile_delete', "User deleted own profile: {$deletedIdentity}", $conn);
+
+        clearPrimaryLoginMarkers();
+        destroyAuthSession();
+
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => true,
+                'message' => 'Your profile has been deleted.',
+                'redirect' => 'login.php'
+            ]);
+            exit;
+        }
+
+        header('Location: login.php');
+        exit;
+    }
+
     // ── AJAX: Send profile email verification OTP ──────────────────────────────
     if ($action === 'send_profile_verify_otp') {
         header('Content-Type: application/json');

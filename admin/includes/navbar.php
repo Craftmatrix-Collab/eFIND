@@ -14,6 +14,12 @@ if ($_navbar_session_role === 'superadmin' || (function_exists('isSuperAdmin') &
 } elseif ($_navbar_session_role !== '') {
     $_navbar_role_label = ucwords(str_replace('_', ' ', $_navbar_session_role));
 }
+$_navbar_delete_confirmation_word = 'STAFF';
+if ($_navbar_session_role === 'superadmin' || (function_exists('isSuperAdmin') && isSuperAdmin())) {
+    $_navbar_delete_confirmation_word = 'SUPERADMIN';
+} elseif (isset($_SESSION['admin_id']) || in_array($_navbar_session_role, ['admin', 'administrator'], true)) {
+    $_navbar_delete_confirmation_word = 'ADMIN';
+}
 if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id']))) {
     $_navbar_uid   = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
     $_navbar_table = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
@@ -299,7 +305,40 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteSelfProfileModal" data-bs-dismiss="modal">
+                    <i class="fas fa-trash-alt me-1"></i>Delete
+                </button>
                 <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editProfileModal" data-bs-dismiss="modal">Edit Profile</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Self Profile Modal -->
+<div class="modal fade" id="deleteSelfProfileModal" tabindex="-1" aria-labelledby="deleteSelfProfileModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteSelfProfileModalLabel"><i class="fas fa-exclamation-triangle me-2"></i>Delete Profile</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">This will permanently delete your profile and immediately sign you out.</p>
+                <p class="mb-2">
+                    Type <span class="fw-bold text-danger"><?php echo htmlspecialchars($_navbar_delete_confirmation_word); ?></span> to confirm.
+                </p>
+                <input
+                    type="text"
+                    class="form-control"
+                    id="selfDeleteConfirmationInput"
+                    placeholder="Type <?php echo htmlspecialchars($_navbar_delete_confirmation_word); ?>"
+                    autocomplete="off"
+                    spellcheck="false">
+                <div id="selfDeleteError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmSelfDeleteBtn" disabled>Delete Profile</button>
             </div>
         </div>
     </div>
@@ -718,6 +757,7 @@ function normalizeNavbarProfilePicturePath(path) {
 
 const browserExitCsrfToken = <?php echo json_encode((string)($_SESSION['csrf_token'] ?? '')); ?>;
 const inactivityAutoLogoutUrl = <?php echo json_encode('logout.php?token=' . urlencode((string)($_SESSION['logout_token'] ?? ''))); ?>;
+const selfDeleteConfirmationWord = <?php echo json_encode((string)$_navbar_delete_confirmation_word); ?>;
 const inactivityAutoLogoutMs = 30 * 60 * 1000;
 let inactivityAutoLogoutTimer = null;
 
@@ -886,6 +926,77 @@ function initNavbarJQueryHandlers() {
         $('#profileModal').on('click', '.btn-primary', function() {
             $('#profileModal').modal('hide');
             $('#editProfileModal').modal('show');
+        });
+
+        const selfDeleteModal = $('#deleteSelfProfileModal');
+        const selfDeleteInput = $('#selfDeleteConfirmationInput');
+        const selfDeleteButton = $('#confirmSelfDeleteBtn');
+        const selfDeleteError = $('#selfDeleteError');
+
+        function selfDeleteInputMatchesExpected() {
+            return (selfDeleteInput.val() || '').trim() === selfDeleteConfirmationWord;
+        }
+
+        function updateSelfDeleteButtonState() {
+            selfDeleteButton.prop('disabled', !selfDeleteInputMatchesExpected());
+        }
+
+        function showSelfDeleteError(message) {
+            selfDeleteError.text(message || 'Unable to delete profile.').removeClass('d-none');
+        }
+
+        selfDeleteModal.on('show.bs.modal', function () {
+            selfDeleteInput.val('');
+            selfDeleteButton.prop('disabled', true).text('Delete Profile');
+            selfDeleteError.addClass('d-none').text('');
+        });
+
+        selfDeleteInput.on('input', function () {
+            selfDeleteError.addClass('d-none').text('');
+            updateSelfDeleteButtonState();
+        });
+
+        selfDeleteButton.on('click', function () {
+            const typedWord = (selfDeleteInput.val() || '').trim();
+            if (typedWord !== selfDeleteConfirmationWord) {
+                showSelfDeleteError(`Please type ${selfDeleteConfirmationWord} exactly to confirm.`);
+                updateSelfDeleteButtonState();
+                return;
+            }
+
+            const originalButtonText = selfDeleteButton.text();
+            selfDeleteButton.prop('disabled', true).html('<i class="spinner-border spinner-border-sm me-1"></i>Deleting...');
+
+            $.ajax({
+                url: 'update_profile.php',
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    csrf_token: browserExitCsrfToken,
+                    action: 'delete_self_profile',
+                    confirmation_phrase: typedWord
+                },
+                success: function (response) {
+                    if (response && response.success) {
+                        const redirectTo = response.redirect || 'login.php';
+                        window.location.href = redirectTo;
+                        return;
+                    }
+
+                    const errorMessage = (response && response.message) ? response.message : 'Failed to delete profile.';
+                    showSelfDeleteError(errorMessage);
+                    showToast('Error: ' + errorMessage, 'error');
+                    selfDeleteButton.prop('disabled', false).text(originalButtonText);
+                },
+                error: function (xhr, status, error) {
+                    const responseMessage = xhr && xhr.responseJSON && xhr.responseJSON.message
+                        ? xhr.responseJSON.message
+                        : (error || 'Request failed.');
+                    showSelfDeleteError(responseMessage);
+                    showToast('Error: ' + responseMessage, 'error');
+                    selfDeleteButton.prop('disabled', false).text(originalButtonText);
+                }
+            });
         });
 
         // --- Add Staff AJAX handler ---
