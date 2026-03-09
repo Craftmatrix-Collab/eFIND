@@ -1811,7 +1811,7 @@ $count_stmt->close();
                     <div class="col-md-8">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
-                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any minutes field (title, session no., reference, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
+                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any minutes field (title, session no., content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-md-1">
