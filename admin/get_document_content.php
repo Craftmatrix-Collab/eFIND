@@ -3,20 +3,23 @@
 header('Content-Type: application/json');
 include('includes/config.php');
 include(__DIR__ . '/includes/logger.php');
+require_once __DIR__ . '/includes/document_type_helper.php';
 
 
-$id = $_GET['id'];
-$document_type = $_GET['document_type'];
+$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$document_type = trim((string)($_GET['document_type'] ?? ''));
 
 try {
-    if ($document_type === 'executive_order') {
-        $stmt = $conn->prepare("SELECT content FROM executive_orders WHERE id = ?");
-    } elseif ($document_type === 'resolution') {
-        $stmt = $conn->prepare("SELECT content FROM resolutions WHERE id = ?");
-    } elseif ($document_type === 'meeting') {
-        $stmt = $conn->prepare("SELECT content FROM meeting_minutes WHERE id = ?");
-    } else {
+    $canonicalType = normalizeCanonicalDocumentType($document_type);
+    $table = resolveDocumentTableByCanonicalType($canonicalType);
+    if ($id <= 0 || $table === null) {
         echo json_encode(['success' => false, 'error' => 'Invalid document type.']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("SELECT content FROM {$table} WHERE id = ?");
+    if (!$stmt) {
+        echo json_encode(['success' => false, 'error' => 'Failed to prepare content lookup.']);
         exit;
     }
 

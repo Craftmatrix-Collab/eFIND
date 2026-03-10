@@ -3,6 +3,7 @@
 header('Content-Type: application/json');
 include('includes/config.php');
 include(__DIR__ . '/includes/logger.php');
+require_once __DIR__ . '/includes/document_type_helper.php';
 
 // Check if required parameters are set
 if (!isset($_POST['id']) || !isset($_POST['document_type']) || !isset($_POST['content'])) {
@@ -11,28 +12,29 @@ if (!isset($_POST['id']) || !isset($_POST['document_type']) || !isset($_POST['co
 }
 
 $id = intval($_POST['id']);
-$document_type = strtolower(trim((string)($_POST['document_type'] ?? '')));
+$document_type = trim((string)($_POST['document_type'] ?? ''));
 $content = trim($_POST['content']);
 
 try {
-    $ocr_document_type = $document_type;
-
-    // Update the main document table based on document type
-    if ($document_type === 'executive_order' || $document_type === 'executive_orders') {
+    $canonical_document_type = normalizeCanonicalDocumentType($document_type);
+    if ($canonical_document_type === 'executive_order') {
         $stmt = $conn->prepare("UPDATE executive_orders SET content = ? WHERE id = ?");
-        $ocr_document_type = 'executive_order';
-    } elseif ($document_type === 'resolution' || $document_type === 'resolutions') {
+    } elseif ($canonical_document_type === 'resolution') {
         $stmt = $conn->prepare("UPDATE resolutions SET content = ? WHERE id = ?");
-        $ocr_document_type = 'resolution';
-    } elseif (in_array($document_type, ['meeting', 'minutes', 'minute', 'meeting_minutes'], true)) {
-        // Handle meeting aliases for minutes_of_meeting documents
+    } elseif ($canonical_document_type === 'minutes') {
         $stmt = $conn->prepare("UPDATE minutes_of_meeting SET content = ? WHERE id = ?");
-        $ocr_document_type = 'meeting';
     } else {
         echo json_encode(['success' => false, 'error' => 'Invalid document type.']);
         exit;
     }
-    
+
+    if (!$stmt) {
+        echo json_encode(['success' => false, 'error' => 'Failed to prepare content update query.']);
+        exit;
+    }
+
+    $ocr_document_type = normalizeOcrDocumentType($canonical_document_type);
+
     $stmt->bind_param("si", $content, $id);
     $stmt->execute();
     
