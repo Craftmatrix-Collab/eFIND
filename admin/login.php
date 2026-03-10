@@ -39,7 +39,7 @@ function getSafeRedirect() {
 }
 
 if (!defined('LOGIN_MAX_FAILED_ATTEMPTS')) {
-    define('LOGIN_MAX_FAILED_ATTEMPTS', 5);
+    define('LOGIN_MAX_FAILED_ATTEMPTS', 3);
 }
 
 if (!defined('LOGIN_FAILURE_WINDOW_SECONDS')) {
@@ -87,19 +87,7 @@ function formatLoginLockRemainingTime($secondsRemaining) {
 }
 
 function buildAccountLockedErrorMessage($secondsRemaining = null, $lockoutUntil = null, $lockLevel = null) {
-    $seconds = $secondsRemaining === null ? null : max(0, (int)$secondsRemaining);
-    $untilText = '';
-    $formattedUntil = trim((string)$lockoutUntil);
-    if ($formattedUntil !== '' && strtotime($formattedUntil) !== false) {
-        $untilText = ' (until ' . date('M d, Y h:i A', strtotime($formattedUntil)) . ')';
-    }
-
-    if ($seconds === null || $seconds === 0) {
-        return 'Your account is temporarily locked. Please wait around 3 minutes and try again.';
-    }
-
-    $remainingText = formatLoginLockRemainingTime($seconds);
-    return "Your account is temporarily locked due to repeated failed login attempts. It will automatically unlock in {$remainingText}{$untilText}.";
+    return 'Your account is temporarily locked due to repeated failed login attempts. It will automatically unlock in 3 minutes.';
 }
 
 function ensureLoginAccountLockColumns() {
@@ -1527,7 +1515,7 @@ checkActivityLogsTable();
 
                 <div class="security-notice">
                     <i class="fas fa-shield-alt"></i>
-                    All login attempts are logged. After <?php echo (int)LOGIN_MAX_FAILED_ATTEMPTS; ?> wrong passwords within <?php echo max(1, (int)floor((int)LOGIN_FAILURE_WINDOW_SECONDS / 60)); ?> minutes, your account is temporarily locked with longer lock durations for repeated lockouts. Use Forgot Password to unlock immediately, or wait for lock expiry.
+                    All login attempts are logged. After <?php echo (int)LOGIN_MAX_FAILED_ATTEMPTS; ?> wrong passwords within <?php echo max(1, (int)floor((int)LOGIN_FAILURE_WINDOW_SECONDS / 60)); ?> minutes, your account is temporarily locked and automatically unlocks after <?php echo (int)LOGIN_LOCK_DURATION_LEVEL_1_MINUTES; ?> minutes.
                 </div>
 
                 <form method="post" action="login.php">
