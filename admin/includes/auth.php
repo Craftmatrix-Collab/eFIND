@@ -540,20 +540,64 @@ function isAdmin() {
 /**
  * Check if the logged-in user is a superadmin
  */
+function normalizeAuthRoleToken($value): string {
+    $normalized = strtolower(trim((string)$value));
+    return preg_replace('/[^a-z0-9]/', '', $normalized) ?? '';
+}
+
+function isSuperAdminRoleToken($value): bool {
+    return normalizeAuthRoleToken($value) === 'superadmin';
+}
+
 function isSuperAdmin() {
+    static $resolvedIsSuperAdmin = null;
+    if ($resolvedIsSuperAdmin !== null) {
+        return $resolvedIsSuperAdmin;
+    }
+
     $isAdminSession = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
     $isStaffSession = (isset($_SESSION['staff_logged_in']) && $_SESSION['staff_logged_in'] === true)
         || (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true);
 
     if (!$isAdminSession && !$isStaffSession) {
+        $resolvedIsSuperAdmin = false;
         return false;
     }
 
-    $sessionRole = strtolower((string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? '')));
-    $adminUsername = strtolower((string)($_SESSION['admin_username'] ?? ''));
-    $staffUsername = strtolower((string)($_SESSION['staff_username'] ?? ($_SESSION['username'] ?? '')));
+    $sessionRole = (string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? ''));
+    $adminUsername = strtolower(trim((string)($_SESSION['admin_username'] ?? '')));
+    $staffUsername = strtolower(trim((string)($_SESSION['staff_username'] ?? ($_SESSION['username'] ?? ''))));
+    if (isSuperAdminRoleToken($sessionRole) || $adminUsername === 'superadmin' || $staffUsername === 'superadmin') {
+        $resolvedIsSuperAdmin = true;
+        return true;
+    }
 
-    return $sessionRole === 'superadmin' || $adminUsername === 'superadmin' || $staffUsername === 'superadmin';
+    if ($isAdminSession) {
+        $adminSessionUsername = trim((string)($_SESSION['admin_username'] ?? ''));
+        $conn = getAuthConnection();
+        if ($conn && $adminSessionUsername !== '') {
+            $lookupRoleStmt = $conn->prepare("SELECT role FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1");
+            if ($lookupRoleStmt) {
+                $lookupRoleStmt->bind_param('s', $adminSessionUsername);
+                if ($lookupRoleStmt->execute()) {
+                    $lookupRoleRow = $lookupRoleStmt->get_result()->fetch_assoc();
+                    $lookupRoleStmt->close();
+                    if ($lookupRoleRow && isSuperAdminRoleToken($lookupRoleRow['role'] ?? '')) {
+                        $resolvedIsSuperAdmin = true;
+                        return true;
+                    }
+                } else {
+                    error_log('Failed to resolve admin superadmin role mapping: ' . $lookupRoleStmt->error);
+                    $lookupRoleStmt->close();
+                }
+            } else {
+                error_log('Failed to prepare admin superadmin role mapping query: ' . $conn->error);
+            }
+        }
+    }
+
+    $resolvedIsSuperAdmin = false;
+    return false;
 }
 
 /**

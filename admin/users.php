@@ -1995,6 +1995,7 @@ $count_stmt->close();
                             <div class="col-md-6 mb-3">
                                 <label for="editRole" class="form-label">Role <span class="text-danger">*</span></label>
                                 <select class="form-select" id="editRole" name="role" required>
+                                    <option value="superadmin">Superadmin</option>
                                     <option value="admin">Admin</option>
                                     <option value="staff">Staff</option>
                                     <option value="viewer">Viewer</option>
