@@ -76,6 +76,88 @@ function isPrimarySessionInactive($lastActiveAt): bool {
     return (time() - $lastActiveTs) > PRIMARY_INACTIVITY_TIMEOUT_SECONDS;
 }
 
+function primaryLoginSessionHasUsersForeignKey(mysqli $conn): bool {
+    $table = PRIMARY_LOGIN_SESSION_TABLE;
+    $stmt = $conn->prepare(
+        "SELECT 1
+         FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = ?
+           AND COLUMN_NAME = 'account_id'
+           AND REFERENCED_TABLE_NAME = 'users'
+         LIMIT 1"
+    );
+    if (!$stmt) {
+        error_log('Failed to prepare primary login session FK check: ' . $conn->error);
+        return false;
+    }
+
+    $stmt->bind_param('s', $table);
+    $stmt->execute();
+    $exists = (bool)$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return $exists;
+}
+
+function primaryLoginSessionHasAccountIdIndex(mysqli $conn): bool {
+    $table = PRIMARY_LOGIN_SESSION_TABLE;
+    $stmt = $conn->prepare(
+        "SELECT 1
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = ?
+           AND COLUMN_NAME = 'account_id'
+         LIMIT 1"
+    );
+    if (!$stmt) {
+        error_log('Failed to prepare primary login session index check: ' . $conn->error);
+        return false;
+    }
+
+    $stmt->bind_param('s', $table);
+    $stmt->execute();
+    $exists = (bool)$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return $exists;
+}
+
+function ensurePrimaryLoginSessionUsersForeignKey(mysqli $conn): bool {
+    static $checked = false;
+    if ($checked) {
+        return true;
+    }
+
+    $table = PRIMARY_LOGIN_SESSION_TABLE;
+    if (!$conn->query("DELETE pls FROM {$table} pls LEFT JOIN users u ON u.id = pls.account_id WHERE u.id IS NULL")) {
+        error_log('Failed to clean orphan primary login sessions: ' . $conn->error);
+        return false;
+    }
+
+    if (!primaryLoginSessionHasAccountIdIndex($conn)) {
+        if (!$conn->query("ALTER TABLE {$table} ADD INDEX idx_account_id (account_id)")) {
+            error_log('Failed to add primary login session account index: ' . $conn->error);
+            return false;
+        }
+    }
+
+    if (!primaryLoginSessionHasUsersForeignKey($conn)) {
+        $fkSql = "ALTER TABLE {$table}
+                  ADD CONSTRAINT fk_primary_login_sessions_user
+                  FOREIGN KEY (account_id) REFERENCES users(id)
+                  ON UPDATE CASCADE
+                  ON DELETE CASCADE";
+        if (!$conn->query($fkSql)) {
+            error_log('Failed to add primary login session users FK: ' . $conn->error);
+            return false;
+        }
+    }
+
+    $checked = true;
+    return true;
+}
+
 function ensurePrimaryLoginSessionTable(mysqli $conn) {
     static $initialized = false;
 
@@ -93,7 +175,12 @@ function ensurePrimaryLoginSessionTable(mysqli $conn) {
         browser_exit_pending_at DATETIME NULL,
         created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
         updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_account_identity (account_type, account_id)
+        INDEX idx_account_identity (account_type, account_id),
+        INDEX idx_account_id (account_id),
+        CONSTRAINT fk_primary_login_sessions_user
+            FOREIGN KEY (account_id) REFERENCES users(id)
+            ON UPDATE CASCADE
+            ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
 
     $initialized = $conn->query($sql) === true;
@@ -104,6 +191,10 @@ function ensurePrimaryLoginSessionTable(mysqli $conn) {
 
     if (!supportsBrowserExitPendingColumn($conn)) {
         error_log('Browser-exit pending logout tracking is unavailable.');
+    }
+
+    if (!ensurePrimaryLoginSessionUsersForeignKey($conn)) {
+        error_log('Primary login sessions are missing users foreign key protections.');
     }
 
     return true;

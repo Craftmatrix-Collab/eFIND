@@ -603,24 +603,20 @@ class BarangayChatbotAPI {
             ], 200); // Return 200 to prevent client-side error handling
         }
     }
-    
-    private function logChatToDatabase($userId, $message, $actionType, $sessionId, $context = '') {
-        if (!$this->db) {
-            return;
-        }
-        
-        // Resolve user metadata and keep FK-safe user_id for activity_logs.user_id -> users.id.
-        $userName = 'Guest';
-        $userRole = 'guest';
+
+    private function resolveChatActor($userId): array
+    {
+        $userName = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Guest';
+        $userRole = $_SESSION['role'] ?? $_SESSION['staff_role'] ?? (isset($_SESSION['admin_id']) ? 'admin' : 'guest');
         $resolvedUserId = null;
         $candidateUserId = null;
 
         if ($userId !== 'guest' && is_numeric($userId)) {
             $candidateUserId = intval($userId);
+        } elseif (isset($_SESSION['admin_id']) && is_numeric($_SESSION['admin_id'])) {
+            $candidateUserId = intval($_SESSION['admin_id']);
         } elseif (isset($_SESSION['user_id']) && is_numeric($_SESSION['user_id'])) {
             $candidateUserId = intval($_SESSION['user_id']);
-            $userName = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User';
-            $userRole = $_SESSION['role'] ?? (isset($_SESSION['admin_id']) ? 'admin' : 'user');
         }
 
         if ($candidateUserId !== null && $candidateUserId > 0) {
@@ -631,17 +627,118 @@ class BarangayChatbotAPI {
                 $result = $stmt->get_result();
                 if ($row = $result->fetch_assoc()) {
                     $resolvedUserId = $candidateUserId;
-                    $userName = $row['full_name'] ?? $row['username'];
-                    $userRole = $row['role'] ?? 'user';
+                    $userName = $row['full_name'] ?? $row['username'] ?? $userName;
+                    $userRole = $row['role'] ?? $userRole;
                 }
                 $stmt->close();
             }
-
-            if ($resolvedUserId === null) {
-                $userName = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? $_SESSION['username'] ?? $userName;
-                $userRole = $_SESSION['role'] ?? (isset($_SESSION['admin_id']) ? 'admin' : $userRole);
-            }
         }
+
+        return [
+            'resolved_user_id' => $resolvedUserId,
+            'user_name' => $userName,
+            'user_role' => $userRole,
+        ];
+    }
+
+    private function getChatLogSenderByActionType($actionType): string
+    {
+        $normalizedActionType = strtolower(trim((string)$actionType));
+        if ($normalizedActionType === 'user_message') {
+            return 'user';
+        }
+        return 'bot';
+    }
+
+    private function chatLogsSupportsSenderUserId(): bool
+    {
+        static $supportsSenderUserId = null;
+        if ($supportsSenderUserId !== null) {
+            return $supportsSenderUserId;
+        }
+
+        $stmt = $this->db->prepare(
+            "SELECT 1
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'chat_logs'
+               AND COLUMN_NAME = 'sender_user_id'
+             LIMIT 1"
+        );
+        if (!$stmt) {
+            $supportsSenderUserId = false;
+            return false;
+        }
+
+        $stmt->execute();
+        $supportsSenderUserId = (bool)$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $supportsSenderUserId;
+    }
+
+    private function logChatMessageToChatLogs($sessionId, $sender, $message, $resolvedUserId = null): void
+    {
+        if (!$this->db) {
+            return;
+        }
+
+        $normalizedSender = strtolower(trim((string)$sender)) === 'user' ? 'user' : 'bot';
+        $safeSessionId = substr(trim((string)$sessionId), 0, 255);
+        if ($safeSessionId === '') {
+            $safeSessionId = 'unknown';
+        }
+        $message = (string)$message;
+
+        if ($this->chatLogsSupportsSenderUserId()) {
+            $senderUserIdValue = ($normalizedSender === 'user' && is_numeric($resolvedUserId) && (int)$resolvedUserId > 0)
+                ? (int)$resolvedUserId
+                : 0;
+
+            $stmt = $this->db->prepare(
+                "INSERT INTO chat_logs (session_id, sender, sender_user_id, message, timestamp)
+                 VALUES (?, ?, NULLIF(?, 0), ?, NOW())"
+            );
+            if ($stmt) {
+                $stmt->bind_param("ssis", $safeSessionId, $normalizedSender, $senderUserIdValue, $message);
+                if (!$stmt->execute()) {
+                    $this->log("Failed to insert chat_logs row: " . $stmt->error);
+                }
+                $stmt->close();
+                return;
+            }
+
+            $this->log("Failed to prepare chat_logs insert with sender_user_id: " . $this->db->error);
+            return;
+        }
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO chat_logs (session_id, sender, message, timestamp)
+             VALUES (?, ?, ?, NOW())"
+        );
+        if ($stmt) {
+            $stmt->bind_param("sss", $safeSessionId, $normalizedSender, $message);
+            if (!$stmt->execute()) {
+                $this->log("Failed to insert legacy chat_logs row: " . $stmt->error);
+            }
+            $stmt->close();
+            return;
+        }
+
+        $this->log("Failed to prepare legacy chat_logs insert: " . $this->db->error);
+    }
+    
+    private function logChatToDatabase($userId, $message, $actionType, $sessionId, $context = '') {
+        if (!$this->db) {
+            return;
+        }
+        
+        // Resolve user metadata and keep FK-safe user_id for activity_logs.user_id -> users.id.
+        $actor = $this->resolveChatActor($userId);
+        $resolvedUserId = $actor['resolved_user_id'];
+        $userName = $actor['user_name'];
+        $userRole = $actor['user_role'];
+        $chatSender = $this->getChatLogSenderByActionType($actionType);
+        $this->logChatMessageToChatLogs($sessionId, $chatSender, $message, $resolvedUserId);
         
         // Prepare action and description based on type
         $action = 'chatbot';

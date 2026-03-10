@@ -99,14 +99,92 @@ if (!function_exists('checkRecycleBinTable')) {
             id INT AUTO_INCREMENT PRIMARY KEY,
             original_table VARCHAR(100),
             original_id INT,
+            executive_order_id INT NULL,
+            resolution_id INT NULL,
+            minutes_of_meeting_id INT NULL,
             data JSON,
             deleted_by VARCHAR(255),
             deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            restored_at TIMESTAMP NULL
+            restored_at TIMESTAMP NULL,
+            INDEX idx_recycle_bin_exec_order_id (executive_order_id),
+            INDEX idx_recycle_bin_resolution_id (resolution_id),
+            INDEX idx_recycle_bin_minutes_id (minutes_of_meeting_id)
         )";
 
         if (!$conn->query($createTableQuery)) {
             error_log("Failed to create recycle_bin table: " . $conn->error);
+            return;
+        }
+
+        $relationColumns = [
+            'executive_order_id' => "ALTER TABLE recycle_bin ADD COLUMN executive_order_id INT NULL AFTER original_id",
+            'resolution_id' => "ALTER TABLE recycle_bin ADD COLUMN resolution_id INT NULL AFTER executive_order_id",
+            'minutes_of_meeting_id' => "ALTER TABLE recycle_bin ADD COLUMN minutes_of_meeting_id INT NULL AFTER resolution_id",
+        ];
+        foreach ($relationColumns as $column => $sql) {
+            $columnResult = $conn->query("SHOW COLUMNS FROM recycle_bin LIKE '{$column}'");
+            if ($columnResult && (int)$columnResult->num_rows === 0) {
+                if (!$conn->query($sql)) {
+                    error_log("Failed to add recycle_bin.{$column}: " . $conn->error);
+                }
+            }
+        }
+
+        $relationIndexes = [
+            'idx_recycle_bin_exec_order_id' => 'executive_order_id',
+            'idx_recycle_bin_resolution_id' => 'resolution_id',
+            'idx_recycle_bin_minutes_id' => 'minutes_of_meeting_id',
+        ];
+        foreach ($relationIndexes as $indexName => $columnName) {
+            $indexResult = $conn->query("SHOW INDEX FROM recycle_bin WHERE Key_name = '{$indexName}'");
+            if ($indexResult && (int)$indexResult->num_rows === 0) {
+                if (!$conn->query("ALTER TABLE recycle_bin ADD INDEX {$indexName} ({$columnName})")) {
+                    error_log("Failed to add recycle_bin index {$indexName}: " . $conn->error);
+                }
+            }
+        }
+
+        $relationForeignKeys = [
+            ['column' => 'executive_order_id', 'ref_table' => 'executive_orders', 'constraint' => 'fk_recycle_bin_exec_order'],
+            ['column' => 'resolution_id', 'ref_table' => 'resolutions', 'constraint' => 'fk_recycle_bin_resolution'],
+            ['column' => 'minutes_of_meeting_id', 'ref_table' => 'minutes_of_meeting', 'constraint' => 'fk_recycle_bin_minutes'],
+        ];
+        foreach ($relationForeignKeys as $relation) {
+            $refTableCheck = $conn->query("SHOW TABLES LIKE '{$relation['ref_table']}'");
+            if (!$refTableCheck || (int)$refTableCheck->num_rows === 0) {
+                continue;
+            }
+
+            $fkStmt = $conn->prepare(
+                "SELECT 1
+                 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'recycle_bin'
+                   AND COLUMN_NAME = ?
+                   AND REFERENCED_TABLE_NAME = ?
+                 LIMIT 1"
+            );
+            if (!$fkStmt) {
+                error_log("Failed to prepare recycle_bin FK check: " . $conn->error);
+                continue;
+            }
+            $fkStmt->bind_param('ss', $relation['column'], $relation['ref_table']);
+            $fkStmt->execute();
+            $hasForeignKey = (bool)$fkStmt->get_result()->fetch_assoc();
+            $fkStmt->close();
+
+            if ($hasForeignKey) {
+                continue;
+            }
+
+            $fkSql = "ALTER TABLE recycle_bin
+                      ADD CONSTRAINT {$relation['constraint']}
+                      FOREIGN KEY ({$relation['column']}) REFERENCES {$relation['ref_table']}(id)
+                      ON UPDATE CASCADE
+                      ON DELETE SET NULL";
+            if (!$conn->query($fkSql)) {
+                error_log("Failed to add recycle_bin FK {$relation['constraint']}: " . $conn->error);
+            }
         }
     }
 }
@@ -137,14 +215,43 @@ if (!function_exists('archiveToRecycleBin')) {
                 ?? 'system';
         }
 
-        $stmt = $conn->prepare("INSERT INTO recycle_bin (original_table, original_id, data, deleted_by) VALUES (?, ?, ?, ?)");
+        $original_id = (int)$original_id;
+        $normalizedTable = strtolower(trim((string)$original_table));
+        $executiveOrderId = null;
+        $resolutionId = null;
+        $minutesOfMeetingId = null;
+
+        if ($original_id > 0) {
+            if ($normalizedTable === 'executive_order' || $normalizedTable === 'executive_orders') {
+                $executiveOrderId = $original_id;
+            } elseif ($normalizedTable === 'resolution' || $normalizedTable === 'resolutions') {
+                $resolutionId = $original_id;
+            } elseif ($normalizedTable === 'minutes' || $normalizedTable === 'minutes_of_meeting') {
+                $minutesOfMeetingId = $original_id;
+            }
+        }
+
+        $stmt = $conn->prepare(
+            "INSERT INTO recycle_bin (
+                original_table,
+                original_id,
+                executive_order_id,
+                resolution_id,
+                minutes_of_meeting_id,
+                data,
+                deleted_by
+            )
+            VALUES (?, ?, NULLIF(?, 0), NULLIF(?, 0), NULLIF(?, 0), ?, ?)"
+        );
         if (!$stmt) {
             error_log("archiveToRecycleBin: prepare failed - " . $conn->error);
             return false;
         }
 
-        $original_id = (int)$original_id;
-        $stmt->bind_param("siss", $original_table, $original_id, $json_data, $deleted_by);
+        $executiveOrderId = (int)($executiveOrderId ?? 0);
+        $resolutionId = (int)($resolutionId ?? 0);
+        $minutesOfMeetingId = (int)($minutesOfMeetingId ?? 0);
+        $stmt->bind_param("siiiiss", $original_table, $original_id, $executiveOrderId, $resolutionId, $minutesOfMeetingId, $json_data, $deleted_by);
         $ok = $stmt->execute();
         if (!$ok) {
             error_log("archiveToRecycleBin: execute failed - " . $stmt->error);
