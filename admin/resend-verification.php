@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend'])) {
         } else {
             // Look up unverified admin account
             $user = null;
-            $stmt = $conn->prepare("SELECT id, full_name, is_verified FROM admin_users WHERE email = ?");
+            $stmt = $conn->prepare("SELECT id, full_name, email_verified FROM users WHERE email = ? AND role IN ('admin', 'superadmin')");
             if ($stmt) {
                 $stmt->bind_param("s", $email);
                 $stmt->execute();
@@ -37,12 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend'])) {
                 error_log("Resend verification select prepare failed: " . $conn->error);
             }
 
-            if (empty($error) && $user && !$user['is_verified']) {
+            if (empty($error) && $user && empty($user['email_verified'])) {
                 // Generate a fresh token valid for 24 hours
                 $new_token  = bin2hex(random_bytes(32));
                 $new_expiry = date("Y-m-d H:i:s", strtotime('+24 hours'));
 
-                $upd = $conn->prepare("UPDATE admin_users SET verification_token = ?, token_expiry = ? WHERE id = ?");
+                $upd = $conn->prepare("UPDATE users SET verification_token = ?, token_expiry = ? WHERE id = ?");
                 if ($upd) {
                     $upd->bind_param("ssi", $new_token, $new_expiry, $user['id']);
                     if (!$upd->execute()) {

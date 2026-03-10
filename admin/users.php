@@ -24,11 +24,11 @@ if (!isAdmin() && !(function_exists('isSuperAdmin') && isSuperAdmin())) {
 }
 $is_superadmin_users_page = function_exists('isSuperAdmin') && isSuperAdmin();
 $current_users_page_actor_id = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($_SESSION['user_id'] ?? 0);
-$current_users_page_actor_type = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
+$current_users_page_actor_type = 'users';
 
 function canEditManagedProfile(int $targetId, string $targetType, bool $isSuperadmin, int $currentActorId, string $currentActorType): bool
 {
-    if ($targetId <= 0 || !in_array($targetType, ['users', 'admin_users'], true)) {
+    if ($targetId <= 0 || !in_array($targetType, ['users'], true)) {
         return false;
     }
 
@@ -45,7 +45,7 @@ function ensureUsersAccountLockColumns(string $tableName): void
 {
     global $conn;
 
-    if (!in_array($tableName, ['users', 'admin_users'], true) || !isset($conn) || !($conn instanceof mysqli)) {
+    if (!in_array($tableName, ['users'], true) || !isset($conn) || !($conn instanceof mysqli)) {
         return;
     }
 
@@ -81,13 +81,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_verify_otp') {
         exit();
     }
     // Check email not already taken
-    $chk = $conn->prepare("SELECT id FROM users WHERE email = ? UNION SELECT id FROM admin_users WHERE email = ?");
+    $chk = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
     if (!$chk) {
         error_log('Send OTP email-check prepare failed: ' . $conn->error);
         echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
         exit();
     }
-    $chk->bind_param("ss", $email, $email);
+    $chk->bind_param("s", $email);
     if (!$chk->execute()) {
         error_log('Send OTP email-check execute failed: ' . $chk->error);
         $chk->close();
@@ -184,7 +184,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_edit_verify_otp') {
         echo json_encode(['success' => false, 'message' => 'Invalid email address.']);
         exit();
     }
-    if ($userId <= 0 || !in_array($userType, ['users', 'admin_users'], true)) {
+    if ($userId <= 0 || !in_array($userType, ['users'], true)) {
         echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
         exit();
     }
@@ -193,7 +193,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_edit_verify_otp') {
         exit();
     }
 
-    $table = ($userType === 'admin_users') ? 'admin_users' : 'users';
+    $table = 'users';
     $targetStmt = $conn->prepare("SELECT email FROM $table WHERE id = ?");
     if (!$targetStmt) {
         error_log('Edit OTP target-user prepare failed: ' . $conn->error);
@@ -216,13 +216,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_edit_verify_otp') {
     }
 
     // Check email not already taken by another account
-    $chk = $conn->prepare("SELECT 1 FROM users WHERE email = ? AND NOT (? = 'users' AND id = ?) UNION ALL SELECT 1 FROM admin_users WHERE email = ? AND NOT (? = 'admin_users' AND id = ?) LIMIT 1");
+    $chk = $conn->prepare("SELECT 1 FROM users WHERE email = ? AND id <> ? LIMIT 1");
     if (!$chk) {
         error_log('Edit OTP duplicate-check prepare failed: ' . $conn->error);
         echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
         exit();
     }
-    $chk->bind_param("ssissi", $email, $userType, $userId, $email, $userType, $userId);
+    $chk->bind_param("si", $email, $userId);
     if (!$chk->execute()) {
         error_log('Edit OTP duplicate-check execute failed: ' . $chk->error);
         $chk->close();
@@ -292,7 +292,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'check_edit_verify_otp') {
     $userId = (int)($_POST['user_id'] ?? 0);
     $userType = trim($_POST['user_type'] ?? '');
 
-    if ($userId <= 0 || !in_array($userType, ['users', 'admin_users'], true)) {
+    if ($userId <= 0 || !in_array($userType, ['users'], true)) {
         echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
         exit();
     }
@@ -367,18 +367,15 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     }
     $id = (int)$_GET['id'];
     $user_type = isset($_GET['user_type']) ? $_GET['user_type'] : '';
-    if (!in_array($user_type, ['users', 'admin_users'], true)) {
+    if (!in_array($user_type, ['users'], true)) {
         $_SESSION['error'] = "Invalid user type.";
         header("Location: " . $_SERVER['PHP_SELF']);
         exit();
     }
     
     // Determine which table to delete from
-    $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
-
-    $targetLookupSql = $table === 'admin_users'
-        ? "SELECT username, CASE WHEN LOWER(username) = 'superadmin' THEN 'superadmin' ELSE 'admin' END AS role FROM $table WHERE id = ?"
-        : "SELECT username, role FROM $table WHERE id = ?";
+    $table = 'users';
+    $targetLookupSql = "SELECT username, role FROM $table WHERE id = ?";
     $delStmt = $conn->prepare($targetLookupSql);
     if (!$delStmt) {
         $_SESSION['error'] = "Error checking delete permission: " . $conn->error;
@@ -399,7 +396,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     $targetRole = strtolower((string)($delRow['role'] ?? ''));
     $canDeleteTarget = $is_superadmin_users_page
         ? in_array($targetRole, ['admin', 'staff'], true)
-        : ($user_type === 'users' && $targetRole === 'staff');
+        : ($targetRole === 'staff');
     if (!$canDeleteTarget) {
         $_SESSION['error'] = "You do not have permission to delete this user.";
         header("Location: " . $_SERVER['PHP_SELF']);
@@ -433,16 +430,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'reset_attempts' && isset($_GE
 
     $id = (int)$_GET['id'];
     $user_type = isset($_GET['user_type']) ? $_GET['user_type'] : '';
-    if (!in_array($user_type, ['users', 'admin_users'], true)) {
+    if (!in_array($user_type, ['users'], true)) {
         $_SESSION['error'] = "Invalid user type.";
         header("Location: " . $_SERVER['PHP_SELF']);
         exit();
     }
 
-    $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
-    $targetLookupSql = $table === 'admin_users'
-        ? "SELECT username, CASE WHEN LOWER(username) = 'superadmin' THEN 'superadmin' ELSE 'admin' END AS role FROM $table WHERE id = ?"
-        : "SELECT username, role FROM $table WHERE id = ?";
+    $table = 'users';
+    $targetLookupSql = "SELECT username, role FROM $table WHERE id = ?";
     $targetStmt = $conn->prepare($targetLookupSql);
     if (!$targetStmt) {
         $_SESSION['error'] = "Error checking reset permission: " . $conn->error;
@@ -577,7 +572,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $profile_picture = '';
 
         // Validate inputs
-        if (!in_array($user_type, ['users', 'admin_users'], true)) {
+        if (!in_array($user_type, ['users'], true)) {
             $_SESSION['error'] = "Invalid user type.";
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
@@ -600,8 +595,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $password = password_hash($newPasswordRaw, PASSWORD_DEFAULT);
             }
 
-            $dupStmt = $conn->prepare("SELECT 1 FROM users WHERE (email = ? OR username = ?) AND NOT (? = 'users' AND id = ?) UNION ALL SELECT 1 FROM admin_users WHERE (email = ? OR username = ?) AND NOT (? = 'admin_users' AND id = ?) LIMIT 1");
-            $dupStmt->bind_param("sssisssi", $email, $username, $user_type, $id, $email, $username, $user_type, $id);
+            $dupStmt = $conn->prepare("SELECT 1 FROM users WHERE (email = ? OR username = ?) AND id <> ? LIMIT 1");
+            $dupStmt->bind_param("ssi", $email, $username, $id);
             $dupStmt->execute();
             $dupStmt->store_result();
             $duplicateExists = $dupStmt->num_rows > 0;
@@ -614,8 +609,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Determine which table to update
-            $table = ($user_type === 'admin_users') ? 'admin_users' : 'users';
-            $password_field = ($user_type === 'admin_users') ? 'password_hash' : 'password';
+            $table = 'users';
+            $password_field = 'password';
 
             $existsStmt = $conn->prepare("SELECT email, profile_picture FROM $table WHERE id = ?");
             $existsStmt->bind_param("i", $id);
@@ -682,23 +677,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Update existing user - admin_users doesn't have role column
-            if ($user_type === 'admin_users') {
-                if ($password) {
-                    $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, $password_field = ?, profile_picture = ? WHERE id = ?");
-                    $stmt->bind_param("ssssssi", $full_name, $contact_number, $email, $username, $password, $profile_picture, $id);
-                } else {
-                    $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, profile_picture = ? WHERE id = ?");
-                    $stmt->bind_param("sssssi", $full_name, $contact_number, $email, $username, $profile_picture, $id);
-                }
+            if ($password) {
+                $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, $password_field = ?, role = ?, profile_picture = ? WHERE id = ?");
+                $stmt->bind_param("sssssssi", $full_name, $contact_number, $email, $username, $password, $role, $profile_picture, $id);
             } else {
-                if ($password) {
-                    $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, $password_field = ?, role = ?, profile_picture = ? WHERE id = ?");
-                    $stmt->bind_param("sssssssi", $full_name, $contact_number, $email, $username, $password, $role, $profile_picture, $id);
-                } else {
-                    $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, role = ?, profile_picture = ? WHERE id = ?");
-                    $stmt->bind_param("ssssssi", $full_name, $contact_number, $email, $username, $role, $profile_picture, $id);
-                }
+                $stmt = $conn->prepare("UPDATE $table SET full_name = ?, contact_number = ?, email = ?, username = ?, role = ?, profile_picture = ? WHERE id = ?");
+                $stmt->bind_param("ssssssi", $full_name, $contact_number, $email, $username, $role, $profile_picture, $id);
             }
             if ($stmt->execute()) {
                 if ($is_superadmin_users_page) {
@@ -710,7 +694,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $resetLockStmt->close();
                     }
                 }
-                $userRoleDisplay = ($user_type === 'admin_users') ? 'admin' : $role;
+                $userRoleDisplay = $role;
                 logActivity('user_update', "User updated: $username", "Role: $userRoleDisplay | Email: $email", $id);
                 unset(
                     $_SESSION['edit_user_verified_email'],
@@ -742,7 +726,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
     }
     $id = (int)$_GET['id'];
     $userType = isset($_GET['user_type']) ? $_GET['user_type'] : '';
-    if (!in_array($userType, ['users', 'admin_users'], true)) {
+    if (!in_array($userType, ['users'], true)) {
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Invalid user type']);
         exit();
@@ -752,7 +736,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
         echo json_encode(['error' => 'You can only edit your own profile.']);
         exit();
     }
-    $table = ($userType === 'admin_users') ? 'admin_users' : 'users';
+    $table = 'users';
     $stmt = $conn->prepare("SELECT *, '$table' as user_type FROM $table WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
@@ -760,10 +744,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
     $user = $result->fetch_assoc();
     $stmt->close();
     if ($user) {
-        // Ensure role field exists for admin_users (they don't have a role column)
-        if ($table === 'admin_users' && !isset($user['role'])) {
-            $user['role'] = 'admin';
-        }
         header('Content-Type: application/json');
         echo json_encode($user);
         exit();
@@ -790,6 +770,7 @@ $offset = ($page - 1) * $table_limit;
 $params = [];
 $types = '';
 $where_clauses = [];
+$users_base_where = "1=1";
 
 // Add search condition if search query is provided
 if (!empty($search_query)) {
@@ -800,20 +781,11 @@ if (!empty($search_query)) {
     $types .= 'ssss';
 }
 
-// Build the query - UNION both admin_users and users tables
+// Build the query
 $query = "SELECT id, full_name, contact_number, email, username, role, profile_picture, last_login, created_at, updated_at, COALESCE(email_verified, 1) AS email_verified_status, 'users' as user_type FROM users";
+$query .= " WHERE " . $users_base_where;
 if (!empty($where_clauses)) {
-    $query .= " WHERE " . implode(" AND ", $where_clauses);
-}
-$query .= " UNION ALL ";
-$query .= "SELECT id, full_name, contact_number, email, username, 'admin' as role, profile_picture, last_login, created_at, updated_at, COALESCE(is_verified, 0) AS email_verified_status, 'admin_users' as user_type FROM admin_users";
-if (!empty($where_clauses)) {
-    $query .= " WHERE " . implode(" AND ", $where_clauses);
-    // Add parameters for second query (admin_users table)
-    if (!empty($search_query)) {
-        $params = array_merge($params, [$search_like, $search_like, $search_like, $search_like]);
-        $types .= 'ssss';
-    }
+    $query .= " AND " . implode(" AND ", $where_clauses);
 }
 
 // Validate and set sort parameter
@@ -850,18 +822,12 @@ $result = $stmt->get_result();
 $users = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 $stmt->close();
 
-// Fetch total count for pagination - count from both tables
-$count_query = "SELECT COUNT(*) as total FROM (
-    SELECT id FROM users";
+// Fetch total count for pagination
+$count_query = "SELECT COUNT(*) as total FROM users";
+$count_query .= " WHERE " . $users_base_where;
 if (!empty($where_clauses)) {
-    $count_query .= " WHERE " . implode(" AND ", $where_clauses);
+    $count_query .= " AND " . implode(" AND ", $where_clauses);
 }
-$count_query .= " UNION ALL 
-    SELECT id FROM admin_users";
-if (!empty($where_clauses)) {
-    $count_query .= " WHERE " . implode(" AND ", $where_clauses);
-}
-$count_query .= ") as combined_users";
 $count_stmt = $conn->prepare($count_query);
 if (!empty($params) && !empty($types)) {
     // For count query, we need to remove the LIMIT parameters but keep search parameters
@@ -1686,12 +1652,9 @@ $count_stmt->close();
                                             $targetRole = strtolower((string)($user['role'] ?? ''));
                                             $targetUserType = (string)($user['user_type'] ?? 'users');
                                             $canEditRow = canEditManagedProfile((int)$user['id'], $targetUserType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type);
-                                            if ($targetUserType === 'admin_users' && strtolower((string)($user['username'] ?? '')) === 'superadmin') {
-                                                $targetRole = 'superadmin';
-                                            }
                                             $canDeleteRow = $is_superadmin_users_page
                                                 ? in_array($targetRole, ['admin', 'staff'], true)
-                                                : ($targetUserType === 'users' && $targetRole === 'staff');
+                                                : ($targetRole === 'staff');
                                             $canResetAttemptsRow = $is_superadmin_users_page && in_array($targetRole, ['admin', 'staff'], true);
                                             ?>
                                             <div class="d-flex gap-1 justify-content-center">
@@ -2570,7 +2533,7 @@ $count_stmt->close();
                 syncSubmitState();
                 return;
             }
-            if (!userId || !['users', 'admin_users'].includes(userType)) {
+            if (!userId || !['users'].includes(userType)) {
                 showToast('Invalid user context. Please reopen the modal.', 'danger');
                 return;
             }
@@ -2626,7 +2589,7 @@ $count_stmt->close();
                 showToast('Please enter the 6-digit OTP.', 'warning');
                 return;
             }
-            if (!userId || !['users', 'admin_users'].includes(userType)) {
+            if (!userId || !['users'].includes(userType)) {
                 showToast('Invalid user context. Please reopen the modal.', 'danger');
                 return;
             }

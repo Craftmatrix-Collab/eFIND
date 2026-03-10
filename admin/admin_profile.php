@@ -9,8 +9,8 @@ if (!isLoggedIn()) {
 }
 
 // Fetch admin details from the database
-$user_id = $_SESSION['user_id'];
-$query = "SELECT * FROM admin_users WHERE id = ?";
+$user_id = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
+$query = "SELECT * FROM users WHERE id = ?";
 $stmt = $conn->prepare($query);
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
@@ -106,7 +106,7 @@ $user = $result->fetch_assoc();
                         </div>
                         <div class="mb-3 text-start">
                             <label class="form-label">Name:</label>
-                            <p class="form-control-static"><?php echo htmlspecialchars($user['name']); ?></p>
+                            <p class="form-control-static"><?php echo htmlspecialchars($user['full_name']); ?></p>
                         </div>
                         <div class="mb-3 text-start">
                             <label class="form-label">Email:</label>

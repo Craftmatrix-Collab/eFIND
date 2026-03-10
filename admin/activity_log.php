@@ -203,10 +203,9 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     }
 
     // Build query with filters for print
-    $printQuery = "SELECT al.*, u.username as user_username, au.username as admin_username, {$effectiveActionSql} AS effective_action
+    $printQuery = "SELECT al.*, u.username as user_username, u.username as admin_username, {$effectiveActionSql} AS effective_action
                    FROM activity_logs al
                    LEFT JOIN users u ON al.user_id = u.id
-                   LEFT JOIN admin_users au ON al.user_id = au.id
                    WHERE 1=1";
     $printConditions = [];
     $printParams = [];
@@ -421,9 +420,9 @@ $where_clauses = [];
 // Add search condition if search query is provided
 if (!empty($search_query)) {
     $search_like = "%" . $search_query . "%";
-    $where_clauses[] = "(al.user_name LIKE ? OR u.username LIKE ? OR au.username LIKE ? OR al.action LIKE ? OR al.description LIKE ? OR al.document_type LIKE ? OR al.details LIKE ? OR al.user_role LIKE ?)";
-    $params = array_merge($params, [$search_like, $search_like, $search_like, $search_like, $search_like, $search_like, $search_like, $search_like]);
-    $types .= 'ssssssss';
+    $where_clauses[] = "(al.user_name LIKE ? OR u.username LIKE ? OR al.action LIKE ? OR al.description LIKE ? OR al.document_type LIKE ? OR al.details LIKE ? OR al.user_role LIKE ?)";
+    $params = array_merge($params, [$search_like, $search_like, $search_like, $search_like, $search_like, $search_like, $search_like]);
+    $types .= 'sssssss';
 }
 
 // Add filter conditions
@@ -434,11 +433,10 @@ if (!empty($filter_action)) {
 }
 
 if (!empty($filter_user)) {
-    $where_clauses[] = "(al.user_name LIKE ? OR u.username LIKE ? OR au.username LIKE ?)";
+    $where_clauses[] = "(al.user_name LIKE ? OR u.username LIKE ?)";
     $params[] = "%$filter_user%";
     $params[] = "%$filter_user%";
-    $params[] = "%$filter_user%";
-    $types .= 'sss';
+    $types .= 'ss';
 }
 
 if (!empty($filter_user_role)) {
@@ -454,10 +452,9 @@ if (!empty($filter_date)) {
 }
 
 // Build the query
-$query = "SELECT al.*, u.username as user_username, au.username as admin_username, {$effectiveActionSql} AS effective_action
+$query = "SELECT al.*, u.username as user_username, u.username as admin_username, {$effectiveActionSql} AS effective_action
           FROM activity_logs al
           LEFT JOIN users u ON al.user_id = u.id
-          LEFT JOIN admin_users au ON al.user_id = au.id
           WHERE 1=1";
 
 if (!empty($where_clauses)) {
@@ -501,7 +498,7 @@ $logs = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 $stmt->close();
 
 // Fetch total count for pagination
-$count_query = "SELECT COUNT(*) as total FROM activity_logs al LEFT JOIN users u ON al.user_id = u.id LEFT JOIN admin_users au ON al.user_id = au.id WHERE 1=1";
+$count_query = "SELECT COUNT(*) as total FROM activity_logs al LEFT JOIN users u ON al.user_id = u.id WHERE 1=1";
 if (!empty($where_clauses)) {
     $count_query .= " AND " . implode(" AND ", $where_clauses);
 }
@@ -549,8 +546,8 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
 
     // If name/role missing, try to fetch from DB
     if ((!$userName || !$userRole) && $userId) {
-        // Try users table then admin_users
-        $tables = ['users', 'admin_users'];
+        // Resolve from users table
+        $tables = ['users'];
         foreach ($tables as $t) {
             $q = "SELECT COALESCE(full_name, username) AS name, COALESCE(role, '') AS role FROM $t WHERE id = ? LIMIT 1";
             if ($stmt = $conn->prepare($q)) {

@@ -115,7 +115,7 @@ function ensureLoginAccountLockColumns() {
         return;
     }
 
-    foreach (['admin_users', 'users'] as $table) {
+    foreach (['users'] as $table) {
         $failedAttemptsCol = $conn->query("SHOW COLUMNS FROM {$table} LIKE 'failed_login_attempts'");
         if (!$failedAttemptsCol || (int)$failedAttemptsCol->num_rows === 0) {
             if (!$conn->query("ALTER TABLE {$table} ADD COLUMN failed_login_attempts INT NOT NULL DEFAULT 0")) {
@@ -172,37 +172,14 @@ function getLoginAccountByUsername($username) {
 
     ensureLoginAccountLockColumns();
 
-    $adminStmt = $conn->prepare("SELECT id, username, failed_login_attempts, account_locked, lockout_until, lockout_level, failed_window_started_at FROM admin_users WHERE username = ? LIMIT 1");
-    if ($adminStmt) {
-        $adminStmt->bind_param("s", $username);
-        $adminStmt->execute();
-        $adminResult = $adminStmt->get_result();
-        if ($adminResult && $adminResult->num_rows === 1) {
-            $row = $adminResult->fetch_assoc();
-            $adminStmt->close();
-            return [
-                'id' => (int)($row['id'] ?? 0),
-                'username' => (string)($row['username'] ?? ''),
-                'user_role' => 'admin',
-                'user_type' => 'admin_users',
-                'failed_login_attempts' => (int)($row['failed_login_attempts'] ?? 0),
-                'account_locked' => (int)($row['account_locked'] ?? 0),
-                'lockout_until' => (string)($row['lockout_until'] ?? ''),
-                'lockout_level' => (int)($row['lockout_level'] ?? 0),
-                'failed_window_started_at' => (string)($row['failed_window_started_at'] ?? ''),
-            ];
-        }
-        $adminStmt->close();
-    }
-
-    $staffStmt = $conn->prepare("SELECT id, username, role, failed_login_attempts, account_locked, lockout_until, lockout_level, failed_window_started_at FROM users WHERE username = ? LIMIT 1");
-    if ($staffStmt) {
-        $staffStmt->bind_param("s", $username);
-        $staffStmt->execute();
-        $staffResult = $staffStmt->get_result();
-        if ($staffResult && $staffResult->num_rows === 1) {
-            $row = $staffResult->fetch_assoc();
-            $staffStmt->close();
+    $stmt = $conn->prepare("SELECT id, username, role, failed_login_attempts, account_locked, lockout_until, lockout_level, failed_window_started_at FROM users WHERE username = ? LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param("s", $username);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result && $result->num_rows === 1) {
+            $row = $result->fetch_assoc();
+            $stmt->close();
             return [
                 'id' => (int)($row['id'] ?? 0),
                 'username' => (string)($row['username'] ?? ''),
@@ -215,7 +192,7 @@ function getLoginAccountByUsername($username) {
                 'failed_window_started_at' => (string)($row['failed_window_started_at'] ?? ''),
             ];
         }
-        $staffStmt->close();
+        $stmt->close();
     }
 
     return null;
@@ -224,7 +201,7 @@ function getLoginAccountByUsername($username) {
 function clearExpiredLoginLock($table, $userId) {
     global $conn;
 
-    if (!in_array($table, ['admin_users', 'users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
+    if (!in_array($table, ['users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
         return;
     }
 
@@ -242,7 +219,7 @@ function clearExpiredLoginLock($table, $userId) {
 function resetFailedLoginAttempts($table, $userId) {
     global $conn;
 
-    if (!in_array($table, ['admin_users', 'users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
+    if (!in_array($table, ['users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
         return;
     }
 
@@ -269,7 +246,7 @@ function getCurrentLoginLockState($table, $userId) {
         'lock_level' => 0,
     ];
 
-    if (!in_array($table, ['admin_users', 'users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
+    if (!in_array($table, ['users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
         return $state;
     }
 
@@ -353,7 +330,7 @@ function registerFailedLoginAttempt($table, $userId) {
         'lock_level' => 0,
     ];
 
-    if (!in_array($table, ['admin_users', 'users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
+    if (!in_array($table, ['users'], true) || (int)$userId <= 0 || !isset($conn) || !($conn instanceof mysqli)) {
         return $state;
     }
 
@@ -477,12 +454,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails, $accountState['id'], $accountState['user_role']);
             logLoginActivity($accountState['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $accountState['username'], $accountState['user_role']);
         } else {
-            $loginSuccessful = false;
-        
-            // Try admin login first
-            $query = "SELECT id, username, password_hash, full_name, profile_picture, is_verified, failed_login_attempts, account_locked FROM admin_users WHERE username = ?";
+            $query = "SELECT id, username, password, full_name, profile_picture, role, COALESCE(email_verified, 1) AS email_verified, failed_login_attempts, account_locked FROM users WHERE username = ?";
             $stmt = $conn->prepare($query);
-        
+
             if ($stmt) {
                 $stmt->bind_param("s", $username);
                 $stmt->execute();
@@ -490,79 +464,105 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
                 if ($result->num_rows == 1) {
                     $user = $result->fetch_assoc();
-                    $adminLockState = getCurrentLoginLockState('admin_users', (int)$user['id']);
+                    $accountRole = strtolower(trim((string)($user['role'] ?? 'staff')));
+                    if ($accountRole === 'administrator') {
+                        $accountRole = 'admin';
+                    }
+                    if ($accountRole === '') {
+                        $accountRole = 'staff';
+                    }
+                    $isAdminRole = in_array($accountRole, ['admin', 'superadmin'], true);
+                    $loginAccountType = $isAdminRole ? 'admin' : 'staff';
+                    $lockState = getCurrentLoginLockState('users', (int)$user['id']);
 
-                    if (!empty($adminLockState['is_locked'])) {
+                    if (!empty($lockState['is_locked'])) {
                         $error = buildAccountLockedErrorMessage(
-                            $adminLockState['seconds_remaining'] ?? null,
-                            $adminLockState['lockout_until'] ?? null,
-                            $adminLockState['lock_level'] ?? null
+                            $lockState['seconds_remaining'] ?? null,
+                            $lockState['lockout_until'] ?? null,
+                            $lockState['lock_level'] ?? null
                         );
                         $lockDetails = 'Account locked';
-                        if (!empty($adminLockState['seconds_remaining'])) {
-                            $lockDetails .= ' (' . formatLoginLockRemainingTime((int)$adminLockState['seconds_remaining']) . ' remaining)';
+                        if (!empty($lockState['seconds_remaining'])) {
+                            $lockDetails .= ' (' . formatLoginLockRemainingTime((int)$lockState['seconds_remaining']) . ' remaining)';
                         }
-                        logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails, $user['id'], 'admin');
-                        logLoginActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
-                        $loginSuccessful = true; // Mark as processed to skip staff login
-                    } elseif (password_verify($password, $user['password_hash'])) {
-                        resetFailedLoginAttempts('admin_users', (int)$user['id']);
+                        logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails, $user['id'], $accountRole);
+                        logLoginActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
+                    } elseif (password_verify($password, $user['password'])) {
+                        resetFailedLoginAttempts('users', (int)$user['id']);
 
-                        // Block login if email is not yet verified
-                        if (!$user['is_verified']) {
+                        if ($isAdminRole && empty($user['email_verified'])) {
                             $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
-                            logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified', $user['id'], 'admin');
-                            logLoginActivity($user['id'], 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
-                            $loginSuccessful = true; // Mark as processed to skip staff login
+                            logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified', $user['id'], $accountRole);
+                            logLoginActivity($user['id'], 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
                         } else {
-                            updateAccountLastLogin($conn, 'admin', (int)$user['id']);
-
-                            // Regenerate session ID to prevent session fixation
+                            updateAccountLastLogin($conn, $loginAccountType, (int)$user['id']);
                             session_regenerate_id(true);
 
-                            // Set session variables for admin
-                            $_SESSION['admin_id'] = $user['id'];
-                            $_SESSION['admin_username'] = $user['username'];
-                            $_SESSION['admin_full_name'] = $user['full_name'];
-                            $_SESSION['admin_profile_picture'] = $user['profile_picture'];
-                            $_SESSION['admin_logged_in'] = true;
-
-                            // Set these for compatibility
                             $_SESSION['user_id'] = $user['id'];
-                            $_SESSION['role'] = 'admin';
+                            $_SESSION['username'] = $user['username'];
                             $_SESSION['full_name'] = $user['full_name'];
                             $_SESSION['profile_picture'] = $user['profile_picture'];
+                            $_SESSION['role'] = $accountRole;
+                            $_SESSION['logged_in'] = true;
 
-                            $primaryToken = registerPrimaryLoginSession($conn, 'admin', (int)$user['id'], (string)$user['username']);
+                            if ($isAdminRole) {
+                                $_SESSION['admin_id'] = $user['id'];
+                                $_SESSION['admin_username'] = $user['username'];
+                                $_SESSION['admin_full_name'] = $user['full_name'];
+                                $_SESSION['admin_profile_picture'] = $user['profile_picture'];
+                                $_SESSION['admin_logged_in'] = true;
+
+                                unset(
+                                    $_SESSION['staff_id'],
+                                    $_SESSION['staff_username'],
+                                    $_SESSION['staff_full_name'],
+                                    $_SESSION['staff_profile_picture'],
+                                    $_SESSION['staff_role'],
+                                    $_SESSION['staff_logged_in']
+                                );
+                            } else {
+                                $_SESSION['staff_id'] = $user['id'];
+                                $_SESSION['staff_username'] = $user['username'];
+                                $_SESSION['staff_full_name'] = $user['full_name'];
+                                $_SESSION['staff_profile_picture'] = $user['profile_picture'];
+                                $_SESSION['staff_role'] = $accountRole;
+                                $_SESSION['staff_logged_in'] = true;
+
+                                unset(
+                                    $_SESSION['admin_id'],
+                                    $_SESSION['admin_username'],
+                                    $_SESSION['admin_full_name'],
+                                    $_SESSION['admin_profile_picture'],
+                                    $_SESSION['admin_logged_in']
+                                );
+                            }
+
+                            $primaryToken = registerPrimaryLoginSession($conn, $loginAccountType, (int)$user['id'], (string)$user['username']);
                             if ($primaryToken === null) {
                                 $error = "Unable to start secure session. Please try again.";
-                                logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], 'admin');
-                                logLoginActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                                logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], $accountRole);
+                                logLoginActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
                                 session_unset();
                                 session_destroy();
-                                $loginSuccessful = true;
                             } else {
-                                // Log successful admin login
-                                logLoginAttempt($username, $user_ip, 'SUCCESS', 'Admin login', $user['id'], 'admin');
-                                logLoginActivity($user['id'], 'login', 'Admin user logged in successfully', 'system', $user_ip, "Admin: {$user['full_name']}", $user['username'], 'admin');
+                                $successLabel = $isAdminRole ? 'Admin login' : 'Staff login';
+                                $activityLabel = $isAdminRole ? 'Admin user logged in successfully' : 'User logged in successfully';
+                                logLoginAttempt($username, $user_ip, 'SUCCESS', $successLabel, $user['id'], $accountRole);
+                                logLoginActivity($user['id'], 'login', $activityLabel, 'system', $user_ip, "User: {$user['full_name']}, Role: {$accountRole}", $user['username'], $accountRole);
 
-                                $loginSuccessful = true;
-                                
-                                // Redirect to dashboard or original requested URL
                                 $_SESSION['show_login_welcome_modal'] = true;
                                 header("Location: " . getSafeRedirect());
                                 exit();
                             }
                         }
                     } else {
-                        // Admin account exists but password is wrong - stop here, don't try staff login
-                        $attemptState = registerFailedLoginAttempt('admin_users', (int)$user['id']);
-                        $details = !empty($attemptState['is_locked']) ? 'Invalid admin password - account locked' : 'Invalid admin password';
+                        $attemptState = registerFailedLoginAttempt('users', (int)$user['id']);
+                        $details = !empty($attemptState['is_locked']) ? 'Invalid password - account locked' : 'Invalid password';
                         if (!empty($attemptState['is_locked']) && !empty($attemptState['seconds_remaining'])) {
                             $details .= ' (' . formatLoginLockRemainingTime((int)$attemptState['seconds_remaining']) . ')';
                         }
-                        logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], 'admin');
-                        logLoginActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], 'admin');
+                        logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], $accountRole);
+                        logLoginActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
                         $error = !empty($attemptState['is_locked'])
                             ? buildAccountLockedErrorMessage(
                                 $attemptState['seconds_remaining'] ?? null,
@@ -570,106 +570,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 $attemptState['lock_level'] ?? null
                             )
                             : buildWrongPasswordErrorMessage($attemptState['remaining_attempts']);
-                        $loginSuccessful = true; // Mark as "processed" to skip staff login
                     }
-                }
-                $stmt->close();
-            }
-
-            // Only try staff login if username was NOT found in admin_users table
-            if (!$loginSuccessful) {
-                $query = "SELECT id, username, password, full_name, profile_picture, role, failed_login_attempts, account_locked FROM users WHERE username = ?";
-                $stmt = $conn->prepare($query);
-            
-                if ($stmt) {
-                    $stmt->bind_param("s", $username);
-                    $stmt->execute();
-                    $result = $stmt->get_result();
-
-                    if ($result->num_rows == 1) {
-                        $user = $result->fetch_assoc();
-                        $staffLockState = getCurrentLoginLockState('users', (int)$user['id']);
-
-                        if (!empty($staffLockState['is_locked'])) {
-                            $error = buildAccountLockedErrorMessage(
-                                $staffLockState['seconds_remaining'] ?? null,
-                                $staffLockState['lockout_until'] ?? null,
-                                $staffLockState['lock_level'] ?? null
-                            );
-                            $lockDetails = 'Account locked';
-                            if (!empty($staffLockState['seconds_remaining'])) {
-                                $lockDetails .= ' (' . formatLoginLockRemainingTime((int)$staffLockState['seconds_remaining']) . ' remaining)';
-                            }
-                            logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails, $user['id'], $user['role']);
-                            logLoginActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
-                        } elseif (password_verify($password, $user['password'])) {
-                            resetFailedLoginAttempts('users', (int)$user['id']);
-                            updateAccountLastLogin($conn, 'staff', (int)$user['id']);
-
-                            // Regenerate session ID to prevent session fixation
-                            session_regenerate_id(true);
-
-                            // Set session variables for staff
-                            $_SESSION['user_id'] = $user['id'];
-                            $_SESSION['username'] = $user['username'];
-                            $_SESSION['full_name'] = $user['full_name'];
-                            $_SESSION['profile_picture'] = $user['profile_picture'];
-                            $_SESSION['role'] = $user['role'];
-                            $_SESSION['logged_in'] = true;
-
-                            // For backward compatibility with admin sessions
-                            $_SESSION['staff_id'] = $user['id'];
-                            $_SESSION['staff_username'] = $user['username'];
-                            $_SESSION['staff_full_name'] = $user['full_name'];
-                            $_SESSION['staff_profile_picture'] = $user['profile_picture'];
-                            $_SESSION['staff_role'] = $user['role'];
-                            $_SESSION['staff_logged_in'] = true;
-
-                            $primaryToken = registerPrimaryLoginSession($conn, 'staff', (int)$user['id'], (string)$user['username']);
-                            if ($primaryToken === null) {
-                                $error = "Unable to start secure session. Please try again.";
-                                logLoginAttempt($username, $user_ip, 'FAILED', 'Primary session initialization failed', $user['id'], $user['role']);
-                                logLoginActivity($user['id'], 'failed_login', 'Primary session initialization failed', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
-                                session_unset();
-                                session_destroy();
-                            } else {
-                                // Log successful staff login
-                                logLoginAttempt($username, $user_ip, 'SUCCESS', 'Staff login', $user['id'], $user['role']);
-                                logLoginActivity($user['id'], 'login', 'User logged in successfully', 'system', $user_ip, "User: {$user['full_name']}, Role: {$user['role']}", $user['username'], $user['role']);
-
-                                // Redirect to dashboard or original requested URL
-                                $_SESSION['show_login_welcome_modal'] = true;
-                                header("Location: " . getSafeRedirect());
-                                exit();
-                            }
-                        } else {
-                            $attemptState = registerFailedLoginAttempt('users', (int)$user['id']);
-                            $details = !empty($attemptState['is_locked']) ? 'Invalid password - account locked' : 'Invalid password';
-                            if (!empty($attemptState['is_locked']) && !empty($attemptState['seconds_remaining'])) {
-                                $details .= ' (' . formatLoginLockRemainingTime((int)$attemptState['seconds_remaining']) . ')';
-                            }
-                            logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], $user['role']);
-                            logLoginActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], $user['role']);
-                            $error = !empty($attemptState['is_locked'])
-                                ? buildAccountLockedErrorMessage(
-                                    $attemptState['seconds_remaining'] ?? null,
-                                    $attemptState['lockout_until'] ?? null,
-                                    $attemptState['lock_level'] ?? null
-                                )
-                                : buildWrongPasswordErrorMessage($attemptState['remaining_attempts']);
-                        }
-                    } else {
-                        logLoginAttempt($username, $user_ip, 'FAILED', 'Username not found');
-                        logLoginActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
-                        $error = "Invalid username or password.";
-                    }
-                 
-                    $stmt->close();
                 } else {
-                    $error = "Database error. Please try again later.";
-                    logLoginAttempt($username, $user_ip, 'FAILED', 'Database error');
-                    logLoginActivity(null, 'failed_login', 'Database error during login', 'system', $user_ip, "Username: $username");
+                    logLoginAttempt($username, $user_ip, 'FAILED', 'Username not found');
+                    logLoginActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
+                    $error = "Invalid username or password.";
                 }
+
+                $stmt->close();
+            } else {
+                $error = "Database error. Please try again later.";
+                logLoginAttempt($username, $user_ip, 'FAILED', 'Database error');
+                logLoginActivity(null, 'failed_login', 'Database error during login', 'system', $user_ip, "Username: $username");
             }
         }
     }
@@ -717,23 +629,13 @@ function logLoginActivity($user_id, $action, $description, $document_type = 'sys
     global $conn;
     
     try {
-        // Use the provided username directly to avoid ID collisions between users/admin_users tables
+        // Use the provided username directly when available.
         $user_name = $known_username;
 
         // Only do a DB lookup if username was not passed in
         if (!$user_name && $user_id) {
-            // Check admin_users first, then fall back to users (staff)
-            $user_stmt = $conn->prepare("SELECT username FROM admin_users WHERE id = ?");
-            $user_stmt->bind_param("i", $user_id);
-            $user_stmt->execute();
-            $user_result = $user_stmt->get_result();
-            if ($user_result->num_rows > 0) {
-                $user_name = $user_result->fetch_assoc()['username'];
-            }
-            $user_stmt->close();
-
-            if (!$user_name) {
-                $user_stmt = $conn->prepare("SELECT username FROM users WHERE id = ?");
+            $user_stmt = $conn->prepare("SELECT username FROM users WHERE id = ?");
+            if ($user_stmt) {
                 $user_stmt->bind_param("i", $user_id);
                 $user_stmt->execute();
                 $user_result = $user_stmt->get_result();

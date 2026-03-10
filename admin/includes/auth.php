@@ -116,7 +116,7 @@ function buildPrimaryAccountKey($accountType, $accountId) {
 function resolveAccountTable($accountType) {
     $type = strtolower((string)$accountType);
     if ($type === 'admin') {
-        return 'admin_users';
+        return 'users';
     }
     if ($type === 'staff') {
         return 'users';
@@ -151,7 +151,7 @@ function updateAccountLastLogin(mysqli $conn, $accountType, $accountId) {
 function ensurePasswordChangedAtColumn(mysqli $conn, $table) {
     static $checkedTables = [];
 
-    if (!in_array($table, ['admin_users', 'users'], true)) {
+    if (!in_array($table, ['users'], true)) {
         return false;
     }
 

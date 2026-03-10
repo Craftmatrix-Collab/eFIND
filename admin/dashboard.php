@@ -16,7 +16,7 @@ date_default_timezone_set('Asia/Manila');
 $executive_orders_count = $conn->query("SELECT COUNT(*) FROM executive_orders")->fetch_row()[0];
 $resolutions_count = $conn->query("SELECT COUNT(*) FROM resolutions")->fetch_row()[0];
 $meeting_minutes_count = $conn->query("SELECT COUNT(*) FROM minutes_of_meeting")->fetch_row()[0];
-$users_count = $conn->query("SELECT (SELECT COUNT(*) FROM users) + (SELECT COUNT(*) FROM admin_users)")->fetch_row()[0];
+$users_count = $conn->query("SELECT COUNT(*) FROM users")->fetch_row()[0];
 // Get table row limit from request or set default
 $table_limit = isset($_GET['table_limit']) ? intval($_GET['table_limit']) : 5;
 $valid_limits = [5, 10, 25, 50, 100];
@@ -247,13 +247,12 @@ $base_query = "
             NULL as document_status,
             o.description as document_description,
             o.content,
-            COALESCE(u.full_name, au.full_name) as uploaded_by,
+            COALESCE(u.full_name, o.uploaded_by) as uploaded_by,
             o.date_posted as date_posted,
             o.image_path,
             {$executiveOrderRelevanceSql} as relevance_score
         FROM executive_orders o
         LEFT JOIN users u ON o.uploaded_by = u.username
-        LEFT JOIN admin_users au ON o.uploaded_by = au.username
         UNION ALL
         SELECT
             'resolution' as doc_type,
@@ -265,13 +264,12 @@ $base_query = "
             NULL as document_status,
             r.description as document_description,
             r.content,
-            COALESCE(u.full_name, au.full_name) as uploaded_by,
+            COALESCE(u.full_name, r.uploaded_by) as uploaded_by,
             r.date_posted as date_posted,
             r.image_path,
             {$resolutionRelevanceSql} as relevance_score
         FROM resolutions r
         LEFT JOIN users u ON r.uploaded_by = u.username
-        LEFT JOIN admin_users au ON r.uploaded_by = au.username
         UNION ALL
         SELECT
             'meeting' as doc_type,
@@ -283,13 +281,12 @@ $base_query = "
             NULL as document_status,
             NULL as document_description,
             m.content,
-            COALESCE(u.full_name, au.full_name) as uploaded_by,
+            COALESCE(u.full_name, m.uploaded_by) as uploaded_by,
             m.date_posted as date_posted,
             m.image_path,
             {$minutesRelevanceSql} as relevance_score
         FROM minutes_of_meeting m
         LEFT JOIN users u ON m.uploaded_by = u.username
-        LEFT JOIN admin_users au ON m.uploaded_by = au.username
 ";
 $base_query .= "
     ) as combined

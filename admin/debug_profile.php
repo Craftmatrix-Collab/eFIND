@@ -80,7 +80,7 @@ if (!isset($_SESSION['admin_id']) && !isset($_SESSION['user_id'])) {
     try {
         $user_id = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
         $is_admin = isset($_SESSION['admin_id']);
-        $table = $is_admin ? 'admin_users' : 'users';
+        $table = 'users';
         
         echo "User ID: $user_id\n";
         echo "User Type: " . ($is_admin ? 'Admin' : 'Staff') . "\n";

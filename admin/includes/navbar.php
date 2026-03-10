@@ -22,13 +22,8 @@ if ($_navbar_session_role === 'superadmin' || (function_exists('isSuperAdmin') &
 }
 if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id']))) {
     $_navbar_uid   = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
-    $_navbar_table = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
-    $_navbar_select_fields = "id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at";
-    if ($_navbar_table === 'admin_users') {
-        $_navbar_select_fields .= ", is_verified";
-    } else {
-        $_navbar_select_fields .= ", NULL AS is_verified";
-    }
+    $_navbar_table = 'users';
+    $_navbar_select_fields = "id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at, COALESCE(email_verified, 0) AS is_verified";
     $_navbar_stmt  = $conn->prepare("SELECT {$_navbar_select_fields} FROM {$_navbar_table} WHERE id = ?");
     if ($_navbar_stmt) {
         $_navbar_stmt->bind_param("i", $_navbar_uid);

@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     if (empty($error)) {
         // Check if username or email already exists
-        $check_query = "SELECT id FROM admin_users WHERE username = ? OR email = ?";
+        $check_query = "SELECT id FROM users WHERE username = ? OR email = ?";
         $check_stmt = $conn->prepare($check_query);
         $check_stmt->bind_param("ss", $username, $email);
         $check_stmt->execute();
@@ -89,10 +89,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $token_expiry = date("Y-m-d H:i:s", strtotime('+24 hours'));
 
                 // Insert new admin (not verified yet — requires email confirmation)
-                $query = "INSERT INTO admin_users (full_name, email, username, password_hash, contact_number, profile_picture, is_verified, verification_token, token_expiry) 
-                          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)";
+                $newRole = strtolower($username) === 'superadmin' ? 'superadmin' : 'admin';
+                $query = "INSERT INTO users (full_name, email, username, password, contact_number, profile_picture, email_verified, verification_token, token_expiry, role) 
+                          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)";
                 $stmt = $conn->prepare($query);
-                $stmt->bind_param("ssssssss", $full_name, $email, $username, $password_hash, $contact_number, $profile_picture, $verification_token, $token_expiry);
+                $stmt->bind_param("sssssssss", $full_name, $email, $username, $password_hash, $contact_number, $profile_picture, $verification_token, $token_expiry, $newRole);
 
                 if ($stmt->execute()) {
                     $stmt->close();

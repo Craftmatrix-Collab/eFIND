@@ -23,7 +23,7 @@ if (!isLoggedIn()) {
 try {
     $user_id = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
     $is_admin = isset($_SESSION['admin_id']);
-    $table = $is_admin ? 'admin_users' : 'users';
+    $table = 'users';
     $sessionRole = strtolower((string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? '')));
     $roleLabel = 'Staff';
     if ($sessionRole === 'superadmin' || (function_exists('isSuperAdmin') && isSuperAdmin())) {
@@ -42,12 +42,7 @@ try {
         throw new Exception("Database connection lost. Please try again.");
     }
     
-    $selectColumns = "id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at";
-    if ($table === 'admin_users') {
-        $selectColumns .= ", is_verified";
-    } else {
-        $selectColumns .= ", NULL AS is_verified";
-    }
+    $selectColumns = "id, full_name, username, email, contact_number, profile_picture, last_login, created_at, updated_at, COALESCE(email_verified, 0) AS is_verified";
     $query = "SELECT {$selectColumns} FROM $table WHERE id = ?";
     $stmt = $conn->prepare($query);
     

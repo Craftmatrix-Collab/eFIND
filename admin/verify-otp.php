@@ -32,9 +32,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
         $error = "Please enter a valid 6-digit OTP.";
     } else {
         // Check OTP in database
-        $user_table = $_SESSION['user_table'] ?? 'admin_users';
-        if (!in_array($user_table, ['admin_users', 'users'])) {
-            $user_table = 'admin_users';
+        $user_table = $_SESSION['user_table'] ?? 'users';
+        if (!in_array($user_table, ['users'], true)) {
+            $user_table = 'users';
         }
         $query = "SELECT id, username, reset_token, reset_expires FROM $user_table WHERE email = ?";
         $stmt = $conn->prepare($query);
@@ -102,9 +102,9 @@ if (isset($_POST['resend_otp'])) {
     $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
     
     // Update OTP in database
-    $user_table = $_SESSION['user_table'] ?? 'admin_users';
-    if (!in_array($user_table, ['admin_users', 'users'])) {
-        $user_table = 'admin_users';
+    $user_table = $_SESSION['user_table'] ?? 'users';
+    if (!in_array($user_table, ['users'], true)) {
+        $user_table = 'users';
     }
     $update_query = "UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE email = ?";
     $update_stmt = $conn->prepare($update_query);

@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Resolve actor/target profile context
     $actorId = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($_SESSION['user_id'] ?? 0);
-    $actorType = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
+    $actorType = 'users';
     $isActorAdmin = isset($_SESSION['admin_id']);
     $isActorSuperadmin = function_exists('isSuperAdmin') && isSuperAdmin();
 
@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($requestedUserType === '') {
         $requestedUserType = $actorType;
     }
-    if ($requestedUserId <= 0 || !in_array($requestedUserType, ['users', 'admin_users'], true)) {
+    if ($requestedUserId <= 0 || !in_array($requestedUserType, ['users'], true)) {
         if ($is_ajax) {
             header('Content-Type: application/json');
             echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
@@ -140,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $lookupStmt = $conn->prepare("SELECT id, username, full_name FROM $table WHERE id = ? LIMIT 1");
+        $lookupStmt = $conn->prepare("SELECT id, username, full_name, role FROM $table WHERE id = ? LIMIT 1");
         if (!$lookupStmt) {
             if ($is_ajax) {
                 header('Content-Type: application/json');
@@ -178,7 +178,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $primaryAccountType = $table === 'admin_users' ? 'admin' : 'staff';
+        $targetRole = strtolower((string)($targetUser['role'] ?? 'staff'));
+        $primaryAccountType = in_array($targetRole, ['admin', 'superadmin'], true) ? 'admin' : 'staff';
         $primaryAccountKey = buildPrimaryAccountKey($primaryAccountType, $userId);
 
         if (!$conn->begin_transaction()) {
@@ -318,13 +319,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $userType = $table;
-        $dupStmt = $conn->prepare("SELECT 1 FROM users WHERE email = ? AND NOT (? = 'users' AND id = ?) UNION ALL SELECT 1 FROM admin_users WHERE email = ? AND NOT (? = 'admin_users' AND id = ?) LIMIT 1");
+        $dupStmt = $conn->prepare("SELECT 1 FROM users WHERE email = ? AND id <> ? LIMIT 1");
         if (!$dupStmt) {
             error_log('Profile OTP duplicate-check prepare failed: ' . $conn->error);
             echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
             exit;
         }
-        $dupStmt->bind_param("ssissi", $emailForOtp, $userType, $userId, $emailForOtp, $userType, $userId);
+        $dupStmt->bind_param("si", $emailForOtp, $userId);
         if (!$dupStmt->execute()) {
             error_log('Profile OTP duplicate-check execute failed: ' . $dupStmt->error);
             $dupStmt->close();

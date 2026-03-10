@@ -50,35 +50,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
             } else {
                 $_SESSION['forgot_attempts']++;
 
-                // Search for the email in admin_users first, then staff users
+                // Search for the email in users
                 $user = null;
-                $user_table = null;
-                foreach (['admin_users', 'users'] as $tbl) {
-                    $extra = ($tbl === 'admin_users') ? ', is_verified' : '';
-                    $s = $conn->prepare("SELECT id, username, full_name{$extra} FROM $tbl WHERE email = ?");
-                    if ($s) {
-                        $s->bind_param("s", $email);
-                        $s->execute();
-                        $r = $s->get_result();
-                        if ($r->num_rows == 1) {
-                            $user = $r->fetch_assoc();
-                            $user_table = $tbl;
-                        }
-                        $s->close();
+                $user_table = 'users';
+                $s = $conn->prepare("SELECT id, username, full_name, role, email_verified FROM users WHERE email = ? LIMIT 1");
+                if ($s) {
+                    $s->bind_param("s", $email);
+                    $s->execute();
+                    $r = $s->get_result();
+                    if ($r->num_rows == 1) {
+                        $user = $r->fetch_assoc();
                     }
-                    if ($user) break;
+                    $s->close();
                 }
 
                 if ($user) {
                     // Block unverified admin accounts — they must verify email first
-                    if ($user_table === 'admin_users' && empty($user['is_verified'])) {
+                    $accountRole = strtolower((string)($user['role'] ?? 'staff'));
+                    if (in_array($accountRole, ['admin', 'superadmin'], true) && empty($user['email_verified'])) {
                         $error = 'Your account email is not verified. Please <a href="resend-verification.php">resend the verification email</a> and verify your account before resetting your password.';
                     } else {
                     // Generate a cryptographically secure 6-digit OTP
                     $reset_token = sprintf("%06d", random_int(0, 999999));
                     $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
 
-                    // Store OTP in correct table
+                    // Store OTP in users table
                     $update_stmt = $conn->prepare("UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE id = ?");
                     if (!$update_stmt) {
                         $error = "Database error. Please try again later.";

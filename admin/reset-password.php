@@ -11,7 +11,7 @@ $passwordPolicy = getPasswordPolicyClientConfig();
 function ensurePasswordResetAccountLockColumns($tableName) {
     global $conn;
 
-    if (!in_array($tableName, ['admin_users', 'users'], true) || !isset($conn) || !($conn instanceof mysqli)) {
+    if (!in_array($tableName, ['users'], true) || !isset($conn) || !($conn instanceof mysqli)) {
         return;
     }
 
@@ -42,21 +42,21 @@ if (isset($_SESSION['otp_verified']) && $_SESSION['otp_verified'] === true && is
     // OTP flow: user already verified via verify-otp.php
     $use_session_auth = true;
     $reset_user_id = (int) $_SESSION['reset_user_id'];
-    $user_table_param = $_SESSION['user_table'] ?? 'admin_users';
+    $user_table_param = $_SESSION['user_table'] ?? 'users';
     // Whitelist allowed tables
-    $allowed_tables = ['admin_users', 'users'];
+    $allowed_tables = ['users'];
     if (!in_array($user_table_param, $allowed_tables)) {
-        $user_table_param = 'admin_users';
+        $user_table_param = 'users';
     }
 } else {
     // Token-based flow (fallback)
     $token = trim($_GET['token'] ?? '');
-    $user_table_param = trim($_GET['table'] ?? 'admin_users');
+    $user_table_param = trim($_GET['table'] ?? 'users');
 
     // Whitelist allowed tables
-    $allowed_tables = ['admin_users', 'users'];
+    $allowed_tables = ['users'];
     if (!in_array($user_table_param, $allowed_tables)) {
-        $user_table_param = 'admin_users';
+        $user_table_param = 'users';
     }
 
     if (empty($token) || !preg_match('/^[a-f0-9]{64}$/', $token)) {
@@ -100,8 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
     if (empty($error)) {
         // Hash the password
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-        // admin_users stores password in 'password_hash'; staff users table uses 'password'
-        $pass_column = ($user_table_param === 'admin_users') ? 'password_hash' : 'password';
+        $pass_column = 'password';
         ensurePasswordResetAccountLockColumns($user_table_param);
         
         // Update password, clear reset token, and unlock account state.
@@ -115,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
                 if (function_exists('updateAccountPasswordChangedAt')) {
                     updateAccountPasswordChangedAt(
                         $conn,
-                        $user_table_param === 'admin_users' ? 'admin' : 'staff',
+                        'staff',
                         (int)$reset_user_id
                     );
                 }

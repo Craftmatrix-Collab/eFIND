@@ -17,14 +17,14 @@ if (!isLoggedIn()) {
 // Resolve actor/target profile context
 $is_superadmin = function_exists('isSuperAdmin') && isSuperAdmin();
 $actor_id = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($_SESSION['user_id'] ?? 0);
-$actor_type = isset($_SESSION['admin_id']) ? 'admin_users' : 'users';
+$actor_type = 'users';
 $target_user_id = $actor_id;
 $target_user_type = $actor_type;
 
 if ($is_superadmin) {
     $requested_user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
     $requested_user_type = trim((string)($_GET['user_type'] ?? ''));
-    if ($requested_user_id > 0 && in_array($requested_user_type, ['users', 'admin_users'], true)) {
+    if ($requested_user_id > 0 && in_array($requested_user_type, ['users'], true)) {
         $target_user_id = $requested_user_id;
         $target_user_type = $requested_user_type;
     }
@@ -51,9 +51,7 @@ if (!$user) {
 }
 
 $profileRoleLabel = 'Staff';
-if ($target_user_type === 'admin_users') {
-    $profileRoleLabel = strtolower((string)($user['username'] ?? '')) === 'superadmin' ? 'Superadmin' : 'Administrator';
-} elseif (!empty($user['role'])) {
+if (!empty($user['role'])) {
     $profileRoleLabel = ucwords(str_replace('_', ' ', (string)$user['role']));
 }
 

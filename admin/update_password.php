@@ -82,8 +82,8 @@ if (!$passwordValidation['is_valid']) {
 
 $isAdminSession = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true && isset($_SESSION['admin_id']);
 $accountType = $isAdminSession ? 'admin' : 'staff';
-$table = $isAdminSession ? 'admin_users' : 'users';
-$passwordColumn = $isAdminSession ? 'password_hash' : 'password';
+$table = 'users';
+$passwordColumn = 'password';
 $accountId = $isAdminSession
     ? (int)$_SESSION['admin_id']
     : (int)($_SESSION['staff_id'] ?? $_SESSION['user_id'] ?? 0);

@@ -637,19 +637,9 @@ class BarangayChatbotAPI {
                 $stmt->close();
             }
 
-            // Fall back to admin_users metadata only; keep FK user_id NULL for admin-only IDs.
             if ($resolvedUserId === null) {
-                $stmt = $this->db->prepare("SELECT username, full_name FROM admin_users WHERE id = ? LIMIT 1");
-                if ($stmt) {
-                    $stmt->bind_param("i", $candidateUserId);
-                    $stmt->execute();
-                    $result = $stmt->get_result();
-                    if ($row = $result->fetch_assoc()) {
-                        $userName = $row['full_name'] ?? $row['username'];
-                        $userRole = 'admin';
-                    }
-                    $stmt->close();
-                }
+                $userName = $_SESSION['admin_full_name'] ?? $_SESSION['full_name'] ?? $_SESSION['username'] ?? $userName;
+                $userRole = $_SESSION['role'] ?? (isset($_SESSION['admin_id']) ? 'admin' : $userRole);
             }
         }
         

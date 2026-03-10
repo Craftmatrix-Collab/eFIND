@@ -18,7 +18,7 @@ if (!isset($_SESSION['csrf_token'])) {
 try {
     $user_id = $_SESSION['admin_id'] ?? $_SESSION['user_id'];
     $is_admin = isset($_SESSION['admin_id']);
-    $table = $is_admin ? 'admin_users' : 'users';
+    $table = 'users';
     $query = "SELECT id, full_name, username, email, contact_number, profile_picture
               FROM $table
               WHERE id = ?";

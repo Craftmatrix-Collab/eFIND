@@ -8,8 +8,8 @@ $message = 'Invalid or missing verification token.';
 $token = trim($_GET['token'] ?? '');
 
 if (!empty($token) && preg_match('/^[a-f0-9]{64}$/', $token)) {
-    // Look up the token in admin_users
-    $stmt = $conn->prepare("SELECT id, full_name, is_verified, token_expiry FROM admin_users WHERE verification_token = ?");
+    // Look up the token in users
+    $stmt = $conn->prepare("SELECT id, full_name, email_verified, token_expiry FROM users WHERE verification_token = ? AND role IN ('admin', 'superadmin')");
     if ($stmt) {
         $stmt->bind_param("s", $token);
         $stmt->execute();
@@ -18,7 +18,7 @@ if (!empty($token) && preg_match('/^[a-f0-9]{64}$/', $token)) {
         if ($result->num_rows === 1) {
             $user = $result->fetch_assoc();
 
-            if ($user['is_verified']) {
+            if (!empty($user['email_verified'])) {
                 $status = 'already';
                 $message = 'Your email address is already verified. You can log in.';
             } elseif (strtotime($user['token_expiry']) < time()) {
@@ -26,7 +26,7 @@ if (!empty($token) && preg_match('/^[a-f0-9]{64}$/', $token)) {
                 $message = 'Your verification link has expired. Please register again or contact the administrator.';
             } else {
                 // Mark as verified and clear the token
-                $upd = $conn->prepare("UPDATE admin_users SET is_verified = 1, verification_token = NULL, token_expiry = NULL WHERE id = ?");
+                $upd = $conn->prepare("UPDATE users SET email_verified = 1, verification_token = NULL, token_expiry = NULL WHERE id = ?");
                 if ($upd) {
                     $upd->bind_param("i", $user['id']);
                     if ($upd->execute()) {
