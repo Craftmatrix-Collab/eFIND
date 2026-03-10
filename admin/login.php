@@ -47,15 +47,15 @@ if (!defined('LOGIN_FAILURE_WINDOW_SECONDS')) {
 }
 
 if (!defined('LOGIN_LOCK_DURATION_LEVEL_1_MINUTES')) {
-    define('LOGIN_LOCK_DURATION_LEVEL_1_MINUTES', 15);
+    define('LOGIN_LOCK_DURATION_LEVEL_1_MINUTES', 3);
 }
 
 if (!defined('LOGIN_LOCK_DURATION_LEVEL_2_MINUTES')) {
-    define('LOGIN_LOCK_DURATION_LEVEL_2_MINUTES', 60);
+    define('LOGIN_LOCK_DURATION_LEVEL_2_MINUTES', 3);
 }
 
 if (!defined('LOGIN_LOCK_DURATION_LEVEL_3_MINUTES')) {
-    define('LOGIN_LOCK_DURATION_LEVEL_3_MINUTES', 1440);
+    define('LOGIN_LOCK_DURATION_LEVEL_3_MINUTES', 3);
 }
 
 function getLoginLockDurationMinutes($lockLevel) {
@@ -95,16 +95,11 @@ function buildAccountLockedErrorMessage($secondsRemaining = null, $lockoutUntil 
     }
 
     if ($seconds === null || $seconds === 0) {
-        return 'Your account is locked. Use Forgot Password to unlock your account now, or contact the superadmin.';
+        return 'Your account is temporarily locked. Please wait around 3 minutes and try again.';
     }
 
     $remainingText = formatLoginLockRemainingTime($seconds);
-    $levelText = '';
-    if ((int)$lockLevel >= 2) {
-        $levelText = ' This is a repeated lock, so the lock duration is longer.';
-    }
-
-    return "Your account is temporarily locked due to repeated failed login attempts. Try again in {$remainingText}{$untilText}, or use Forgot Password to unlock now.{$levelText}";
+    return "Your account is temporarily locked due to repeated failed login attempts. It will automatically unlock in {$remainingText}{$untilText}.";
 }
 
 function ensureLoginAccountLockColumns() {
@@ -299,7 +294,14 @@ function getCurrentLoginLockState($table, $userId) {
             ];
         }
 
-        if ($lockoutTs !== false && $lockoutTs <= $now) {
+        if ($lockoutTs === false) {
+            // Legacy rows may have account_locked=1 with no lockout_until value.
+            // Treat these as stale lock states to avoid permanent lockout.
+            error_log("Detected stale lock state without lockout_until for {$table}#{$uid}; resetting lock.");
+            resetFailedLoginAttempts($table, $uid);
+            $failedAttempts = 0;
+            $lockLevel = 0;
+        } elseif ($lockoutTs <= $now) {
             clearExpiredLoginLock($table, $uid);
             $failedAttempts = 0;
         } else {
