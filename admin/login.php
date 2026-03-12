@@ -826,55 +826,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails, $user['id'], $accountRole);
                         logLoginActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
                     } elseif (password_verify($password, $user['password'])) {
-                        resetFailedLoginAttempts('users', (int)$user['id']);
-
                         if ($isAdminRole && empty($user['email_verified'])) {
+                            resetFailedLoginAttempts('users', (int)$user['id']);
                             $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
                             logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified', $user['id'], $accountRole);
                             logLoginActivity($user['id'], 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
                         } else {
-                            updateAccountLastLogin($conn, $loginAccountType, (int)$user['id']);
                             session_regenerate_id(true);
-
-                            $_SESSION['user_id'] = $user['id'];
-                            $_SESSION['username'] = $user['username'];
-                            $_SESSION['full_name'] = $user['full_name'];
-                            $_SESSION['profile_picture'] = $user['profile_picture'];
-                            $_SESSION['role'] = $accountRole;
-                            $_SESSION['logged_in'] = true;
-
-                            if ($isAdminRole) {
-                                $_SESSION['admin_id'] = $user['id'];
-                                $_SESSION['admin_username'] = $user['username'];
-                                $_SESSION['admin_full_name'] = $user['full_name'];
-                                $_SESSION['admin_profile_picture'] = $user['profile_picture'];
-                                $_SESSION['admin_logged_in'] = true;
-
-                                unset(
-                                    $_SESSION['staff_id'],
-                                    $_SESSION['staff_username'],
-                                    $_SESSION['staff_full_name'],
-                                    $_SESSION['staff_profile_picture'],
-                                    $_SESSION['staff_role'],
-                                    $_SESSION['staff_logged_in']
-                                );
-                            } else {
-                                $_SESSION['staff_id'] = $user['id'];
-                                $_SESSION['staff_username'] = $user['username'];
-                                $_SESSION['staff_full_name'] = $user['full_name'];
-                                $_SESSION['staff_profile_picture'] = $user['profile_picture'];
-                                $_SESSION['staff_role'] = $accountRole;
-                                $_SESSION['staff_logged_in'] = true;
-
-                                unset(
-                                    $_SESSION['admin_id'],
-                                    $_SESSION['admin_username'],
-                                    $_SESSION['admin_full_name'],
-                                    $_SESSION['admin_profile_picture'],
-                                    $_SESSION['admin_logged_in']
-                                );
-                            }
-
                             $primaryToken = registerPrimaryLoginSession($conn, $loginAccountType, (int)$user['id'], (string)$user['username']);
                             if ($primaryToken === null) {
                                 $error = "Unable to start secure session. Please try again.";
@@ -883,6 +841,47 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 session_unset();
                                 session_destroy();
                             } else {
+                                $_SESSION['user_id'] = $user['id'];
+                                $_SESSION['username'] = $user['username'];
+                                $_SESSION['full_name'] = $user['full_name'];
+                                $_SESSION['profile_picture'] = $user['profile_picture'];
+                                $_SESSION['role'] = $accountRole;
+                                $_SESSION['logged_in'] = true;
+
+                                if ($isAdminRole) {
+                                    $_SESSION['admin_id'] = $user['id'];
+                                    $_SESSION['admin_username'] = $user['username'];
+                                    $_SESSION['admin_full_name'] = $user['full_name'];
+                                    $_SESSION['admin_profile_picture'] = $user['profile_picture'];
+                                    $_SESSION['admin_logged_in'] = true;
+
+                                    unset(
+                                        $_SESSION['staff_id'],
+                                        $_SESSION['staff_username'],
+                                        $_SESSION['staff_full_name'],
+                                        $_SESSION['staff_profile_picture'],
+                                        $_SESSION['staff_role'],
+                                        $_SESSION['staff_logged_in']
+                                    );
+                                } else {
+                                    $_SESSION['staff_id'] = $user['id'];
+                                    $_SESSION['staff_username'] = $user['username'];
+                                    $_SESSION['staff_full_name'] = $user['full_name'];
+                                    $_SESSION['staff_profile_picture'] = $user['profile_picture'];
+                                    $_SESSION['staff_role'] = $accountRole;
+                                    $_SESSION['staff_logged_in'] = true;
+
+                                    unset(
+                                        $_SESSION['admin_id'],
+                                        $_SESSION['admin_username'],
+                                        $_SESSION['admin_full_name'],
+                                        $_SESSION['admin_profile_picture'],
+                                        $_SESSION['admin_logged_in']
+                                    );
+                                }
+
+                                updateAccountLastLogin($conn, $loginAccountType, (int)$user['id']);
+                                resetFailedLoginAttempts('users', (int)$user['id']);
                                 $successLabel = $isAdminRole ? 'Admin login' : 'Staff login';
                                 $activityLabel = $isAdminRole ? 'Admin user logged in successfully' : 'User logged in successfully';
                                 logLoginAttempt($username, $user_ip, 'SUCCESS', $successLabel, $user['id'], $accountRole);
