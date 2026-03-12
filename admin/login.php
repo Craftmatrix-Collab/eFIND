@@ -1592,26 +1592,6 @@ checkActivityLogsTable();
             word-wrap: break-word;
         }
 
-        .security-notice {
-            background-color: rgba(67, 97, 238, 0.1);
-            border-left: 4px solid var(--primary-blue);
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin-bottom: 15px;
-            font-size: 0.8rem;
-            text-align: left;
-            line-height: 1.4;
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-        }
-
-        .security-notice i {
-            color: var(--primary-blue);
-            margin-right: 0;
-            margin-top: 1px;
-        }
-
         .floating-shapes {
             position: absolute;
             width: 100%;
@@ -1907,10 +1887,6 @@ checkActivityLogsTable();
                 padding: 12px 16px;
             }
 
-            .security-notice {
-                font-size: 0.85rem;
-                padding: 10px 15px;
-            }
         }
     </style>
 </head>
@@ -1952,11 +1928,6 @@ checkActivityLogsTable();
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 <?php endif; ?>
-
-                <div class="security-notice">
-                    <i class="fas fa-shield-alt"></i>
-                    All login attempts are logged. After <?php echo (int)LOGIN_MAX_FAILED_ATTEMPTS; ?> wrong passwords within <?php echo max(1, (int)floor((int)LOGIN_FAILURE_WINDOW_SECONDS / 60)); ?> minutes, your account is temporarily locked and automatically unlocks after <?php echo (int)LOGIN_LOCK_DURATION_LEVEL_1_MINUTES; ?> minutes.
-                </div>
 
                 <form method="post" action="login.php">
                     <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_GET['redirect'] ?? $_POST['redirect'] ?? ''); ?>">
