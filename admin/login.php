@@ -2074,6 +2074,12 @@ checkActivityLogsTable();
         const liveLockoutAlert = document.getElementById('liveLockoutNotice');
         const liveLockoutCountdown = document.getElementById('liveLockoutCountdown');
         const usernameInput = document.getElementById('username');
+        const normalizeLockoutIdentifier = function(value) {
+            return String(value || '').trim().toLowerCase();
+        };
+        const initialServerLockoutIdentifier = normalizeLockoutIdentifier(
+            usernameInput ? usernameInput.value : ''
+        );
 
         const formatCountdown = function(totalSeconds) {
             const safeSeconds = Math.max(0, totalSeconds);
@@ -2089,12 +2095,14 @@ checkActivityLogsTable();
             alertElement.classList.remove('show');
             alertElement.style.display = 'none';
         };
+        let serverCountdownActive = false;
 
         if (serverLockoutAlert) {
             const countdownNode = serverLockoutAlert.querySelector('[data-lockout-countdown]');
             const initialSeconds = parseInt(serverLockoutAlert.getAttribute('data-lockout-seconds') || '0', 10);
 
             if (initialSeconds > 0) {
+                serverCountdownActive = true;
                 const unlockAt = Date.now() + (initialSeconds * 1000);
                 let countdownInterval = null;
                 let hasTriggeredRefresh = false;
@@ -2105,6 +2113,7 @@ checkActivityLogsTable();
                         countdownNode.textContent = formatCountdown(secondsLeft);
                     }
                     if (secondsLeft <= 0) {
+                        serverCountdownActive = false;
                         hideAlertElement(serverLockoutAlert);
                         if (countdownInterval !== null) {
                             window.clearInterval(countdownInterval);
@@ -2138,6 +2147,21 @@ checkActivityLogsTable();
             stopLiveCountdown();
             hideAlertElement(liveLockoutAlert);
             hideAlertElement(serverLockoutAlert);
+            serverCountdownActive = false;
+        };
+
+        const shouldKeepServerLockoutNotice = function(enteredUsername) {
+            if (!serverLockoutAlert || !serverCountdownActive) {
+                return false;
+            }
+            const normalizedEnteredUsername = normalizeLockoutIdentifier(enteredUsername);
+            if (normalizedEnteredUsername === '') {
+                return true;
+            }
+            if (initialServerLockoutIdentifier === '') {
+                return false;
+            }
+            return normalizedEnteredUsername === initialServerLockoutIdentifier;
         };
 
         const showLiveLockoutNotice = function(secondsRemaining) {
@@ -2179,22 +2203,35 @@ checkActivityLogsTable();
                     return;
                 }
                 if (!response.ok) {
-                    hideAllLockoutNotices();
                     return;
                 }
 
-                const data = await response.json();
-                const secondsRemaining = parseInt(data.seconds_remaining || '0', 10);
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (parseError) {
+                    return;
+                }
+                const parsedSeconds = parseInt(String(data.seconds_remaining ?? '0'), 10);
+                const secondsRemaining = Number.isFinite(parsedSeconds) ? Math.max(0, parsedSeconds) : 0;
+                const preserveServerNotice = shouldKeepServerLockoutNotice(enteredUsername);
                 if (data.is_locked && secondsRemaining > 0) {
-                    hideAlertElement(serverLockoutAlert);
-                    showLiveLockoutNotice(secondsRemaining);
+                    if (preserveServerNotice) {
+                        hideAlertElement(liveLockoutAlert);
+                        stopLiveCountdown();
+                    } else {
+                        hideAlertElement(serverLockoutAlert);
+                        serverCountdownActive = false;
+                        showLiveLockoutNotice(secondsRemaining);
+                    }
+                } else if (preserveServerNotice) {
+                    hideAlertElement(liveLockoutAlert);
+                    stopLiveCountdown();
                 } else {
                     hideAllLockoutNotices();
                 }
             } catch (error) {
-                if (requestId === lockoutLookupRequestId) {
-                    hideAllLockoutNotices();
-                }
+                return;
             }
         };
 
@@ -2211,7 +2248,12 @@ checkActivityLogsTable();
 
             if (enteredUsername === '') {
                 lockoutLookupRequestId += 1;
-                hideAllLockoutNotices();
+                if (shouldKeepServerLockoutNotice(enteredUsername)) {
+                    hideAlertElement(liveLockoutAlert);
+                    stopLiveCountdown();
+                } else {
+                    hideAllLockoutNotices();
+                }
                 return;
             }
 
@@ -2224,9 +2266,6 @@ checkActivityLogsTable();
         if (usernameInput) {
             usernameInput.addEventListener('input', scheduleRealtimeLockoutCheck);
             usernameInput.addEventListener('change', scheduleRealtimeLockoutCheck);
-            if (usernameInput.value.trim() !== '') {
-                scheduleRealtimeLockoutCheck();
-            }
         }
 
         if (loginForm) {
