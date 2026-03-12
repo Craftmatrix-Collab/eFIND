@@ -19,6 +19,7 @@ if (isLoggedIn()) {
 }
 
 $error = '';
+$lockoutCountdownSeconds = null;
 
 // Safe redirect: only allow relative paths on the same host
 function getSafeRedirect() {
@@ -86,8 +87,37 @@ function formatLoginLockRemainingTime($secondsRemaining) {
     return $hours . ' hour(s) and ' . $remainingMinutes . ' minute(s)';
 }
 
+function formatLoginLockCountdownClock($secondsRemaining) {
+    $seconds = max(0, (int)$secondsRemaining);
+    $minutes = (int)floor($seconds / 60);
+    $remainingSeconds = $seconds % 60;
+    return sprintf('%02d:%02d', $minutes, $remainingSeconds);
+}
+
+function resolveLoginLockCountdownSeconds($secondsRemaining = null, $lockoutUntil = null) {
+    $remaining = max(0, (int)$secondsRemaining);
+    if ($remaining > 0) {
+        return $remaining;
+    }
+
+    $lockoutUntilValue = trim((string)$lockoutUntil);
+    if ($lockoutUntilValue !== '') {
+        $lockoutTs = strtotime($lockoutUntilValue);
+        if ($lockoutTs !== false) {
+            $fromTimestamp = max(0, $lockoutTs - time());
+            if ($fromTimestamp > 0) {
+                return $fromTimestamp;
+            }
+        }
+    }
+
+    return max(60, (int)LOGIN_LOCK_DURATION_LEVEL_1_MINUTES * 60);
+}
+
 function buildAccountLockedErrorMessage($secondsRemaining = null, $lockoutUntil = null, $lockLevel = null) {
-    return 'Your account is temporarily locked due to repeated failed login attempts. It will automatically unlock in 3 minutes.';
+    $resolvedSeconds = resolveLoginLockCountdownSeconds($secondsRemaining, $lockoutUntil);
+    $countdown = formatLoginLockCountdownClock($resolvedSeconds);
+    return 'Your account is temporarily locked due to repeated failed login attempts. It will automatically unlock in <strong><span data-lockout-countdown>' . $countdown . '</span></strong>. If you forgot your password, please use <a href="forgot-password.php">Forgot Password</a>.';
 }
 
 function ensureLoginAccountLockColumns() {
@@ -432,6 +462,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         if ($accountState && !empty($accountLockState['is_locked'])) {
+            $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                $accountLockState['seconds_remaining'] ?? null,
+                $accountLockState['lockout_until'] ?? null
+            );
             $error = buildAccountLockedErrorMessage(
                 $accountLockState['seconds_remaining'] ?? null,
                 $accountLockState['lockout_until'] ?? null,
@@ -466,6 +500,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $lockState = getCurrentLoginLockState('users', (int)$user['id']);
 
                     if (!empty($lockState['is_locked'])) {
+                        $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                            $lockState['seconds_remaining'] ?? null,
+                            $lockState['lockout_until'] ?? null
+                        );
                         $error = buildAccountLockedErrorMessage(
                             $lockState['seconds_remaining'] ?? null,
                             $lockState['lockout_until'] ?? null,
@@ -553,6 +591,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         }
                         logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], $accountRole);
                         logLoginActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
+                        if (!empty($attemptState['is_locked'])) {
+                            $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                                $attemptState['seconds_remaining'] ?? null,
+                                $attemptState['lockout_until'] ?? null
+                            );
+                        }
                         $error = !empty($attemptState['is_locked'])
                             ? buildAccountLockedErrorMessage(
                                 $attemptState['seconds_remaining'] ?? null,
@@ -1506,7 +1550,7 @@ checkActivityLogsTable();
                 <?php endif; ?>
 
                 <?php if ($error): ?>
-                    <div class="alert alert-danger alert-dismissible fade show">
+                    <div class="alert alert-danger alert-dismissible fade show<?php echo ($lockoutCountdownSeconds !== null && $lockoutCountdownSeconds > 0) ? ' login-lockout-alert' : ''; ?>"<?php if ($lockoutCountdownSeconds !== null && $lockoutCountdownSeconds > 0): ?> data-lockout-seconds="<?php echo (int)$lockoutCountdownSeconds; ?>"<?php endif; ?>>
                         <i class="fas fa-exclamation-triangle me-2"></i>
                         <?php echo $error; ?>
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -1603,9 +1647,44 @@ checkActivityLogsTable();
 
         // Form validation
         const loginForm = document.querySelector('.login-form form');
+        const lockoutAlert = document.querySelector('.login-lockout-alert[data-lockout-seconds]');
+        const usernameInput = document.getElementById('username');
+
+        if (lockoutAlert) {
+            const countdownNode = lockoutAlert.querySelector('[data-lockout-countdown]');
+            const initialSeconds = parseInt(lockoutAlert.getAttribute('data-lockout-seconds') || '0', 10);
+
+            const formatCountdown = function(totalSeconds) {
+                const safeSeconds = Math.max(0, totalSeconds);
+                const minutes = Math.floor(safeSeconds / 60);
+                const seconds = safeSeconds % 60;
+                return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+            };
+
+            if (initialSeconds > 0) {
+                const unlockAt = Date.now() + (initialSeconds * 1000);
+                let countdownInterval = null;
+
+                const tickCountdown = function() {
+                    const secondsLeft = Math.max(0, Math.ceil((unlockAt - Date.now()) / 1000));
+                    if (countdownNode) {
+                        countdownNode.textContent = formatCountdown(secondsLeft);
+                    }
+                    if (secondsLeft <= 0) {
+                        if (countdownInterval !== null) {
+                            window.clearInterval(countdownInterval);
+                        }
+                    }
+                };
+
+                tickCountdown();
+                countdownInterval = window.setInterval(tickCountdown, 1000);
+            }
+        }
+
         if (loginForm) {
             loginForm.addEventListener('submit', function(e) {
-                const username = document.getElementById('username').value.trim();
+                const username = usernameInput.value.trim();
                 const password = passwordInput.value.trim();
                 
                 if (!username || !password) {
