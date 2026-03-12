@@ -129,11 +129,7 @@ function resolveLoginLockCountdownSeconds($secondsRemaining = null, $lockoutUnti
 function buildAccountLockedErrorMessage($username, $secondsRemaining = null, $lockoutUntil = null, $lockLevel = null) {
     $resolvedSeconds = resolveLoginLockCountdownSeconds($secondsRemaining, $lockoutUntil);
     $countdown = formatLoginLockCountdownClock($resolvedSeconds);
-    $safeUsername = htmlspecialchars(trim((string)$username), ENT_QUOTES, 'UTF-8');
-    if ($safeUsername === '') {
-        $safeUsername = 'unknown';
-    }
-    return 'Your account "' . $safeUsername . '" is temporarily locked due to repeated failed login attempts. It will automatically unlock in <strong><span data-lockout-countdown>' . $countdown . '</span></strong>. If you forgot your password, please use <a href="forgot-password.php">Forgot Password</a>.';
+    return 'Your account is temporarily locked due to repeated failed login attempts. It will automatically unlock in <strong><span data-lockout-countdown>' . $countdown . '</span></strong>. If you forgot your password, please use <a href="forgot-password.php">Forgot Password</a>.';
 }
 
 function ensureLoginAccountLockColumns() {
@@ -779,15 +775,55 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         logLoginActivity(null, 'failed_login', 'Login attempt with empty credentials', 'system', $user_ip, "Username: $username");
     } else {
         ensureLoginAccountLockColumns();
+        ensureLoginIdentifierLockTable();
+        $identifierKey = normalizeLoginIdentifier($username);
+        $identifierLockState = getLoginIdentifierLockState($identifierKey);
         $accountState = getLoginAccountByUsername($username);
         $accountLockState = null;
         if ($accountState) {
             $accountLockState = getCurrentLoginLockState((string)$accountState['user_type'], (int)$accountState['id']);
         }
 
-        if ($accountState && !empty($accountLockState['is_locked'])) {
+        if (!empty($identifierLockState['is_locked'])) {
             applyLoginFailureTimingPadding($password);
-            $error = buildWrongPasswordErrorMessage(0, $username);
+            $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                $identifierLockState['seconds_remaining'] ?? null,
+                $identifierLockState['lockout_until'] ?? null
+            );
+            $error = buildAccountLockedErrorMessage(
+                $username,
+                $identifierLockState['seconds_remaining'] ?? null,
+                $identifierLockState['lockout_until'] ?? null,
+                $identifierLockState['lock_level'] ?? null
+            );
+            $lockDetails = 'Identifier locked';
+            if (!empty($identifierLockState['seconds_remaining'])) {
+                $lockDetails .= ' (' . formatLoginLockRemainingTime((int)$identifierLockState['seconds_remaining']) . ' remaining)';
+            }
+            if ($accountState) {
+                logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails, $accountState['id'], $accountState['user_role']);
+                logLoginActivity($accountState['id'], 'failed_login', 'Login blocked due to locked identifier', 'system', $user_ip, "Username: $username", $accountState['username'], $accountState['user_role']);
+            } else {
+                logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails);
+                logLoginActivity(null, 'failed_login', 'Login blocked due to locked identifier', 'system', $user_ip, "Username: $username");
+            }
+        } elseif ($accountState && !empty($accountLockState['is_locked'])) {
+            setLoginIdentifierLock(
+                $identifierKey,
+                $accountLockState['seconds_remaining'] ?? null,
+                $accountLockState['lockout_until'] ?? null
+            );
+            applyLoginFailureTimingPadding($password);
+            $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                $accountLockState['seconds_remaining'] ?? null,
+                $accountLockState['lockout_until'] ?? null
+            );
+            $error = buildAccountLockedErrorMessage(
+                $username,
+                $accountLockState['seconds_remaining'] ?? null,
+                $accountLockState['lockout_until'] ?? null,
+                $accountLockState['lock_level'] ?? null
+            );
             $lockDetails = 'Account locked';
             if (!empty($accountLockState['seconds_remaining'])) {
                 $lockDetails .= ' (' . formatLoginLockRemainingTime((int)$accountLockState['seconds_remaining']) . ' remaining)';
@@ -817,8 +853,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $lockState = getCurrentLoginLockState('users', (int)$user['id']);
 
                     if (!empty($lockState['is_locked'])) {
+                        setLoginIdentifierLock(
+                            $identifierKey,
+                            $lockState['seconds_remaining'] ?? null,
+                            $lockState['lockout_until'] ?? null
+                        );
                         applyLoginFailureTimingPadding($password);
-                        $error = buildWrongPasswordErrorMessage(0, $username);
+                        $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                            $lockState['seconds_remaining'] ?? null,
+                            $lockState['lockout_until'] ?? null
+                        );
+                        $error = buildAccountLockedErrorMessage(
+                            $username,
+                            $lockState['seconds_remaining'] ?? null,
+                            $lockState['lockout_until'] ?? null,
+                            $lockState['lock_level'] ?? null
+                        );
                         $lockDetails = 'Account locked';
                         if (!empty($lockState['seconds_remaining'])) {
                             $lockDetails .= ' (' . formatLoginLockRemainingTime((int)$lockState['seconds_remaining']) . ' remaining)';
@@ -828,6 +878,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     } elseif (password_verify($password, $user['password'])) {
                         if ($isAdminRole && empty($user['email_verified'])) {
                             resetFailedLoginAttempts('users', (int)$user['id']);
+                            clearLoginIdentifierFailedAttempts($identifierKey);
                             $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
                             logLoginAttempt($username, $user_ip, 'FAILED', 'Email not verified', $user['id'], $accountRole);
                             logLoginActivity($user['id'], 'failed_login', 'Email not verified', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
@@ -882,6 +933,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
                                 updateAccountLastLogin($conn, $loginAccountType, (int)$user['id']);
                                 resetFailedLoginAttempts('users', (int)$user['id']);
+                                clearLoginIdentifierFailedAttempts($identifierKey);
                                 $successLabel = $isAdminRole ? 'Admin login' : 'Staff login';
                                 $activityLabel = $isAdminRole ? 'Admin user logged in successfully' : 'User logged in successfully';
                                 logLoginAttempt($username, $user_ip, 'SUCCESS', $successLabel, $user['id'], $accountRole);
@@ -894,10 +946,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         }
                     } else {
                         $attemptState = registerFailedLoginAttempt('users', (int)$user['id']);
-                        $isLocked = !empty($attemptState['is_locked']);
-                        $remainingAttempts = (int)($attemptState['remaining_attempts'] ?? LOGIN_MAX_FAILED_ATTEMPTS);
-                        $secondsRemaining = (int)($attemptState['seconds_remaining'] ?? 0);
+                        $identifierAttemptState = registerLoginIdentifierFailedAttempt($identifierKey);
+
+                        $isLocked = !empty($attemptState['is_locked']) || !empty($identifierAttemptState['is_locked']);
+                        $remainingAttempts = min(
+                            (int)($attemptState['remaining_attempts'] ?? LOGIN_MAX_FAILED_ATTEMPTS),
+                            (int)($identifierAttemptState['remaining_attempts'] ?? LOGIN_MAX_FAILED_ATTEMPTS)
+                        );
+                        $secondsRemaining = max(
+                            (int)($attemptState['seconds_remaining'] ?? 0),
+                            (int)($identifierAttemptState['seconds_remaining'] ?? 0)
+                        );
                         $lockoutUntil = $attemptState['lockout_until'] ?? null;
+                        if ((int)($identifierAttemptState['seconds_remaining'] ?? 0) >= (int)($attemptState['seconds_remaining'] ?? 0)
+                            && !empty($identifierAttemptState['lockout_until'])) {
+                            $lockoutUntil = $identifierAttemptState['lockout_until'];
+                        }
 
                         $details = $isLocked ? 'Invalid password - account locked' : 'Invalid password';
                         if ($isLocked && $secondsRemaining > 0) {
@@ -905,13 +969,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         }
                         logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], $accountRole);
                         logLoginActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
-                        $error = buildWrongPasswordErrorMessage($remainingAttempts, $username);
+                        if ($isLocked) {
+                            $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                                $secondsRemaining,
+                                $lockoutUntil
+                            );
+                        }
+                        $error = $isLocked
+                            ? buildAccountLockedErrorMessage(
+                                $username,
+                                $secondsRemaining,
+                                $lockoutUntil,
+                                $attemptState['lock_level'] ?? null
+                            )
+                            : buildWrongPasswordErrorMessage($remainingAttempts, $username);
                     }
                 } else {
                     applyLoginFailureTimingPadding($password);
-                    logLoginAttempt($username, $user_ip, 'FAILED', 'Username not found');
+                    $identifierAttemptState = registerLoginIdentifierFailedAttempt($identifierKey);
+                    $details = !empty($identifierAttemptState['is_locked']) ? 'Username not found - identifier locked' : 'Username not found';
+                    logLoginAttempt($username, $user_ip, 'FAILED', $details);
                     logLoginActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
-                    $error = buildWrongPasswordErrorMessage(0, $username);
+
+                    if (!empty($identifierAttemptState['is_locked'])) {
+                        $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                            $identifierAttemptState['seconds_remaining'] ?? null,
+                            $identifierAttemptState['lockout_until'] ?? null
+                        );
+                        $error = buildAccountLockedErrorMessage(
+                            $username,
+                            $identifierAttemptState['seconds_remaining'] ?? null,
+                            $identifierAttemptState['lockout_until'] ?? null,
+                            $identifierAttemptState['lock_level'] ?? null
+                        );
+                    } else {
+                        $error = buildWrongPasswordErrorMessage($identifierAttemptState['remaining_attempts'] ?? LOGIN_MAX_FAILED_ATTEMPTS, $username);
+                    }
                 }
 
                 $stmt->close();
