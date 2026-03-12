@@ -2031,6 +2031,7 @@ checkActivityLogsTable();
             if (initialSeconds > 0) {
                 const unlockAt = Date.now() + (initialSeconds * 1000);
                 let countdownInterval = null;
+                let hasTriggeredRefresh = false;
 
                 const tickCountdown = function() {
                     const secondsLeft = Math.max(0, Math.ceil((unlockAt - Date.now()) / 1000));
@@ -2038,8 +2039,16 @@ checkActivityLogsTable();
                         countdownNode.textContent = formatCountdown(secondsLeft);
                     }
                     if (secondsLeft <= 0) {
+                        lockoutAlert.classList.remove('show');
+                        lockoutAlert.style.display = 'none';
                         if (countdownInterval !== null) {
                             window.clearInterval(countdownInterval);
+                        }
+                        if (!hasTriggeredRefresh) {
+                            hasTriggeredRefresh = true;
+                            window.setTimeout(function() {
+                                window.location.reload();
+                            }, 300);
                         }
                     }
                 };
