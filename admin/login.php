@@ -87,6 +87,10 @@ function formatLoginLockRemainingTime($secondsRemaining) {
     return $hours . ' hour(s) and ' . $remainingMinutes . ' minute(s)';
 }
 
+function normalizeLoginIdentifier($username) {
+    return strtolower(trim((string)$username));
+}
+
 function formatLoginLockCountdownClock($secondsRemaining) {
     $seconds = max(0, (int)$secondsRemaining);
     $minutes = (int)floor($seconds / 60);
@@ -114,10 +118,14 @@ function resolveLoginLockCountdownSeconds($secondsRemaining = null, $lockoutUnti
     return max(60, (int)LOGIN_LOCK_DURATION_LEVEL_1_MINUTES * 60);
 }
 
-function buildAccountLockedErrorMessage($secondsRemaining = null, $lockoutUntil = null, $lockLevel = null) {
+function buildAccountLockedErrorMessage($username, $secondsRemaining = null, $lockoutUntil = null, $lockLevel = null) {
     $resolvedSeconds = resolveLoginLockCountdownSeconds($secondsRemaining, $lockoutUntil);
     $countdown = formatLoginLockCountdownClock($resolvedSeconds);
-    return 'Your account is temporarily locked due to repeated failed login attempts. It will automatically unlock in <strong><span data-lockout-countdown>' . $countdown . '</span></strong>. If you forgot your password, please use <a href="forgot-password.php">Forgot Password</a>.';
+    $safeUsername = htmlspecialchars(trim((string)$username), ENT_QUOTES, 'UTF-8');
+    if ($safeUsername === '') {
+        $safeUsername = 'unknown';
+    }
+    return 'Your account "' . $safeUsername . '" is temporarily locked due to repeated failed login attempts. It will automatically unlock in <strong><span data-lockout-countdown>' . $countdown . '</span></strong>. If you forgot your password, please use <a href="forgot-password.php">Forgot Password</a>.';
 }
 
 function ensureLoginAccountLockColumns() {
@@ -247,6 +255,282 @@ function resetFailedLoginAttempts($table, $userId) {
     }
 }
 
+function ensureLoginIdentifierLockTable() {
+    global $conn;
+
+    static $initialized = false;
+    if ($initialized || !isset($conn) || !($conn instanceof mysqli)) {
+        return;
+    }
+
+    $createTableQuery = "CREATE TABLE IF NOT EXISTS login_identifier_locks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        identifier VARCHAR(191) NOT NULL,
+        failed_login_attempts INT NOT NULL DEFAULT 0,
+        failed_window_started_at DATETIME NULL,
+        lockout_until DATETIME NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_identifier (identifier),
+        INDEX idx_lockout_until (lockout_until)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+    if (!$conn->query($createTableQuery)) {
+        error_log('Failed to create login_identifier_locks table: ' . $conn->error);
+        return;
+    }
+
+    $initialized = true;
+}
+
+function clearLoginIdentifierFailedAttempts($identifier) {
+    global $conn;
+
+    $identifierKey = normalizeLoginIdentifier($identifier);
+    if ($identifierKey === '' || !isset($conn) || !($conn instanceof mysqli)) {
+        return;
+    }
+
+    ensureLoginIdentifierLockTable();
+
+    $stmt = $conn->prepare("UPDATE login_identifier_locks SET failed_login_attempts = 0, failed_window_started_at = NULL, lockout_until = NULL WHERE identifier = ? LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param("s", $identifierKey);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+function setLoginIdentifierLock($identifier, $secondsRemaining = null, $lockoutUntil = null) {
+    global $conn;
+
+    $identifierKey = normalizeLoginIdentifier($identifier);
+    if ($identifierKey === '' || !isset($conn) || !($conn instanceof mysqli)) {
+        return;
+    }
+
+    ensureLoginIdentifierLockTable();
+
+    $resolvedSeconds = resolveLoginLockCountdownSeconds($secondsRemaining, $lockoutUntil);
+    $targetLockoutUntil = date('Y-m-d H:i:s', time() + $resolvedSeconds);
+    $maxAttempts = (int)LOGIN_MAX_FAILED_ATTEMPTS;
+
+    $stmt = $conn->prepare("INSERT INTO login_identifier_locks (identifier, failed_login_attempts, failed_window_started_at, lockout_until) VALUES (?, ?, NOW(), ?) ON DUPLICATE KEY UPDATE failed_login_attempts = VALUES(failed_login_attempts), failed_window_started_at = VALUES(failed_window_started_at), lockout_until = VALUES(lockout_until)");
+    if ($stmt) {
+        $stmt->bind_param("sis", $identifierKey, $maxAttempts, $targetLockoutUntil);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+function getLoginIdentifierLockState($identifier) {
+    global $conn;
+
+    $maxAttempts = (int)LOGIN_MAX_FAILED_ATTEMPTS;
+    $state = [
+        'is_locked' => false,
+        'remaining_attempts' => $maxAttempts,
+        'seconds_remaining' => 0,
+        'lockout_until' => null,
+        'lock_level' => 1,
+    ];
+
+    $identifierKey = normalizeLoginIdentifier($identifier);
+    if ($identifierKey === '' || !isset($conn) || !($conn instanceof mysqli)) {
+        return $state;
+    }
+
+    ensureLoginIdentifierLockTable();
+
+    $lookup = $conn->prepare("SELECT failed_login_attempts, failed_window_started_at, lockout_until FROM login_identifier_locks WHERE identifier = ? LIMIT 1");
+    if (!$lookup) {
+        return $state;
+    }
+
+    $lookup->bind_param("s", $identifierKey);
+    $lookup->execute();
+    $row = $lookup->get_result()->fetch_assoc();
+    $lookup->close();
+
+    if (!$row) {
+        return $state;
+    }
+
+    $now = time();
+    $lockoutUntil = trim((string)($row['lockout_until'] ?? ''));
+    $lockoutTs = $lockoutUntil !== '' ? strtotime($lockoutUntil) : false;
+    if ($lockoutTs !== false && $lockoutTs > $now) {
+        return [
+            'is_locked' => true,
+            'remaining_attempts' => 0,
+            'seconds_remaining' => max(0, $lockoutTs - $now),
+            'lockout_until' => $lockoutUntil,
+            'lock_level' => 1,
+        ];
+    }
+
+    $failedAttempts = (int)($row['failed_login_attempts'] ?? 0);
+    $windowStartedAt = trim((string)($row['failed_window_started_at'] ?? ''));
+    $windowStartedTs = $windowStartedAt !== '' ? strtotime($windowStartedAt) : false;
+    $windowIsActive = $windowStartedTs !== false
+        && $windowStartedTs > 0
+        && (($now - $windowStartedTs) <= (int)LOGIN_FAILURE_WINDOW_SECONDS);
+
+    if (($lockoutUntil !== '' && ($lockoutTs === false || $lockoutTs <= $now)) || (!$windowIsActive && $failedAttempts > 0)) {
+        $reset = $conn->prepare("UPDATE login_identifier_locks SET failed_login_attempts = 0, failed_window_started_at = NULL, lockout_until = NULL WHERE identifier = ? LIMIT 1");
+        if ($reset) {
+            $reset->bind_param("s", $identifierKey);
+            $reset->execute();
+            $reset->close();
+        }
+        $failedAttempts = 0;
+        $windowIsActive = false;
+    }
+
+    $state['remaining_attempts'] = $windowIsActive ? max(0, $maxAttempts - $failedAttempts) : $maxAttempts;
+    return $state;
+}
+
+function registerLoginIdentifierFailedAttempt($identifier) {
+    global $conn;
+
+    $maxAttempts = (int)LOGIN_MAX_FAILED_ATTEMPTS;
+    $state = [
+        'is_locked' => false,
+        'remaining_attempts' => $maxAttempts,
+        'seconds_remaining' => 0,
+        'lockout_until' => null,
+        'lock_level' => 1,
+    ];
+
+    $identifierKey = normalizeLoginIdentifier($identifier);
+    if ($identifierKey === '' || !isset($conn) || !($conn instanceof mysqli)) {
+        return $state;
+    }
+
+    ensureLoginIdentifierLockTable();
+
+    if (!$conn->begin_transaction()) {
+        return $state;
+    }
+
+    $seed = $conn->prepare("INSERT INTO login_identifier_locks (identifier, failed_login_attempts, failed_window_started_at, lockout_until) VALUES (?, 0, NULL, NULL) ON DUPLICATE KEY UPDATE identifier = VALUES(identifier)");
+    if (!$seed) {
+        $conn->rollback();
+        return $state;
+    }
+
+    $seed->bind_param("s", $identifierKey);
+    if (!$seed->execute()) {
+        $seed->close();
+        $conn->rollback();
+        return $state;
+    }
+    $seed->close();
+
+    $lookup = $conn->prepare("SELECT failed_login_attempts, failed_window_started_at, lockout_until FROM login_identifier_locks WHERE identifier = ? LIMIT 1 FOR UPDATE");
+    if (!$lookup) {
+        $conn->rollback();
+        return $state;
+    }
+
+    $lookup->bind_param("s", $identifierKey);
+    $lookup->execute();
+    $row = $lookup->get_result()->fetch_assoc();
+    $lookup->close();
+
+    if (!$row) {
+        $conn->rollback();
+        return $state;
+    }
+
+    $now = time();
+    $lockoutUntilValue = trim((string)($row['lockout_until'] ?? ''));
+    $lockoutTs = $lockoutUntilValue !== '' ? strtotime($lockoutUntilValue) : false;
+    if ($lockoutTs !== false && $lockoutTs > $now) {
+        $conn->commit();
+        return [
+            'is_locked' => true,
+            'remaining_attempts' => 0,
+            'seconds_remaining' => max(0, $lockoutTs - $now),
+            'lockout_until' => $lockoutUntilValue,
+            'lock_level' => 1,
+        ];
+    }
+
+    $failedAttempts = (int)($row['failed_login_attempts'] ?? 0);
+    $windowStartedAt = trim((string)($row['failed_window_started_at'] ?? ''));
+    $windowStartedTs = $windowStartedAt !== '' ? strtotime($windowStartedAt) : false;
+    $windowIsActive = $windowStartedTs !== false
+        && $windowStartedTs > 0
+        && (($now - $windowStartedTs) <= (int)LOGIN_FAILURE_WINDOW_SECONDS);
+
+    if ($lockoutUntilValue !== '' && ($lockoutTs === false || $lockoutTs <= $now)) {
+        $failedAttempts = 0;
+        $windowIsActive = false;
+    }
+
+    $currentAttempts = $windowIsActive ? $failedAttempts : 0;
+    $newAttempts = $currentAttempts + 1;
+    $shouldLock = $newAttempts >= $maxAttempts;
+
+    if ($shouldLock) {
+        $secondsRemaining = max(60, (int)LOGIN_LOCK_DURATION_LEVEL_1_MINUTES * 60);
+        $lockoutUntil = date('Y-m-d H:i:s', $now + $secondsRemaining);
+        $update = $conn->prepare("UPDATE login_identifier_locks SET failed_login_attempts = ?, failed_window_started_at = NOW(), lockout_until = ? WHERE identifier = ? LIMIT 1");
+        if (!$update) {
+            $conn->rollback();
+            return $state;
+        }
+        $update->bind_param("iss", $newAttempts, $lockoutUntil, $identifierKey);
+        if (!$update->execute()) {
+            $update->close();
+            $conn->rollback();
+            return $state;
+        }
+        $update->close();
+        if (!$conn->commit()) {
+            $conn->rollback();
+            return $state;
+        }
+        return [
+            'is_locked' => true,
+            'remaining_attempts' => 0,
+            'seconds_remaining' => $secondsRemaining,
+            'lockout_until' => $lockoutUntil,
+            'lock_level' => 1,
+        ];
+    }
+
+    $windowStartForStore = $windowIsActive
+        ? date('Y-m-d H:i:s', $windowStartedTs)
+        : date('Y-m-d H:i:s', $now);
+    $update = $conn->prepare("UPDATE login_identifier_locks SET failed_login_attempts = ?, failed_window_started_at = ?, lockout_until = NULL WHERE identifier = ? LIMIT 1");
+    if (!$update) {
+        $conn->rollback();
+        return $state;
+    }
+    $update->bind_param("iss", $newAttempts, $windowStartForStore, $identifierKey);
+    if (!$update->execute()) {
+        $update->close();
+        $conn->rollback();
+        return $state;
+    }
+    $update->close();
+    if (!$conn->commit()) {
+        $conn->rollback();
+        return $state;
+    }
+
+    return [
+        'is_locked' => false,
+        'remaining_attempts' => max(0, $maxAttempts - $newAttempts),
+        'seconds_remaining' => 0,
+        'lockout_until' => null,
+        'lock_level' => 1,
+    ];
+}
+
 function getCurrentLoginLockState($table, $userId) {
     global $conn;
 
@@ -357,13 +641,13 @@ function registerFailedLoginAttempt($table, $userId) {
     ensureLoginAccountLockColumns();
 
     $uid = (int)$userId;
-    $activeLock = getCurrentLoginLockState($table, $uid);
-    if (!empty($activeLock['is_locked'])) {
-        return $activeLock;
+    if (!$conn->begin_transaction()) {
+        return $state;
     }
 
-    $lookup = $conn->prepare("SELECT failed_login_attempts, failed_window_started_at, lockout_level FROM {$table} WHERE id = ? LIMIT 1");
+    $lookup = $conn->prepare("SELECT failed_login_attempts, account_locked, failed_window_started_at, lockout_until, lockout_level FROM {$table} WHERE id = ? LIMIT 1 FOR UPDATE");
     if (!$lookup) {
+        $conn->rollback();
         return $state;
     }
 
@@ -373,10 +657,30 @@ function registerFailedLoginAttempt($table, $userId) {
     $lookup->close();
 
     if (!$row) {
+        $conn->rollback();
         return $state;
     }
 
     $now = time();
+    $lockoutUntilValue = trim((string)($row['lockout_until'] ?? ''));
+    $lockoutTs = $lockoutUntilValue !== '' ? strtotime($lockoutUntilValue) : false;
+    $currentLockLevel = max(0, (int)($row['lockout_level'] ?? 0));
+
+    if ((int)($row['account_locked'] ?? 0) === 1 && $lockoutTs !== false && $lockoutTs > $now) {
+        $conn->commit();
+        return [
+            'is_locked' => true,
+            'remaining_attempts' => 0,
+            'seconds_remaining' => max(0, $lockoutTs - $now),
+            'lockout_until' => $lockoutUntilValue,
+            'lock_level' => max(1, $currentLockLevel),
+        ];
+    }
+
+    if ((int)($row['account_locked'] ?? 0) === 1 && ($lockoutTs === false || $lockoutTs <= $now)) {
+        $currentLockLevel = $lockoutTs === false ? 0 : $currentLockLevel;
+    }
+
     $windowStartedAt = trim((string)($row['failed_window_started_at'] ?? ''));
     $windowStartedTs = $windowStartedAt !== '' ? strtotime($windowStartedAt) : false;
     $windowIsActive = $windowStartedTs !== false
@@ -390,7 +694,6 @@ function registerFailedLoginAttempt($table, $userId) {
 
     $newAttempts = $currentAttempts + 1;
     $shouldLock = $newAttempts >= $maxAttempts;
-    $currentLockLevel = max(0, (int)($row['lockout_level'] ?? 0));
 
     if ($shouldLock) {
         $newLockLevel = min(3, max(1, $currentLockLevel + 1));
@@ -399,10 +702,20 @@ function registerFailedLoginAttempt($table, $userId) {
         $lockoutUntil = date('Y-m-d H:i:s', $now + $secondsRemaining);
 
         $update = $conn->prepare("UPDATE {$table} SET failed_login_attempts = ?, account_locked = 1, account_locked_at = NOW(), failed_window_started_at = NOW(), lockout_level = ?, lockout_until = ? WHERE id = ? LIMIT 1");
-        if ($update) {
-            $update->bind_param("iisi", $newAttempts, $newLockLevel, $lockoutUntil, $uid);
-            $update->execute();
+        if (!$update) {
+            $conn->rollback();
+            return $state;
+        }
+        $update->bind_param("iisi", $newAttempts, $newLockLevel, $lockoutUntil, $uid);
+        if (!$update->execute()) {
             $update->close();
+            $conn->rollback();
+            return $state;
+        }
+        $update->close();
+        if (!$conn->commit()) {
+            $conn->rollback();
+            return $state;
         }
 
         return [
@@ -415,10 +728,20 @@ function registerFailedLoginAttempt($table, $userId) {
     }
 
     $update = $conn->prepare("UPDATE {$table} SET failed_login_attempts = ?, account_locked = 0, account_locked_at = NULL, failed_window_started_at = ?, lockout_until = NULL WHERE id = ? LIMIT 1");
-    if ($update) {
-        $update->bind_param("isi", $newAttempts, $windowStartForStore, $uid);
-        $update->execute();
+    if (!$update) {
+        $conn->rollback();
+        return $state;
+    }
+    $update->bind_param("isi", $newAttempts, $windowStartForStore, $uid);
+    if (!$update->execute()) {
         $update->close();
+        $conn->rollback();
+        return $state;
+    }
+    $update->close();
+    if (!$conn->commit()) {
+        $conn->rollback();
+        return $state;
     }
 
     return [
@@ -430,10 +753,10 @@ function registerFailedLoginAttempt($table, $userId) {
     ];
 }
 
-function buildWrongPasswordErrorMessage($remainingAttempts) {
+function buildWrongPasswordErrorMessage($remainingAttempts, $username = '') {
     $remaining = max(0, (int)$remainingAttempts);
     if ($remaining <= 0) {
-        return buildAccountLockedErrorMessage();
+        return buildAccountLockedErrorMessage($username);
     }
 
     $windowMinutes = max(1, (int)floor((int)LOGIN_FAILURE_WINDOW_SECONDS / 60));
@@ -455,18 +778,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         logLoginActivity(null, 'failed_login', 'Login attempt with empty credentials', 'system', $user_ip, "Username: $username");
     } else {
         ensureLoginAccountLockColumns();
+        ensureLoginIdentifierLockTable();
+        $identifierKey = normalizeLoginIdentifier($username);
+        $identifierLockState = getLoginIdentifierLockState($identifierKey);
         $accountState = getLoginAccountByUsername($username);
         $accountLockState = null;
         if ($accountState) {
             $accountLockState = getCurrentLoginLockState((string)$accountState['user_type'], (int)$accountState['id']);
         }
 
-        if ($accountState && !empty($accountLockState['is_locked'])) {
+        if (!empty($identifierLockState['is_locked'])) {
+            $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                $identifierLockState['seconds_remaining'] ?? null,
+                $identifierLockState['lockout_until'] ?? null
+            );
+            $error = buildAccountLockedErrorMessage(
+                $username,
+                $identifierLockState['seconds_remaining'] ?? null,
+                $identifierLockState['lockout_until'] ?? null,
+                $identifierLockState['lock_level'] ?? null
+            );
+            $lockDetails = 'Identifier locked';
+            if (!empty($identifierLockState['seconds_remaining'])) {
+                $lockDetails .= ' (' . formatLoginLockRemainingTime((int)$identifierLockState['seconds_remaining']) . ' remaining)';
+            }
+            if ($accountState) {
+                logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails, $accountState['id'], $accountState['user_role']);
+                logLoginActivity($accountState['id'], 'failed_login', 'Login blocked due to locked identifier', 'system', $user_ip, "Username: $username", $accountState['username'], $accountState['user_role']);
+            } else {
+                logLoginAttempt($username, $user_ip, 'FAILED', $lockDetails);
+                logLoginActivity(null, 'failed_login', 'Login blocked due to locked identifier', 'system', $user_ip, "Username: $username");
+            }
+        } elseif ($accountState && !empty($accountLockState['is_locked'])) {
+            setLoginIdentifierLock(
+                $identifierKey,
+                $accountLockState['seconds_remaining'] ?? null,
+                $accountLockState['lockout_until'] ?? null
+            );
             $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
                 $accountLockState['seconds_remaining'] ?? null,
                 $accountLockState['lockout_until'] ?? null
             );
             $error = buildAccountLockedErrorMessage(
+                $username,
                 $accountLockState['seconds_remaining'] ?? null,
                 $accountLockState['lockout_until'] ?? null,
                 $accountLockState['lock_level'] ?? null
@@ -500,11 +854,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $lockState = getCurrentLoginLockState('users', (int)$user['id']);
 
                     if (!empty($lockState['is_locked'])) {
+                        setLoginIdentifierLock(
+                            $identifierKey,
+                            $lockState['seconds_remaining'] ?? null,
+                            $lockState['lockout_until'] ?? null
+                        );
                         $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
                             $lockState['seconds_remaining'] ?? null,
                             $lockState['lockout_until'] ?? null
                         );
                         $error = buildAccountLockedErrorMessage(
+                            $username,
                             $lockState['seconds_remaining'] ?? null,
                             $lockState['lockout_until'] ?? null,
                             $lockState['lock_level'] ?? null
@@ -517,6 +877,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         logLoginActivity($user['id'], 'failed_login', 'Login blocked due to locked account', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
                     } elseif (password_verify($password, $user['password'])) {
                         resetFailedLoginAttempts('users', (int)$user['id']);
+                        clearLoginIdentifierFailedAttempts($identifierKey);
 
                         if ($isAdminRole && empty($user['email_verified'])) {
                             $error = 'Your email address is not verified. Please check your inbox for the verification link, or <a href="resend-verification.php">resend it</a>.';
@@ -585,30 +946,64 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         }
                     } else {
                         $attemptState = registerFailedLoginAttempt('users', (int)$user['id']);
-                        $details = !empty($attemptState['is_locked']) ? 'Invalid password - account locked' : 'Invalid password';
-                        if (!empty($attemptState['is_locked']) && !empty($attemptState['seconds_remaining'])) {
-                            $details .= ' (' . formatLoginLockRemainingTime((int)$attemptState['seconds_remaining']) . ')';
+                        $identifierAttemptState = registerLoginIdentifierFailedAttempt($identifierKey);
+
+                        $isLocked = !empty($attemptState['is_locked']) || !empty($identifierAttemptState['is_locked']);
+                        $remainingAttempts = min(
+                            (int)($attemptState['remaining_attempts'] ?? LOGIN_MAX_FAILED_ATTEMPTS),
+                            (int)($identifierAttemptState['remaining_attempts'] ?? LOGIN_MAX_FAILED_ATTEMPTS)
+                        );
+                        $secondsRemaining = max(
+                            (int)($attemptState['seconds_remaining'] ?? 0),
+                            (int)($identifierAttemptState['seconds_remaining'] ?? 0)
+                        );
+                        $lockoutUntil = $attemptState['lockout_until'] ?? null;
+                        if ((int)($identifierAttemptState['seconds_remaining'] ?? 0) >= (int)($attemptState['seconds_remaining'] ?? 0)
+                            && !empty($identifierAttemptState['lockout_until'])) {
+                            $lockoutUntil = $identifierAttemptState['lockout_until'];
+                        }
+
+                        $details = $isLocked ? 'Invalid password - account locked' : 'Invalid password';
+                        if ($isLocked && $secondsRemaining > 0) {
+                            $details .= ' (' . formatLoginLockRemainingTime($secondsRemaining) . ')';
                         }
                         logLoginAttempt($username, $user_ip, 'FAILED', $details, $user['id'], $accountRole);
                         logLoginActivity($user['id'], 'failed_login', 'Invalid password', 'system', $user_ip, "Username: $username", $user['username'], $accountRole);
-                        if (!empty($attemptState['is_locked'])) {
+                        if ($isLocked) {
                             $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
-                                $attemptState['seconds_remaining'] ?? null,
-                                $attemptState['lockout_until'] ?? null
+                                $secondsRemaining,
+                                $lockoutUntil
                             );
                         }
-                        $error = !empty($attemptState['is_locked'])
+                        $error = $isLocked
                             ? buildAccountLockedErrorMessage(
-                                $attemptState['seconds_remaining'] ?? null,
-                                $attemptState['lockout_until'] ?? null,
+                                $username,
+                                $secondsRemaining,
+                                $lockoutUntil,
                                 $attemptState['lock_level'] ?? null
                             )
-                            : buildWrongPasswordErrorMessage($attemptState['remaining_attempts']);
+                            : buildWrongPasswordErrorMessage($remainingAttempts, $username);
                     }
                 } else {
-                    logLoginAttempt($username, $user_ip, 'FAILED', 'Username not found');
+                    $identifierAttemptState = registerLoginIdentifierFailedAttempt($identifierKey);
+                    $details = !empty($identifierAttemptState['is_locked']) ? 'Username not found - identifier locked' : 'Username not found';
+                    logLoginAttempt($username, $user_ip, 'FAILED', $details);
                     logLoginActivity(null, 'failed_login', 'Username not found', 'system', $user_ip, "Username: $username");
-                    $error = "Invalid username or password.";
+
+                    if (!empty($identifierAttemptState['is_locked'])) {
+                        $lockoutCountdownSeconds = resolveLoginLockCountdownSeconds(
+                            $identifierAttemptState['seconds_remaining'] ?? null,
+                            $identifierAttemptState['lockout_until'] ?? null
+                        );
+                        $error = buildAccountLockedErrorMessage(
+                            $username,
+                            $identifierAttemptState['seconds_remaining'] ?? null,
+                            $identifierAttemptState['lockout_until'] ?? null,
+                            $identifierAttemptState['lock_level'] ?? null
+                        );
+                    } else {
+                        $error = buildWrongPasswordErrorMessage($identifierAttemptState['remaining_attempts'] ?? LOGIN_MAX_FAILED_ATTEMPTS, $username);
+                    }
                 }
 
                 $stmt->close();
@@ -768,6 +1163,7 @@ function checkActivityLogsTable() {
 // Check and create necessary tables if needed
 checkLoginLogsTable();
 checkActivityLogsTable();
+ensureLoginIdentifierLockTable();
 ?>
 <!DOCTYPE html>
 <html lang="en">
