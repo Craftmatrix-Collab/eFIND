@@ -761,6 +761,57 @@ function buildWrongPasswordErrorMessage($remainingAttempts, $username = '') {
     return "Invalid username or password.";
 }
 
+if (isset($_GET['action']) && $_GET['action'] === 'lockout_status') {
+    header('Content-Type: application/json');
+
+    $response = [
+        'is_locked' => false,
+        'seconds_remaining' => 0,
+    ];
+
+    $lookupUsername = trim((string)($_GET['username'] ?? ''));
+    if ($lookupUsername === '') {
+        echo json_encode($response);
+        exit;
+    }
+
+    ensureLoginAccountLockColumns();
+    ensureLoginIdentifierLockTable();
+
+    $identifierKey = normalizeLoginIdentifier($lookupUsername);
+    $identifierLockState = getLoginIdentifierLockState($identifierKey);
+
+    if (!empty($identifierLockState['is_locked'])) {
+        $response['is_locked'] = true;
+        $response['seconds_remaining'] = resolveLoginLockCountdownSeconds(
+            $identifierLockState['seconds_remaining'] ?? null,
+            $identifierLockState['lockout_until'] ?? null
+        );
+        echo json_encode($response);
+        exit;
+    }
+
+    $accountState = getLoginAccountByUsername($lookupUsername);
+    if ($accountState) {
+        $accountLockState = getCurrentLoginLockState((string)$accountState['user_type'], (int)$accountState['id']);
+        if (!empty($accountLockState['is_locked'])) {
+            setLoginIdentifierLock(
+                $identifierKey,
+                $accountLockState['seconds_remaining'] ?? null,
+                $accountLockState['lockout_until'] ?? null
+            );
+            $response['is_locked'] = true;
+            $response['seconds_remaining'] = resolveLoginLockCountdownSeconds(
+                $accountLockState['seconds_remaining'] ?? null,
+                $accountLockState['lockout_until'] ?? null
+            );
+        }
+    }
+
+    echo json_encode($response);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Sanitize inputs
     $username = trim($_POST['username']);
@@ -1929,6 +1980,11 @@ checkActivityLogsTable();
                     </div>
                 <?php endif; ?>
 
+                <div id="liveLockoutNotice" class="alert alert-danger login-lockout-alert" style="display: none;">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Your account is temporarily locked due to repeated failed login attempts. It will automatically unlock in <strong><span id="liveLockoutCountdown">00:00</span></strong>. If you forgot your password, please use <a href="forgot-password.php">Forgot Password</a>.
+                </div>
+
                 <form method="post" action="login.php">
                     <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_GET['redirect'] ?? $_POST['redirect'] ?? ''); ?>">
                     <p class="form-helper-text">Sign in with your official account credentials to continue.</p>
@@ -2012,21 +2068,31 @@ checkActivityLogsTable();
             document.getElementById('username').focus();
         });
 
-        // Form validation
+        // Form validation and lockout notice behavior
         const loginForm = document.querySelector('.login-form form');
-        const lockoutAlert = document.querySelector('.login-lockout-alert[data-lockout-seconds]');
+        const serverLockoutAlert = document.querySelector('.login-lockout-alert[data-lockout-seconds]');
+        const liveLockoutAlert = document.getElementById('liveLockoutNotice');
+        const liveLockoutCountdown = document.getElementById('liveLockoutCountdown');
         const usernameInput = document.getElementById('username');
 
-        if (lockoutAlert) {
-            const countdownNode = lockoutAlert.querySelector('[data-lockout-countdown]');
-            const initialSeconds = parseInt(lockoutAlert.getAttribute('data-lockout-seconds') || '0', 10);
+        const formatCountdown = function(totalSeconds) {
+            const safeSeconds = Math.max(0, totalSeconds);
+            const minutes = Math.floor(safeSeconds / 60);
+            const seconds = safeSeconds % 60;
+            return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+        };
 
-            const formatCountdown = function(totalSeconds) {
-                const safeSeconds = Math.max(0, totalSeconds);
-                const minutes = Math.floor(safeSeconds / 60);
-                const seconds = safeSeconds % 60;
-                return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
-            };
+        const hideAlertElement = function(alertElement) {
+            if (!alertElement) {
+                return;
+            }
+            alertElement.classList.remove('show');
+            alertElement.style.display = 'none';
+        };
+
+        if (serverLockoutAlert) {
+            const countdownNode = serverLockoutAlert.querySelector('[data-lockout-countdown]');
+            const initialSeconds = parseInt(serverLockoutAlert.getAttribute('data-lockout-seconds') || '0', 10);
 
             if (initialSeconds > 0) {
                 const unlockAt = Date.now() + (initialSeconds * 1000);
@@ -2039,8 +2105,7 @@ checkActivityLogsTable();
                         countdownNode.textContent = formatCountdown(secondsLeft);
                     }
                     if (secondsLeft <= 0) {
-                        lockoutAlert.classList.remove('show');
-                        lockoutAlert.style.display = 'none';
+                        hideAlertElement(serverLockoutAlert);
                         if (countdownInterval !== null) {
                             window.clearInterval(countdownInterval);
                         }
@@ -2055,6 +2120,112 @@ checkActivityLogsTable();
 
                 tickCountdown();
                 countdownInterval = window.setInterval(tickCountdown, 1000);
+            }
+        }
+
+        let liveCountdownInterval = null;
+        let lockoutLookupTimer = null;
+        let lockoutLookupRequestId = 0;
+
+        const stopLiveCountdown = function() {
+            if (liveCountdownInterval !== null) {
+                window.clearInterval(liveCountdownInterval);
+                liveCountdownInterval = null;
+            }
+        };
+
+        const hideAllLockoutNotices = function() {
+            stopLiveCountdown();
+            hideAlertElement(liveLockoutAlert);
+            hideAlertElement(serverLockoutAlert);
+        };
+
+        const showLiveLockoutNotice = function(secondsRemaining) {
+            if (!liveLockoutAlert || !liveLockoutCountdown || secondsRemaining <= 0) {
+                return;
+            }
+
+            stopLiveCountdown();
+            liveLockoutAlert.style.display = 'block';
+            liveLockoutAlert.classList.add('show');
+
+            const unlockAt = Date.now() + (secondsRemaining * 1000);
+            const tickLiveCountdown = function() {
+                const secondsLeft = Math.max(0, Math.ceil((unlockAt - Date.now()) / 1000));
+                liveLockoutCountdown.textContent = formatCountdown(secondsLeft);
+                if (secondsLeft <= 0) {
+                    hideAlertElement(liveLockoutAlert);
+                    stopLiveCountdown();
+                }
+            };
+
+            tickLiveCountdown();
+            liveCountdownInterval = window.setInterval(tickLiveCountdown, 1000);
+        };
+
+        const fetchRealtimeLockoutStatus = async function(enteredUsername, requestId) {
+            try {
+                const url = new URL('login.php', window.location.href);
+                url.searchParams.set('action', 'lockout_status');
+                url.searchParams.set('username', enteredUsername);
+
+                const response = await fetch(url.toString(), {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (requestId !== lockoutLookupRequestId) {
+                    return;
+                }
+                if (!response.ok) {
+                    hideAllLockoutNotices();
+                    return;
+                }
+
+                const data = await response.json();
+                const secondsRemaining = parseInt(data.seconds_remaining || '0', 10);
+                if (data.is_locked && secondsRemaining > 0) {
+                    hideAlertElement(serverLockoutAlert);
+                    showLiveLockoutNotice(secondsRemaining);
+                } else {
+                    hideAllLockoutNotices();
+                }
+            } catch (error) {
+                if (requestId === lockoutLookupRequestId) {
+                    hideAllLockoutNotices();
+                }
+            }
+        };
+
+        const scheduleRealtimeLockoutCheck = function() {
+            if (!usernameInput) {
+                return;
+            }
+
+            const enteredUsername = usernameInput.value.trim();
+            if (lockoutLookupTimer !== null) {
+                window.clearTimeout(lockoutLookupTimer);
+                lockoutLookupTimer = null;
+            }
+
+            if (enteredUsername === '') {
+                lockoutLookupRequestId += 1;
+                hideAllLockoutNotices();
+                return;
+            }
+
+            const requestId = ++lockoutLookupRequestId;
+            lockoutLookupTimer = window.setTimeout(function() {
+                fetchRealtimeLockoutStatus(enteredUsername, requestId);
+            }, 250);
+        };
+
+        if (usernameInput) {
+            usernameInput.addEventListener('input', scheduleRealtimeLockoutCheck);
+            usernameInput.addEventListener('change', scheduleRealtimeLockoutCheck);
+            if (usernameInput.value.trim() !== '') {
+                scheduleRealtimeLockoutCheck();
             }
         }
 
