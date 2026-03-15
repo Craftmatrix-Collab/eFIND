@@ -52,9 +52,27 @@ if ($configuredPort !== null && ctype_digit($configuredPort)) {
 }
 
 $passwordCandidates = [];
-foreach (['DB_PASSWORD', 'DB_PASS', 'MYSQL_ROOT_PASSWORD'] as $passwordKey) {
+$placeholderPasswordCandidates = [];
+$passwordKeys = [
+    'DB_PASSWORD',
+    'DB_PASS',
+    'DB_ROOT_PASSWORD',
+    'MYSQL_PASSWORD',
+    'MYSQL_ROOT_PASSWORD',
+    'MARIADB_PASSWORD',
+    'MARIADB_ROOT_PASSWORD'
+];
+
+foreach ($passwordKeys as $passwordKey) {
     $candidate = efind_first_env_value([$passwordKey]);
-    if ($candidate === null || efind_is_placeholder_secret($candidate)) {
+    if ($candidate === null) {
+        continue;
+    }
+
+    if (efind_is_placeholder_secret($candidate)) {
+        if (!in_array($candidate, $placeholderPasswordCandidates, true)) {
+            $placeholderPasswordCandidates[] = $candidate;
+        }
         continue;
     }
 
@@ -63,16 +81,14 @@ foreach (['DB_PASSWORD', 'DB_PASS', 'MYSQL_ROOT_PASSWORD'] as $passwordKey) {
     }
 }
 
-if (count($passwordCandidates) === 0) {
-    foreach (['DB_PASSWORD', 'DB_PASS', 'MYSQL_ROOT_PASSWORD'] as $passwordKey) {
-        $candidate = efind_first_env_value([$passwordKey]);
-        if ($candidate === null) {
-            continue;
-        }
+// For template/default root setups, probe blank password before placeholder values.
+if (count($passwordCandidates) === 0 && strtolower($username) === 'root' && !in_array('', $passwordCandidates, true)) {
+    $passwordCandidates[] = '';
+}
 
-        if (!in_array($candidate, $passwordCandidates, true)) {
-            $passwordCandidates[] = $candidate;
-        }
+foreach ($placeholderPasswordCandidates as $candidate) {
+    if (!in_array($candidate, $passwordCandidates, true)) {
+        $passwordCandidates[] = $candidate;
     }
 }
 
