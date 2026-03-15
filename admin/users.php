@@ -2061,7 +2061,7 @@ $count_stmt->close();
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" name="update_user" class="btn btn-primary-custom" id="editUserSubmitBtn">Update User</button>
+                            <button type="submit" name="update_user" class="btn btn-primary-custom" id="editUserSubmitBtn" disabled>Update User</button>
                         </div>
                     </form>
                 </div>
@@ -2483,8 +2483,14 @@ $count_stmt->close();
         let verifiedEmail = '';
 
         const modalEl = document.getElementById('editUserModal');
+        const fullNameInput = document.getElementById('editFullName');
+        const contactNumberInput = document.getElementById('editContactNumber');
         const emailInput = document.getElementById('editEmail');
         const originalEmailInput = document.getElementById('editOriginalEmail');
+        const usernameInput = document.getElementById('editUsername');
+        const roleInput = document.getElementById('editRole');
+        const passwordInput = document.getElementById('editPassword');
+        const profilePictureInput = document.getElementById('editProfilePicture');
         const userIdInput = document.getElementById('editUserId');
         const sendOtpBtn = document.getElementById('editSendOtpBtn');
         const otpSection = document.getElementById('editOtpSection');
@@ -2493,9 +2499,20 @@ $count_stmt->close();
         const verifiedBadge = document.getElementById('editEmailVerifiedBadge');
         const submitBtn = document.getElementById('editUserSubmitBtn');
         const otpTimerEl = document.getElementById('editOtpTimer');
+        let originalSnapshot = {
+            fullName: '',
+            contactNumber: '',
+            email: '',
+            username: '',
+            role: ''
+        };
 
-        if (!modalEl || !emailInput || !sendOtpBtn || !otpSection || !otpInput || !verifyOtpBtn || !submitBtn || !otpTimerEl) {
+        if (!modalEl || !fullNameInput || !contactNumberInput || !emailInput || !usernameInput || !roleInput || !passwordInput || !profilePictureInput || !sendOtpBtn || !otpSection || !otpInput || !verifyOtpBtn || !submitBtn || !otpTimerEl) {
             return;
+        }
+
+        function normalizeValue(value) {
+            return (value || '').trim();
         }
 
         function normalizedEmail(value) {
@@ -2505,6 +2522,42 @@ $count_stmt->close();
         function getUserType() {
             const field = document.getElementById('editUserType');
             return field ? (field.value || '').trim() : '';
+        }
+
+        function captureOriginalSnapshot() {
+            originalSnapshot = {
+                fullName: normalizeValue(fullNameInput.value),
+                contactNumber: normalizeValue(contactNumberInput.value),
+                email: normalizedEmail(emailInput.value),
+                username: normalizeValue(usernameInput.value),
+                role: normalizeValue(roleInput.value).toLowerCase()
+            };
+            originalEmail = originalSnapshot.email;
+        }
+
+        function hasAnyEditableChanges() {
+            if (normalizeValue(fullNameInput.value) !== originalSnapshot.fullName) {
+                return true;
+            }
+            if (normalizeValue(contactNumberInput.value) !== originalSnapshot.contactNumber) {
+                return true;
+            }
+            if (normalizedEmail(emailInput.value) !== originalSnapshot.email) {
+                return true;
+            }
+            if (normalizeValue(usernameInput.value) !== originalSnapshot.username) {
+                return true;
+            }
+            if (normalizeValue(roleInput.value).toLowerCase() !== originalSnapshot.role) {
+                return true;
+            }
+            if (normalizeValue(passwordInput.value) !== '') {
+                return true;
+            }
+            if (profilePictureInput.files && profilePictureInput.files.length > 0) {
+                return true;
+            }
+            return false;
         }
 
         function emailChanged() {
@@ -2527,6 +2580,10 @@ $count_stmt->close();
         }
 
         function syncSubmitState() {
+            if (!hasAnyEditableChanges()) {
+                submitBtn.disabled = true;
+                return;
+            }
             if (!emailChanged()) {
                 submitBtn.disabled = false;
                 return;
@@ -2578,6 +2635,12 @@ $count_stmt->close();
         }
 
         modalEl.addEventListener('shown.bs.modal', function () {
+            if (passwordInput) {
+                passwordInput.value = '';
+            }
+            if (profilePictureInput) {
+                profilePictureInput.value = '';
+            }
             originalEmail = (originalEmailInput ? originalEmailInput.value : '').trim();
             verifiedEmail = '';
             if (verifiedBadge) {
@@ -2586,6 +2649,7 @@ $count_stmt->close();
             sendOtpBtn.disabled = false;
             sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
             hideOtpSection();
+            captureOriginalSnapshot();
             syncSubmitState();
         });
 
@@ -2598,7 +2662,7 @@ $count_stmt->close();
             sendOtpBtn.disabled = false;
             sendOtpBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send OTP';
             hideOtpSection();
-            submitBtn.disabled = false;
+            submitBtn.disabled = true;
         });
 
         emailInput.addEventListener('input', function () {
@@ -2618,6 +2682,12 @@ $count_stmt->close();
             }
             syncSubmitState();
         });
+
+        [fullNameInput, contactNumberInput, usernameInput, roleInput, passwordInput].forEach(function (field) {
+            field.addEventListener('input', syncSubmitState);
+            field.addEventListener('change', syncSubmitState);
+        });
+        profilePictureInput.addEventListener('change', syncSubmitState);
 
         sendOtpBtn.addEventListener('click', function () {
             const email = emailInput.value.trim();
