@@ -1,56 +1,159 @@
 <?php
 require_once __DIR__ . '/env_loader.php';
-// MariaDB Configuration - Use environment variables with fallback
-$servername = getenv('DB_HOST') ?: '72.60.233.70';
-$username = getenv('DB_USER') ?: (getenv('DB_USERNAME') ?: 'root');
-$password = getenv('DB_PASS');
-if ($password === false || $password === '') {
-    $password = getenv('DB_PASSWORD') ?: '';
+
+if (!function_exists('efind_first_env_value')) {
+    function efind_first_env_value(array $keys): ?string
+    {
+        foreach ($keys as $key) {
+            $value = getenv($key);
+            if ($value === false) {
+                continue;
+            }
+
+            $trimmed = trim((string)$value);
+            if ($trimmed === '') {
+                continue;
+            }
+
+            return $trimmed;
+        }
+
+        return null;
+    }
 }
-$dbname = getenv('DB_NAME') ?: (getenv('DB_DATABASE') ?: 'barangay_poblacion_south');
-$port = (int)(getenv('DB_PORT') ?: 9008);
+
+if (!function_exists('efind_is_placeholder_secret')) {
+    function efind_is_placeholder_secret(string $value): bool
+    {
+        return in_array(
+            strtolower(trim($value)),
+            ['change-me', 'changeme', 'change-this-password', 'your-password', 'your-password-here', 'your_db_password', 'password'],
+            true
+        );
+    }
+}
+
+// MariaDB Configuration - Use environment variables with fallback
+$defaultDbHost = '72.60.233.70';
+$defaultDbPort = 9008;
+$defaultDbName = 'barangay_poblacion_south';
+
+$servername = efind_first_env_value(['DB_HOST']) ?: $defaultDbHost;
+$username = efind_first_env_value(['DB_USER', 'DB_USERNAME']) ?: 'root';
+$dbname = efind_first_env_value(['DB_NAME', 'DB_DATABASE']) ?: $defaultDbName;
+
+$port = $defaultDbPort;
+$configuredPort = efind_first_env_value(['DB_PORT']);
+if ($configuredPort !== null && ctype_digit($configuredPort)) {
+    $parsedPort = (int)$configuredPort;
+    if ($parsedPort > 0 && $parsedPort <= 65535) {
+        $port = $parsedPort;
+    }
+}
+
+$passwordCandidates = [];
+foreach (['DB_PASSWORD', 'DB_PASS', 'MYSQL_ROOT_PASSWORD'] as $passwordKey) {
+    $candidate = efind_first_env_value([$passwordKey]);
+    if ($candidate === null || efind_is_placeholder_secret($candidate)) {
+        continue;
+    }
+
+    if (!in_array($candidate, $passwordCandidates, true)) {
+        $passwordCandidates[] = $candidate;
+    }
+}
+
+if (count($passwordCandidates) === 0) {
+    foreach (['DB_PASSWORD', 'DB_PASS', 'MYSQL_ROOT_PASSWORD'] as $passwordKey) {
+        $candidate = efind_first_env_value([$passwordKey]);
+        if ($candidate === null) {
+            continue;
+        }
+
+        if (!in_array($candidate, $passwordCandidates, true)) {
+            $passwordCandidates[] = $candidate;
+        }
+    }
+}
+
+if (count($passwordCandidates) === 0) {
+    $passwordCandidates[] = '';
+}
+
+$password = $passwordCandidates[0];
 
 // Set default timezone to Philippine Time (Asia/Manila = UTC+8)
 date_default_timezone_set('Asia/Manila');
  
 // Create MariaDB connection with improved settings
 try {
-    $connectionTargets = [[$servername, (int)$port]];
-    // If DB_HOST is not explicitly configured, try local defaults as fallbacks.
-    if (!getenv('DB_HOST')) {
-        $connectionTargets[] = ['127.0.0.1', 3306];
-        $connectionTargets[] = ['localhost', 3306];
-        $connectionTargets[] = ['db', 3306];
+    mysqli_report(MYSQLI_REPORT_OFF);
+
+    $connectionTargets = [];
+    $addConnectionTarget = static function (string $host, int $targetPort) use (&$connectionTargets): void {
+        $normalizedHost = strtolower(trim($host));
+        if ($normalizedHost === '' || $targetPort <= 0 || $targetPort > 65535) {
+            return;
+        }
+
+        $targetKey = $normalizedHost . ':' . $targetPort;
+        if (!isset($connectionTargets[$targetKey])) {
+            $connectionTargets[$targetKey] = [$host, $targetPort];
+        }
+    };
+
+    $addConnectionTarget($servername, (int)$port);
+
+    $isLikelyTemplateDbConfig =
+        in_array(strtolower($servername), ['127.0.0.1', 'localhost', 'db'], true) &&
+        (int)$port === 3306 &&
+        strtolower($username) === 'root' &&
+        strtolower($dbname) === strtolower($defaultDbName);
+
+    // When template defaults are in play, probe common deployment targets.
+    if (!getenv('DB_HOST') || $isLikelyTemplateDbConfig) {
+        $addConnectionTarget('127.0.0.1', 9008);
+        $addConnectionTarget('127.0.0.1', 3306);
+        $addConnectionTarget('localhost', 3306);
+        $addConnectionTarget('db', 3306);
+        $addConnectionTarget($defaultDbHost, $defaultDbPort);
     }
 
     $connected = false;
     $lastError = 'Unknown connection error';
     $activeHost = $servername;
     $activePort = (int)$port;
+    $attemptedTargets = [];
 
-    foreach ($connectionTargets as $target) {
+    foreach (array_values($connectionTargets) as $target) {
         [$targetHost, $targetPort] = $target;
-        $conn = @mysqli_init();
-        if (!$conn) {
-            throw new Exception("mysqli_init failed");
+        foreach ($passwordCandidates as $candidatePassword) {
+            $conn = mysqli_init();
+            if (!$conn) {
+                throw new Exception("mysqli_init failed");
+            }
+
+            // Set connection options to prevent timeout issues
+            mysqli_options($conn, MYSQLI_OPT_CONNECT_TIMEOUT, 10);
+            mysqli_options($conn, MYSQLI_OPT_READ_TIMEOUT, 30);
+
+            $connected = @$conn->real_connect($targetHost, $username, $candidatePassword, $dbname, (int)$targetPort);
+            if ($connected) {
+                $activeHost = $targetHost;
+                $activePort = (int)$targetPort;
+                $password = $candidatePassword;
+                break 2;
+            }
+
+            $lastError = mysqli_connect_error() ?: ($conn->connect_error ?: 'Unknown connection error');
+            $attemptedTargets[] = $targetHost . ':' . (int)$targetPort . ' -> ' . $lastError;
+            $conn->close();
         }
-
-        // Set connection options to prevent timeout issues
-        @mysqli_options($conn, MYSQLI_OPT_CONNECT_TIMEOUT, 10);
-        @mysqli_options($conn, MYSQLI_OPT_READ_TIMEOUT, 30);
-
-        $connected = @$conn->real_connect($targetHost, $username, $password, $dbname, (int)$targetPort);
-        if ($connected) {
-            $activeHost = $targetHost;
-            $activePort = (int)$targetPort;
-            break;
-        }
-
-        $lastError = mysqli_connect_error() ?: ($conn->connect_error ?: 'Unknown connection error');
     }
 
     if (!$connected) {
-        throw new Exception("Connection failed: " . $lastError);
+        $attemptContext = implode(' | ', array_slice($attemptedTargets, -5));
+        throw new Exception("Connection failed: " . $lastError . ($attemptContext !== '' ? " | attempts: " . $attemptContext : ''));
     }
     
     // Set charset to prevent encoding issues
