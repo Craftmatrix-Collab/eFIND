@@ -1770,7 +1770,6 @@ if ($showLoginWelcomeModal) {
                                 <p class="mb-2 text-center">TO HAVE AN EQUAL ACCESS TO ALL BASIC SERVICES THROUGH GOOD GOVERNANCE AND CAMARADERIES.</p>
                                 <p class="mb-2 text-center">TO ENHANCE AND ASSIST IN LIVELIHOOD OPPORTUNITIES TO UPLIFT STANDARD OF LIVING.</p>
                             </div>
-                            <small class="text-muted d-block text-center">This message will close automatically in 5 seconds.</small>
                         </div>
                     </div>
                 </div>
