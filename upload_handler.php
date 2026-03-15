@@ -2,6 +2,12 @@
 
 require_once 'FileUploadManager.php';
 require_once 'TextExtractor.php';
+require_once __DIR__ . '/admin/includes/env_loader.php';
+require_once __DIR__ . '/admin/includes/auth.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Enable error reporting for development
 error_reporting(E_ALL);
@@ -10,13 +16,148 @@ ini_set('display_errors', 0); // Don't display errors in production
 // Set JSON header
 header('Content-Type: application/json');
 
-// Handle CORS if needed
-header('Access-Control-Allow-Origin: *');
+function normalizeUploadOrigin($origin) {
+    $origin = trim((string)$origin);
+    if ($origin === '' || strtolower($origin) === 'null') {
+        return null;
+    }
+
+    $parts = parse_url($origin);
+    if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+        return null;
+    }
+
+    $normalized = strtolower($parts['scheme']) . '://' . strtolower($parts['host']);
+    if (!empty($parts['port'])) {
+        $normalized .= ':' . (int)$parts['port'];
+    }
+
+    return $normalized;
+}
+
+function getUploadCurrentOrigin() {
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+    if ($host === '') {
+        return null;
+    }
+
+    $forwardedProto = trim((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+    if ($forwardedProto !== '') {
+        $scheme = strtolower(explode(',', $forwardedProto)[0]);
+    } else {
+        $isHttps = !empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off';
+        $scheme = $isHttps ? 'https' : 'http';
+    }
+
+    return normalizeUploadOrigin($scheme . '://' . $host);
+}
+
+function resolveAllowedUploadOrigin() {
+    $requestOrigin = normalizeUploadOrigin($_SERVER['HTTP_ORIGIN'] ?? '');
+    if ($requestOrigin === null) {
+        return null;
+    }
+
+    $allowedOrigins = [];
+    $configuredOrigins = trim((string)(getenv('UPLOAD_ALLOWED_ORIGINS') ?: getenv('CHATBOT_ALLOWED_ORIGINS') ?: ''));
+    if ($configuredOrigins !== '') {
+        foreach (explode(',', $configuredOrigins) as $origin) {
+            $normalized = normalizeUploadOrigin($origin);
+            if ($normalized !== null) {
+                $allowedOrigins[$normalized] = true;
+            }
+        }
+    }
+
+    $sameOrigin = getUploadCurrentOrigin();
+    if ($sameOrigin !== null) {
+        $allowedOrigins[$sameOrigin] = true;
+    }
+
+    return isset($allowedOrigins[$requestOrigin]) ? $requestOrigin : null;
+}
+
+function getAllowedRemoteUploadHosts() {
+    static $hosts = null;
+    if ($hosts !== null) {
+        return $hosts;
+    }
+
+    $hostMap = [];
+
+    $currentHost = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+    if ($currentHost !== '') {
+        $hostMap[strtolower(preg_replace('/:\d+$/', '', $currentHost))] = true;
+    }
+
+    $configuredHosts = trim((string)(getenv('UPLOAD_ALLOWED_REMOTE_HOSTS') ?: ''));
+    if ($configuredHosts !== '') {
+        foreach (explode(',', $configuredHosts) as $host) {
+            $host = strtolower(trim((string)$host));
+            if ($host !== '') {
+                $hostMap[preg_replace('/:\d+$/', '', $host)] = true;
+            }
+        }
+    }
+
+    $minioEndpoint = trim((string)(getenv('MINIO_ENDPOINT') ?: ''));
+    if ($minioEndpoint !== '') {
+        $minioParts = parse_url(str_contains($minioEndpoint, '://') ? $minioEndpoint : ('https://' . $minioEndpoint));
+        $minioHost = strtolower(trim((string)($minioParts['host'] ?? '')));
+        if ($minioHost !== '') {
+            $hostMap[$minioHost] = true;
+        }
+    }
+
+    $hosts = array_keys($hostMap);
+    return $hosts;
+}
+
+function isAllowedRemoteFileUrl($url) {
+    $parts = parse_url($url);
+    if (!is_array($parts)) {
+        return false;
+    }
+
+    $scheme = strtolower((string)($parts['scheme'] ?? ''));
+    $host = strtolower(trim((string)($parts['host'] ?? '')));
+
+    if (!in_array($scheme, ['http', 'https'], true) || $host === '') {
+        return false;
+    }
+
+    return in_array($host, getAllowedRemoteUploadHosts(), true);
+}
+
+header('Vary: Origin');
 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
+$allowedUploadOrigin = resolveAllowedUploadOrigin();
+if ($allowedUploadOrigin !== null) {
+    header('Access-Control-Allow-Origin: ' . $allowedUploadOrigin);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
+    if (!empty($_SERVER['HTTP_ORIGIN']) && $allowedUploadOrigin === null) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => 'origin_not_allowed',
+            'message' => 'Origin not allowed.'
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        exit();
+    }
+    http_response_code(204);
+    exit();
+}
+
+if (!empty($_SERVER['HTTP_ORIGIN']) && $allowedUploadOrigin === null) {
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'error' => 'origin_not_allowed',
+        'message' => 'Origin not allowed.'
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     exit();
 }
 
@@ -26,6 +167,17 @@ $textExtractor = new TextExtractor('uploads/');
 
 // Handle different actions
 $action = $_GET['action'] ?? $_POST['action'] ?? 'upload';
+
+$publicActions = ['capabilities'];
+if (!in_array($action, $publicActions, true) && !isLoggedIn()) {
+    http_response_code(401);
+    echo json_encode([
+        'success' => false,
+        'error' => 'unauthorized',
+        'message' => 'Authentication required.'
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    exit();
+}
 
 switch ($action) {
     case 'upload':
@@ -207,6 +359,10 @@ function downloadRemoteFileToTemp($url) {
         return ['success' => false, 'message' => 'Remote file URL is empty.'];
     }
 
+    if (!isAllowedRemoteFileUrl($url)) {
+        return ['success' => false, 'message' => 'Remote file host is not allowed.'];
+    }
+
     $tmpFile = tempnam(sys_get_temp_dir(), 'efind_remote_');
     if (!$tmpFile) {
         return ['success' => false, 'message' => 'Failed to allocate temporary file.'];
@@ -218,11 +374,14 @@ function downloadRemoteFileToTemp($url) {
         $fp = fopen($tmpFile, 'wb');
         if ($ch && $fp) {
             curl_setopt($ch, CURLOPT_FILE, $fp);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
             curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+            if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTP') && defined('CURLPROTO_HTTPS')) {
+                curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+            }
             curl_exec($ch);
             $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $downloaded = $httpCode >= 200 && $httpCode < 300 && filesize($tmpFile) > 0;
@@ -234,7 +393,17 @@ function downloadRemoteFileToTemp($url) {
     }
 
     if (!$downloaded) {
-        $content = @file_get_contents($url);
+        $context = stream_context_create([
+            'http' => [
+                'timeout' => 30,
+                'follow_location' => 0
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true
+            ]
+        ]);
+        $content = @file_get_contents($url, false, $context);
         if ($content !== false && $content !== '') {
             file_put_contents($tmpFile, $content);
             $downloaded = filesize($tmpFile) > 0;

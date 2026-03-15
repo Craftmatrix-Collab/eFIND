@@ -22,6 +22,13 @@ class MinioS3Client {
         $this->region = MINIO_REGION;
         $this->useSSL = MINIO_USE_SSL;
     }
+
+    private function applyCurlTlsOptions($ch): void
+    {
+        $verifyPeer = !(defined('MINIO_INSECURE_SSL') && MINIO_INSECURE_SSL);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verifyPeer);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
+    }
     
     /**
      * Upload file to MinIO
@@ -81,9 +88,8 @@ class MinioS3Client {
             curl_setopt($ch, CURLOPT_POSTFIELDS, $fileContent);
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // For self-signed certificates
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            $this->applyCurlTlsOptions($ch);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
             
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -205,8 +211,7 @@ class MinioS3Client {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'HEAD');
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        $this->applyCurlTlsOptions($ch);
         curl_setopt($ch, CURLOPT_NOBODY, true);
         
         $response = curl_exec($ch);
@@ -239,8 +244,7 @@ class MinioS3Client {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        $this->applyCurlTlsOptions($ch);
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -289,8 +293,7 @@ class MinioS3Client {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $policy);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        $this->applyCurlTlsOptions($ch);
         
         curl_exec($ch);
         curl_close($ch);
@@ -316,8 +319,7 @@ class MinioS3Client {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        $this->applyCurlTlsOptions($ch);
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);

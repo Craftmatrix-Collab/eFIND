@@ -102,8 +102,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit(0);
 }
 
+if (!empty($_SERVER['HTTP_ORIGIN']) && $allowedCorsOrigin === null) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Origin not allowed']);
+    exit(0);
+}
+
 // Database connection
 require_once(__DIR__ . '/includes/config.php');
+require_once(__DIR__ . '/includes/auth.php');
 
 // N8N Configuration - defaults to production webhook, but can be overridden via env.
 $N8N_WEBHOOK_URL = getenv('N8N_WEBHOOK_URL') ?: "https://n8n-efind.craftmatrix.org/webhook/5eaeb40b-8411-43ce-bee1-c32fc14e04f1";
@@ -152,6 +159,11 @@ class BarangayChatbotAPI {
         }
         
         $this->log("Request received: $endpoint [" . $_SERVER['REQUEST_METHOD'] . "]");
+
+        if ($this->requiresAuthenticatedSession($endpoint) && (!function_exists('isLoggedIn') || !isLoggedIn())) {
+            $this->log("Unauthorized request blocked for endpoint: $endpoint");
+            return $this->jsonResponse(['error' => 'Unauthorized'], 401);
+        }
         
         switch($endpoint) {
             case '/health':
@@ -172,6 +184,12 @@ class BarangayChatbotAPI {
                 $this->log("Endpoint not found: $endpoint");
                 return $this->jsonResponse(['error' => 'Endpoint not found', 'requested' => $endpoint], 404);
         }
+    }
+
+    private function requiresAuthenticatedSession($endpoint): bool
+    {
+        $publicEndpoints = ['/health', '/api/health'];
+        return !in_array($endpoint, $publicEndpoints, true);
     }
     
     private function log($message) {

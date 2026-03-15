@@ -28,8 +28,17 @@ class TextExtractor {
      * Find command path
      */
     private function findCommand($command) {
-        $path = trim(shell_exec("which $command 2>/dev/null"));
-        return $path ?: null;
+        $command = trim((string)$command);
+        if ($command === '' || preg_match('/^[a-z0-9._-]+$/i', $command) !== 1) {
+            return null;
+        }
+
+        $path = trim((string)shell_exec('command -v ' . escapeshellarg($command) . ' 2>/dev/null'));
+        if ($path === '' || !is_file($path) || !is_executable($path)) {
+            return null;
+        }
+
+        return $path;
     }
     
     /**

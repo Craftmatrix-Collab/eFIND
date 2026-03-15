@@ -3,6 +3,8 @@ require_once __DIR__ . '/env_loader.php';
 
 $minioUseSslRaw = strtolower((string)(getenv('MINIO_USE_SSL') ?: 'true'));
 $minioUseSsl = in_array($minioUseSslRaw, ['1', 'true', 'yes', 'on'], true);
+$minioInsecureSslRaw = strtolower((string)(getenv('MINIO_INSECURE_SSL') ?: 'false'));
+$minioInsecureSsl = in_array($minioInsecureSslRaw, ['1', 'true', 'yes', 'on'], true);
 $minioPort = (int)(getenv('MINIO_PORT') ?: 443);
 
 // MinIO S3 Configuration
@@ -12,6 +14,7 @@ define('MINIO_SECRET_KEY', getenv('MINIO_SECRET_KEY') ?: (getenv('MINIO_ROOT_PAS
 define('MINIO_BUCKET', getenv('MINIO_BUCKET') ?: 'efind-documents'); // Default bucket name
 define('MINIO_REGION', getenv('MINIO_REGION') ?: 'us-east-1'); // Default region
 define('MINIO_USE_SSL', $minioUseSsl);
+define('MINIO_INSECURE_SSL', $minioInsecureSsl);
 define('MINIO_PORT', $minioPort);
 
 // MinIO URLs

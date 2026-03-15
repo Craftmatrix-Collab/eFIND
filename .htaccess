@@ -27,6 +27,9 @@
     
     # Protect includes directory
     RewriteRule ^includes/ - [F,L]
+
+    # Block direct access to debug/diagnostic/test scripts
+    RewriteRule ^admin/(?:test[-_].*|debug[-_].*|diagnostic[-_].*|examples[-_].*|logout_(?:debug|minimal|step_by_step)).*\.php$ - [F,L,NC]
     
     # Hide .php extension for all files
     # Skip if file is a directory

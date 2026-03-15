@@ -11,6 +11,11 @@ session_start();
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 
+if (!isLoggedIn()) {
+    header('Location: login.php');
+    exit;
+}
+
 
 $preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'executive_orders'])
     ? $_GET['type']
