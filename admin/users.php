@@ -1715,23 +1715,25 @@ $count_stmt->close();
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form method="POST" action="" enctype="multipart/form-data">
+                    <form id="addUserForm" method="POST" action="" enctype="multipart/form-data" autocomplete="off">
                         <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                        <input type="text" name="autofill_username" class="d-none" tabindex="-1" aria-hidden="true" autocomplete="username">
+                        <input type="password" name="autofill_password" class="d-none" tabindex="-1" aria-hidden="true" autocomplete="current-password">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="full_name" class="form-label">Full Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="full_name" name="full_name" required>
+                                <input type="text" class="form-control" id="full_name" name="full_name" required autocomplete="off">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="contact_number" class="form-label">Contact Number</label>
-                                <input type="text" class="form-control" id="contact_number" name="contact_number">
+                                <input type="text" class="form-control" id="contact_number" name="contact_number" autocomplete="off" inputmode="numeric">
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="addUserEmail" class="form-label">Email <span class="text-danger">*</span></label>
                                 <div class="input-group">
-                                    <input type="email" class="form-control" id="addUserEmail" name="email" required placeholder="user@example.com">
+                                    <input type="email" class="form-control" id="addUserEmail" name="email" required placeholder="user@example.com" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
                                     <button class="btn btn-outline-primary" type="button" id="sendOtpBtn">
                                         <i class="fas fa-paper-plane me-1"></i> Send OTP
                                     </button>
@@ -1742,7 +1744,7 @@ $count_stmt->close();
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="username" name="username" required>
+                                <input type="text" class="form-control" id="username" name="username" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
                             </div>
                         </div>
                         <div class="row" id="otpSection" style="display:none !important">
@@ -1761,7 +1763,7 @@ $count_stmt->close();
                             <div class="col-md-6 mb-3">
                                 <label for="addUserPassword" class="form-label">Password <span class="text-danger">*</span></label>
                                 <div class="input-group">
-                                    <input type="password" class="form-control" id="addUserPassword" name="password" required>
+                                    <input type="password" class="form-control" id="addUserPassword" name="password" required autocomplete="new-password">
                                     <button class="btn btn-outline-secondary toggle-password" type="button">
                                         <i class="fas fa-eye"></i>
                                     </button>
@@ -2014,7 +2016,7 @@ $count_stmt->close();
                 });
             }
 
-            const addUserForm = document.querySelector('#addUserModal form');
+            const addUserForm = document.getElementById('addUserForm');
             if (addUserForm) {
                 addUserForm.addEventListener('submit', function(e) {
                     const passwordInput = document.getElementById('addUserPassword');
@@ -2030,6 +2032,20 @@ $count_stmt->close();
 
             const addUserModal = document.getElementById('addUserModal');
             if (addUserModal) {
+                addUserModal.addEventListener('shown.bs.modal', function() {
+                    if (!addUserForm) {
+                        return;
+                    }
+                    addUserForm.reset();
+                    window.setTimeout(function () {
+                        ['full_name', 'contact_number', 'addUserEmail', 'username', 'addUserPassword'].forEach(function (fieldId) {
+                            const field = document.getElementById(fieldId);
+                            if (field) {
+                                field.value = '';
+                            }
+                        });
+                    }, 0);
+                });
                 addUserModal.addEventListener('hidden.bs.modal', function() {
                     resetAddUserPasswordIndicator();
                 });
