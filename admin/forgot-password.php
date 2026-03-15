@@ -6,6 +6,14 @@ require_once __DIR__ . '/vendor/autoload.php';
 $message = '';
 $error = '';
 
+if (!defined('FORGOT_PASSWORD_MAX_ATTEMPTS')) {
+    define('FORGOT_PASSWORD_MAX_ATTEMPTS', 3);
+}
+
+if (!defined('FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS')) {
+    define('FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS', 180);
+}
+
 // Flash error from verify-otp.php (too many attempts redirect)
 if (isset($_SESSION['fp_error'])) {
     $error = $_SESSION['fp_error'];
@@ -28,17 +36,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
             $_SESSION['forgot_first_attempt'] = time();
         }
         
-        // Reset counter if 15 minutes have passed
+        // Reset counter if 3 minutes have passed
         $time_passed = time() - ($_SESSION['forgot_first_attempt'] ?? time());
-        if ($time_passed >= 900) { // 15 minutes
+        if ($time_passed >= FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS) {
             $_SESSION['forgot_attempts'] = 0;
             $_SESSION['forgot_first_attempt'] = time();
         }
         
         // Check if too many attempts
-        if ($_SESSION['forgot_attempts'] >= 3) {
-            $remaining = 900 - $time_passed;
-            $minutes = ceil($remaining / 60);
+        if ($_SESSION['forgot_attempts'] >= FORGOT_PASSWORD_MAX_ATTEMPTS) {
+            $remaining = max(0, FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS - $time_passed);
+            $minutes = max(1, (int)ceil($remaining / 60));
             $error = "Too many attempts. Please try again in $minutes minute(s).";
         } else {
             $email = trim($_POST['email']);
