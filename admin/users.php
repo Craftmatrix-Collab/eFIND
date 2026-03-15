@@ -26,20 +26,121 @@ $is_superadmin_users_page = function_exists('isSuperAdmin') && isSuperAdmin();
 $current_users_page_actor_id = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($_SESSION['user_id'] ?? 0);
 $current_users_page_actor_type = 'users';
 
-function canEditManagedProfile(int $targetId, string $targetType, bool $isSuperadmin, int $currentActorId, string $currentActorType): bool
+function normalizeManagedProfileRole($role): string
 {
+    $normalized = strtolower(trim((string)$role));
+    return in_array($normalized, ['superadmin', 'admin', 'staff', 'viewer'], true) ? $normalized : '';
+}
+
+function managedProfileRoleRank(string $role): int
+{
+    static $ranks = [
+        'viewer' => 1,
+        'staff' => 2,
+        'admin' => 3,
+        'superadmin' => 4,
+    ];
+    $normalizedRole = normalizeManagedProfileRole($role);
+    return $ranks[$normalizedRole] ?? 0;
+}
+
+function resolveCurrentManagedProfileRole(int $currentActorId, bool $isSuperadmin): string
+{
+    global $conn;
+
+    if ($isSuperadmin) {
+        return 'superadmin';
+    }
+
+    if (isset($conn) && $conn instanceof mysqli && $currentActorId > 0) {
+        $roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
+        if ($roleStmt) {
+            $roleStmt->bind_param("i", $currentActorId);
+            if ($roleStmt->execute()) {
+                $roleRow = $roleStmt->get_result()->fetch_assoc();
+                $roleStmt->close();
+                $dbRole = normalizeManagedProfileRole($roleRow['role'] ?? '');
+                if ($dbRole !== '') {
+                    return $dbRole;
+                }
+            } else {
+                error_log('Users page actor role lookup failed: ' . $roleStmt->error);
+                $roleStmt->close();
+            }
+        } else {
+            error_log('Users page actor role prepare failed: ' . $conn->error);
+        }
+    }
+
+    $sessionRole = normalizeManagedProfileRole($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? ''));
+    if ($sessionRole !== '') {
+        return $sessionRole;
+    }
+
+    if (function_exists('isAdmin') && isAdmin()) {
+        return 'admin';
+    }
+    if (function_exists('isStaff') && isStaff()) {
+        return 'staff';
+    }
+
+    return '';
+}
+
+function canEditManagedProfile(
+    int $targetId,
+    string $targetType,
+    string $targetRole,
+    int $currentActorId,
+    string $currentActorType,
+    string $currentActorRole
+): bool {
     if ($targetId <= 0 || !in_array($targetType, ['users'], true)) {
         return false;
     }
 
-    if ($isSuperadmin) {
+    $normalizedActorRole = normalizeManagedProfileRole($currentActorRole);
+    if ($normalizedActorRole === '') {
+        return false;
+    }
+
+    $isSelfEdit = $currentActorId > 0 && $targetId === $currentActorId && $targetType === $currentActorType;
+    if ($isSelfEdit) {
         return true;
     }
 
-    return $currentActorId > 0
-        && $targetId === $currentActorId
-        && $targetType === $currentActorType;
+    if ($normalizedActorRole === 'staff') {
+        return false;
+    }
+
+    $normalizedTargetRole = normalizeManagedProfileRole($targetRole);
+    if ($normalizedTargetRole === '') {
+        return false;
+    }
+
+    return managedProfileRoleRank($normalizedTargetRole) < managedProfileRoleRank($normalizedActorRole);
 }
+
+function canAssignManagedRole(int $targetId, int $currentActorId, string $targetRole, string $currentActorRole): bool
+{
+    $normalizedTargetRole = normalizeManagedProfileRole($targetRole);
+    $normalizedActorRole = normalizeManagedProfileRole($currentActorRole);
+    if ($normalizedTargetRole === '' || $normalizedActorRole === '') {
+        return false;
+    }
+
+    $targetRank = managedProfileRoleRank($normalizedTargetRole);
+    $actorRank = managedProfileRoleRank($normalizedActorRole);
+    $isSelfEdit = $currentActorId > 0 && $targetId === $currentActorId;
+
+    if ($isSelfEdit) {
+        return $targetRank <= $actorRank;
+    }
+
+    return $targetRank < $actorRank;
+}
+
+$current_users_page_actor_role = resolveCurrentManagedProfileRole($current_users_page_actor_id, $is_superadmin_users_page);
 
 function ensureUsersAccountLockColumns(string $tableName): void
 {
@@ -188,13 +289,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_edit_verify_otp') {
         echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
         exit();
     }
-    if (!canEditManagedProfile($userId, $userType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type)) {
-        echo json_encode(['success' => false, 'message' => 'You can only edit your own profile.']);
-        exit();
-    }
 
     $table = 'users';
-    $targetStmt = $conn->prepare("SELECT email FROM $table WHERE id = ?");
+    $targetStmt = $conn->prepare("SELECT email, role FROM $table WHERE id = ?");
     if (!$targetStmt) {
         error_log('Edit OTP target-user prepare failed: ' . $conn->error);
         echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
@@ -212,6 +309,17 @@ if (isset($_POST['action']) && $_POST['action'] === 'send_edit_verify_otp') {
     $targetStmt->close();
     if (!$targetUser) {
         echo json_encode(['success' => false, 'message' => 'User not found.']);
+        exit();
+    }
+    if (!canEditManagedProfile(
+        $userId,
+        $userType,
+        (string)($targetUser['role'] ?? ''),
+        $current_users_page_actor_id,
+        $current_users_page_actor_type,
+        $current_users_page_actor_role
+    )) {
+        echo json_encode(['success' => false, 'message' => 'You are not authorized to edit this profile.']);
         exit();
     }
 
@@ -296,10 +404,39 @@ if (isset($_POST['action']) && $_POST['action'] === 'check_edit_verify_otp') {
         echo json_encode(['success' => false, 'message' => 'Invalid user context.']);
         exit();
     }
-    if (!canEditManagedProfile($userId, $userType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type)) {
-        echo json_encode(['success' => false, 'message' => 'You can only edit your own profile.']);
+
+    $table = 'users';
+    $targetRoleStmt = $conn->prepare("SELECT role FROM $table WHERE id = ? LIMIT 1");
+    if (!$targetRoleStmt) {
+        error_log('Edit OTP role-check prepare failed: ' . $conn->error);
+        echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
         exit();
     }
+    $targetRoleStmt->bind_param("i", $userId);
+    if (!$targetRoleStmt->execute()) {
+        error_log('Edit OTP role-check execute failed: ' . $targetRoleStmt->error);
+        $targetRoleStmt->close();
+        echo json_encode(['success' => false, 'message' => 'Database error. Please try again later.']);
+        exit();
+    }
+    $targetRoleRow = $targetRoleStmt->get_result()->fetch_assoc();
+    $targetRoleStmt->close();
+    if (!$targetRoleRow) {
+        echo json_encode(['success' => false, 'message' => 'User not found.']);
+        exit();
+    }
+    if (!canEditManagedProfile(
+        $userId,
+        $userType,
+        (string)($targetRoleRow['role'] ?? ''),
+        $current_users_page_actor_id,
+        $current_users_page_actor_type,
+        $current_users_page_actor_role
+    )) {
+        echo json_encode(['success' => false, 'message' => 'You are not authorized to edit this profile.']);
+        exit();
+    }
+
     if (!preg_match('/^\d{6}$/', $otp)) {
         echo json_encode(['success' => false, 'message' => 'Please enter a valid 6-digit OTP.']);
         exit();
@@ -504,14 +641,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = null;
         $role = trim($_POST['role']);
         $profile_picture = '';
+        $normalizedRequestedRole = normalizeManagedProfileRole($role);
 
         // Validate inputs
         if (!in_array($user_type, ['users'], true)) {
             $_SESSION['error'] = "Invalid user type.";
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
-        } elseif (!canEditManagedProfile($id, $user_type, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type)) {
-            $_SESSION['error'] = "You can only edit your own profile.";
+        } elseif ($normalizedRequestedRole === '') {
+            $_SESSION['error'] = "Invalid role selected.";
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
         } elseif (empty($full_name) || empty($email) || empty($username) || empty($role)) {
@@ -519,6 +657,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
         } else {
+            $role = $normalizedRequestedRole;
             if ($newPasswordRaw !== '') {
                 $passwordValidation = validatePasswordPolicy($newPasswordRaw);
                 if (!$passwordValidation['is_valid']) {
@@ -546,7 +685,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $table = 'users';
             $password_field = 'password';
 
-            $existsStmt = $conn->prepare("SELECT email, profile_picture FROM $table WHERE id = ?");
+            $existsStmt = $conn->prepare("SELECT email, profile_picture, role FROM $table WHERE id = ?");
             $existsStmt->bind_param("i", $id);
             $existsStmt->execute();
             $existsResult = $existsStmt->get_result();
@@ -554,6 +693,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $existsStmt->close();
             if (!$currentUser) {
                 $_SESSION['error'] = "User not found.";
+                header("Location: " . $_SERVER['PHP_SELF']);
+                exit();
+            }
+            if (!canEditManagedProfile(
+                $id,
+                $user_type,
+                (string)($currentUser['role'] ?? ''),
+                $current_users_page_actor_id,
+                $current_users_page_actor_type,
+                $current_users_page_actor_role
+            )) {
+                $_SESSION['error'] = "You are not authorized to edit this profile.";
+                header("Location: " . $_SERVER['PHP_SELF']);
+                exit();
+            }
+            if (!canAssignManagedRole($id, $current_users_page_actor_id, $role, $current_users_page_actor_role)) {
+                $_SESSION['error'] = "You are not authorized to assign that role.";
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit();
             }
@@ -656,11 +812,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
         echo json_encode(['error' => 'Invalid user type']);
         exit();
     }
-    if (!canEditManagedProfile($id, $userType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type)) {
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'You can only edit your own profile.']);
-        exit();
-    }
     $table = 'users';
     $stmt = $conn->prepare("SELECT *, '$table' as user_type FROM $table WHERE id = ?");
     $stmt->bind_param("i", $id);
@@ -669,6 +820,18 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
     $user = $result->fetch_assoc();
     $stmt->close();
     if ($user) {
+        if (!canEditManagedProfile(
+            $id,
+            $userType,
+            (string)($user['role'] ?? ''),
+            $current_users_page_actor_id,
+            $current_users_page_actor_type,
+            $current_users_page_actor_role
+        )) {
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'You are not authorized to edit this profile.']);
+            exit();
+        }
         header('Content-Type: application/json');
         echo json_encode($user);
         exit();
@@ -1576,7 +1739,14 @@ $count_stmt->close();
                                             <?php
                                             $targetRole = strtolower((string)($user['role'] ?? ''));
                                             $targetUserType = (string)($user['user_type'] ?? 'users');
-                                            $canEditRow = canEditManagedProfile((int)$user['id'], $targetUserType, $is_superadmin_users_page, $current_users_page_actor_id, $current_users_page_actor_type);
+                                            $canEditRow = canEditManagedProfile(
+                                                (int)$user['id'],
+                                                $targetUserType,
+                                                $targetRole,
+                                                $current_users_page_actor_id,
+                                                $current_users_page_actor_type,
+                                                $current_users_page_actor_role
+                                            );
                                             $canDeleteRow = $is_superadmin_users_page
                                                 ? in_array($targetRole, ['admin', 'staff'], true)
                                                 : ($targetRole === 'staff');
