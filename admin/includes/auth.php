@@ -15,6 +15,10 @@ if (!defined('PRIMARY_BROWSER_EXIT_GRACE_SECONDS')) {
     define('PRIMARY_BROWSER_EXIT_GRACE_SECONDS', PRIMARY_INACTIVITY_TIMEOUT_SECONDS);
 }
 
+if (!defined('PASSWORD_RESET_RATE_LIMIT_TABLE')) {
+    define('PASSWORD_RESET_RATE_LIMIT_TABLE', 'password_reset_rate_limit_events');
+}
+
 function getAuthConnection() {
     return (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) ? $GLOBALS['conn'] : null;
 }
@@ -265,6 +269,208 @@ function ensurePasswordChangedAtColumn(mysqli $conn, $table) {
 
     $checkedTables[$table] = true;
     return true;
+}
+
+function getPasswordResetClientIp(): string {
+    $rawIp = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    if ($rawIp === '' || strlen($rawIp) > 45) {
+        return '0.0.0.0';
+    }
+
+    if (!preg_match('/^[0-9a-fA-F:.]+$/', $rawIp)) {
+        return '0.0.0.0';
+    }
+
+    return $rawIp;
+}
+
+function normalizePasswordResetEmail(string $email): string {
+    return strtolower(trim($email));
+}
+
+function ensurePasswordResetSecurityColumns(mysqli $conn, $table = 'users'): bool {
+    static $checkedTables = [];
+    $table = trim((string)$table);
+
+    if (!in_array($table, ['users'], true)) {
+        return false;
+    }
+
+    if (array_key_exists($table, $checkedTables)) {
+        return $checkedTables[$table];
+    }
+
+    $migrations = [
+        'reset_token_hash' => "ALTER TABLE {$table} ADD COLUMN reset_token_hash VARCHAR(255) NULL DEFAULT NULL",
+        'reset_challenge_id' => "ALTER TABLE {$table} ADD COLUMN reset_challenge_id CHAR(64) NULL DEFAULT NULL",
+        'reset_challenge_expires' => "ALTER TABLE {$table} ADD COLUMN reset_challenge_expires DATETIME NULL DEFAULT NULL",
+        'reset_proof_hash' => "ALTER TABLE {$table} ADD COLUMN reset_proof_hash VARCHAR(255) NULL DEFAULT NULL",
+        'reset_proof_expires' => "ALTER TABLE {$table} ADD COLUMN reset_proof_expires DATETIME NULL DEFAULT NULL",
+        'reset_verified_at' => "ALTER TABLE {$table} ADD COLUMN reset_verified_at DATETIME NULL DEFAULT NULL",
+    ];
+
+    $allMigrationsApplied = true;
+    foreach ($migrations as $columnName => $migrationSql) {
+        $columnCheck = $conn->query("SHOW COLUMNS FROM {$table} LIKE '{$columnName}'");
+        if (!$columnCheck) {
+            error_log("Failed to inspect {$table}.{$columnName}: " . $conn->error);
+            $allMigrationsApplied = false;
+            continue;
+        }
+
+        if ((int)$columnCheck->num_rows > 0) {
+            continue;
+        }
+
+        if (!$conn->query($migrationSql)) {
+            error_log("Failed to add {$table}.{$columnName}: " . $conn->error);
+            $allMigrationsApplied = false;
+        }
+    }
+
+    $checkedTables[$table] = $allMigrationsApplied;
+    return $allMigrationsApplied;
+}
+
+function ensurePasswordResetRateLimitTable(mysqli $conn): bool {
+    static $initialized = null;
+    if ($initialized !== null) {
+        return $initialized;
+    }
+
+    $sql = "CREATE TABLE IF NOT EXISTS " . PASSWORD_RESET_RATE_LIMIT_TABLE . " (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        action VARCHAR(32) NOT NULL,
+        email VARCHAR(255) NOT NULL DEFAULT '',
+        ip_address VARCHAR(45) NOT NULL DEFAULT '',
+        challenge_id VARCHAR(64) NOT NULL DEFAULT '',
+        was_successful TINYINT(1) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        INDEX idx_prrle_action_created (action, created_at),
+        INDEX idx_prrle_action_email_created (action, email, created_at),
+        INDEX idx_prrle_action_challenge_created (action, challenge_id, created_at),
+        INDEX idx_prrle_action_ip_created (action, ip_address, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+
+    $initialized = $conn->query($sql) === true;
+    if (!$initialized) {
+        error_log('Failed to ensure password reset rate-limit table: ' . $conn->error);
+    }
+
+    return $initialized;
+}
+
+function getPasswordResetAttemptCounts(
+    mysqli $conn,
+    string $action,
+    string $email,
+    string $ipAddress,
+    int $windowSeconds,
+    string $challengeId = ''
+): array {
+    $defaultCounts = ['email' => 0, 'ip' => 0];
+    if (!ensurePasswordResetRateLimitTable($conn)) {
+        return $defaultCounts;
+    }
+
+    $action = substr(trim($action), 0, 32);
+    if ($action === '') {
+        return $defaultCounts;
+    }
+
+    $email = normalizePasswordResetEmail($email);
+    $ipAddress = trim($ipAddress);
+    $windowSeconds = max(1, (int)$windowSeconds);
+
+    $hasChallenge = preg_match('/^[a-f0-9]{64}$/', $challengeId) === 1;
+    if ($hasChallenge) {
+        $sql = "SELECT
+                    COALESCE(SUM(CASE WHEN email = ? AND challenge_id = ? THEN 1 ELSE 0 END), 0) AS email_count,
+                    COALESCE(SUM(CASE WHEN ip_address = ? THEN 1 ELSE 0 END), 0) AS ip_count
+                FROM " . PASSWORD_RESET_RATE_LIMIT_TABLE . "
+                WHERE action = ?
+                  AND created_at >= (NOW() - INTERVAL {$windowSeconds} SECOND)";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            error_log('Failed to prepare challenge attempt count query: ' . $conn->error);
+            return $defaultCounts;
+        }
+
+        $stmt->bind_param('ssss', $email, $challengeId, $ipAddress, $action);
+    } else {
+        $sql = "SELECT
+                    COALESCE(SUM(CASE WHEN email = ? THEN 1 ELSE 0 END), 0) AS email_count,
+                    COALESCE(SUM(CASE WHEN ip_address = ? THEN 1 ELSE 0 END), 0) AS ip_count
+                FROM " . PASSWORD_RESET_RATE_LIMIT_TABLE . "
+                WHERE action = ?
+                  AND created_at >= (NOW() - INTERVAL {$windowSeconds} SECOND)";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            error_log('Failed to prepare attempt count query: ' . $conn->error);
+            return $defaultCounts;
+        }
+
+        $stmt->bind_param('sss', $email, $ipAddress, $action);
+    }
+
+    if (!$stmt->execute()) {
+        error_log('Failed to execute attempt count query: ' . $stmt->error);
+        $stmt->close();
+        return $defaultCounts;
+    }
+
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return [
+        'email' => (int)($row['email_count'] ?? 0),
+        'ip' => (int)($row['ip_count'] ?? 0),
+    ];
+}
+
+function logPasswordResetAttempt(
+    mysqli $conn,
+    string $action,
+    string $email,
+    string $ipAddress,
+    bool $wasSuccessful,
+    string $challengeId = ''
+): void {
+    if (!ensurePasswordResetRateLimitTable($conn)) {
+        return;
+    }
+
+    $action = substr(trim($action), 0, 32);
+    if ($action === '') {
+        return;
+    }
+
+    $email = normalizePasswordResetEmail($email);
+    $ipAddress = trim($ipAddress);
+    if ($ipAddress === '' || strlen($ipAddress) > 45) {
+        $ipAddress = '0.0.0.0';
+    }
+
+    if (preg_match('/^[a-f0-9]{64}$/', $challengeId) !== 1) {
+        $challengeId = '';
+    }
+
+    $successFlag = $wasSuccessful ? 1 : 0;
+    $stmt = $conn->prepare(
+        "INSERT INTO " . PASSWORD_RESET_RATE_LIMIT_TABLE . " (action, email, ip_address, challenge_id, was_successful)
+         VALUES (?, ?, ?, ?, ?)"
+    );
+    if (!$stmt) {
+        error_log('Failed to prepare reset attempt insert: ' . $conn->error);
+        return;
+    }
+
+    $stmt->bind_param('ssssi', $action, $email, $ipAddress, $challengeId, $successFlag);
+    if (!$stmt->execute()) {
+        error_log('Failed to insert reset attempt event: ' . $stmt->error);
+    }
+    $stmt->close();
 }
 
 function updateAccountPasswordChangedAt(mysqli $conn, $accountType, $accountId) {

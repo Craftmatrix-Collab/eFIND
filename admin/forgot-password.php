@@ -1,177 +1,237 @@
 <?php
 session_start();
+require_once __DIR__ . '/includes/auth.php';
 include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
 
 $message = '';
 $error = '';
+$genericResetMessage = 'If the email is registered, an OTP code has been sent. Please check your inbox.';
 
-if (!defined('FORGOT_PASSWORD_MAX_ATTEMPTS')) {
-    define('FORGOT_PASSWORD_MAX_ATTEMPTS', 3);
+if (!defined('FORGOT_PASSWORD_MAX_ATTEMPTS_PER_EMAIL')) {
+    define('FORGOT_PASSWORD_MAX_ATTEMPTS_PER_EMAIL', 3);
+}
+
+if (!defined('FORGOT_PASSWORD_MAX_ATTEMPTS_PER_IP')) {
+    define('FORGOT_PASSWORD_MAX_ATTEMPTS_PER_IP', 10);
 }
 
 if (!defined('FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS')) {
     define('FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS', 180);
 }
 
+if (!defined('RESET_OTP_LENGTH')) {
+    define('RESET_OTP_LENGTH', 6);
+}
+
+if (!defined('RESET_OTP_EXPIRY_SECONDS')) {
+    define('RESET_OTP_EXPIRY_SECONDS', 900);
+}
+
 // Flash error from verify-otp.php (too many attempts redirect)
 if (isset($_SESSION['fp_error'])) {
-    $error = $_SESSION['fp_error'];
+    $error = (string)$_SESSION['fp_error'];
     unset($_SESSION['fp_error']);
 }
 
-// Generate CSRF token if not exists
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset'])) {
-    // CSRF Protection
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-        $error = "Invalid request. Please try again.";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
+    if (
+        !isset($_POST['csrf_token'], $_SESSION['csrf_token']) ||
+        !hash_equals((string)$_SESSION['csrf_token'], (string)$_POST['csrf_token'])
+    ) {
+        $error = 'Invalid request. Please try again.';
     } else {
-        // Rate Limiting Check
-        if (!isset($_SESSION['forgot_attempts'])) {
-            $_SESSION['forgot_attempts'] = 0;
-            $_SESSION['forgot_first_attempt'] = time();
-        }
-        
-        // Reset counter if 3 minutes have passed
-        $time_passed = time() - ($_SESSION['forgot_first_attempt'] ?? time());
-        if ($time_passed >= FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS) {
-            $_SESSION['forgot_attempts'] = 0;
-            $_SESSION['forgot_first_attempt'] = time();
-        }
-        
-        // Check if too many attempts
-        if ($_SESSION['forgot_attempts'] >= FORGOT_PASSWORD_MAX_ATTEMPTS) {
-            $remaining = max(0, FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS - $time_passed);
-            $minutes = max(1, (int)ceil($remaining / 60));
-            $error = "Too many attempts. Please try again in $minutes minute(s).";
+        $email = trim((string)($_POST['email'] ?? ''));
+        if ($email === '') {
+            $error = 'Email address is required.';
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $error = 'Please enter a valid email address.';
         } else {
-            $email = trim($_POST['email']);
+            $normalizedEmail = function_exists('normalizePasswordResetEmail')
+                ? normalizePasswordResetEmail($email)
+                : strtolower($email);
+            $clientIp = function_exists('getPasswordResetClientIp')
+                ? getPasswordResetClientIp()
+                : trim((string)($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
 
-            if (empty($email)) {
-                $error = "Email address is required.";
-            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $error = "Please enter a valid email address.";
+            $attemptCounts = function_exists('getPasswordResetAttemptCounts')
+                ? getPasswordResetAttemptCounts(
+                    $conn,
+                    'forgot_request',
+                    $normalizedEmail,
+                    $clientIp,
+                    FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS
+                )
+                : ['email' => 0, 'ip' => 0];
+
+            if (
+                $attemptCounts['email'] >= FORGOT_PASSWORD_MAX_ATTEMPTS_PER_EMAIL ||
+                $attemptCounts['ip'] >= FORGOT_PASSWORD_MAX_ATTEMPTS_PER_IP
+            ) {
+                $error = 'Too many reset requests. Please wait a few minutes before trying again.';
+                if (function_exists('logPasswordResetAttempt')) {
+                    logPasswordResetAttempt($conn, 'forgot_request', $normalizedEmail, $clientIp, false);
+                }
             } else {
-                $_SESSION['forgot_attempts']++;
-
-                // Search for the email in users
                 $user = null;
-                $user_table = 'users';
-                $s = $conn->prepare("SELECT id, username, full_name, role, email_verified FROM users WHERE email = ? LIMIT 1");
-                if ($s) {
-                    $s->bind_param("s", $email);
-                    $s->execute();
-                    $r = $s->get_result();
-                    if ($r->num_rows == 1) {
-                        $user = $r->fetch_assoc();
-                    }
-                    $s->close();
-                }
-
-                if ($user) {
-                    // Block unverified admin accounts — they must verify email first
-                    $accountRole = strtolower((string)($user['role'] ?? 'staff'));
-                    if (in_array($accountRole, ['admin', 'superadmin'], true) && empty($user['email_verified'])) {
-                        $error = 'Your account email is not verified. Please <a href="resend-verification.php">resend the verification email</a> and verify your account before resetting your password.';
-                    } else {
-                    // Generate a cryptographically secure 6-digit OTP
-                    $reset_token = sprintf("%06d", random_int(0, 999999));
-                    $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
-
-                    // Store OTP in users table
-                    $update_stmt = $conn->prepare("UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE id = ?");
-                    if (!$update_stmt) {
-                        $error = "Database error. Please try again later.";
-                        error_log("Forgot password update prepare failed: " . $conn->error);
-                    } else {
-                        $update_stmt->bind_param("ssi", $reset_token, $expires, $user['id']);
-                        if (!$update_stmt->execute()) {
-                            $error = "Database error. Please try again later.";
-                            error_log("Forgot password update execute failed: " . $update_stmt->error);
-                        }
-                        $update_stmt->close();
-                    }
-
-                    if (empty($error)) {
-                        // Store email and table in session so verify-otp.php can use them
-                        $_SESSION['reset_email'] = $email;
-                        $_SESSION['user_table'] = $user_table;
-                        unset($_SESSION['otp_attempts'], $_SESSION['otp_verified'], $_SESSION['reset_user_id']);
-
-                        // Send OTP via Resend
-                        try {
-                            if (trim((string)RESEND_API_KEY) === '') {
-                                throw new RuntimeException('RESEND_API_KEY is not configured.');
-                            }
-                            $resend = \Resend::client(RESEND_API_KEY);
-
-                        $html_content = "
-                        <!DOCTYPE html>
-                        <html>
-                        <head>
-                            <style>
-                                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                                .header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-                                .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-                                .otp-box { background: white; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; border: 2px dashed #4361ee; }
-                                .otp-code { font-size: 32px; font-weight: bold; color: #4361ee; letter-spacing: 5px; }
-                                .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-                            </style>
-                        </head>
-                        <body>
-                            <div class='container'>
-                                <div class='header'>
-                                    <h1>Password Reset OTP</h1>
-                                </div>
-                                <div class='content'>
-                                    <p>Hello " . htmlspecialchars($user['full_name']) . ",</p>
-                                    <p>We received a request to reset your password for your eFIND System account.</p>
-                                    <div class='otp-box'>
-                                        <p style='margin: 0; color: #666;'>Your OTP Code:</p>
-                                        <div class='otp-code'>" . $reset_token . "</div>
-                                    </div>
-                                    <p><strong>This code will expire in 15 minutes.</strong></p>
-                                    <p>If you didn't request this, please ignore this email.</p>
-                                    <div class='footer'>
-                                        <p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </body>
-                        </html>
-                        ";
-
-                        $resend->emails->send([
-                            'from' => FROM_EMAIL,
-                            'to' => [$email],
-                            'subject' => 'Password Reset OTP - eFIND System',
-                            'html' => $html_content
-                        ]);
-
-                        // Redirect to OTP verification page
-                        header("Location: verify-otp.php");
-                        exit();
-
-                        } catch (Throwable $e) {
-                            $error = "Failed to send reset email. Please contact the system administrator.";
-                            error_log("Resend Error in forgot-password: " . $e->getMessage());
-                            // Clean up session on failure
-                            unset($_SESSION['reset_email'], $_SESSION['user_table'], $_SESSION['otp_attempts'], $_SESSION['otp_verified'], $_SESSION['reset_user_id']);
-                        }
-                    }
-                    } // end is_verified check else
+                $lookup = $conn->prepare("SELECT id, full_name, role, email_verified FROM users WHERE email = ? LIMIT 1");
+                if (!$lookup) {
+                    $error = 'Database error. Please try again later.';
+                    error_log('Forgot password lookup prepare failed: ' . $conn->error);
                 } else {
-                    // Prevent user enumeration - show generic message
-                    $message = "If this email is registered, a password reset OTP has been sent to your inbox. Please check your email.";
+                    $lookup->bind_param('s', $normalizedEmail);
+                    if (!$lookup->execute()) {
+                        $error = 'Database error. Please try again later.';
+                        error_log('Forgot password lookup execute failed: ' . $lookup->error);
+                    } else {
+                        $result = $lookup->get_result();
+                        if ($result && $result->num_rows === 1) {
+                            $user = $result->fetch_assoc();
+                        }
+                    }
+                    $lookup->close();
                 }
 
-                if (!headers_sent()) {
-                    $conn->close();
+                $otpDelivered = false;
+                if (empty($error) && $user) {
+                    $accountRole = strtolower((string)($user['role'] ?? 'staff'));
+                    $isUnverifiedAdmin = in_array($accountRole, ['admin', 'superadmin'], true) && empty($user['email_verified']);
+
+                    if (!$isUnverifiedAdmin) {
+                        if (!function_exists('ensurePasswordResetSecurityColumns') || !ensurePasswordResetSecurityColumns($conn, 'users')) {
+                            $error = 'Password reset is temporarily unavailable. Please contact the system administrator.';
+                        } else {
+                            $maxOtpValue = (10 ** RESET_OTP_LENGTH) - 1;
+                            $resetOtp = str_pad((string)random_int(0, $maxOtpValue), RESET_OTP_LENGTH, '0', STR_PAD_LEFT);
+                            $resetOtpHash = password_hash($resetOtp, PASSWORD_DEFAULT);
+                            $challengeId = bin2hex(random_bytes(32));
+                            $expiresAt = date('Y-m-d H:i:s', time() + RESET_OTP_EXPIRY_SECONDS);
+
+                            $updateStmt = $conn->prepare(
+                                "UPDATE users
+                                 SET reset_token = NULL,
+                                     reset_token_hash = ?,
+                                     reset_expires = ?,
+                                     reset_challenge_id = ?,
+                                     reset_challenge_expires = ?,
+                                     reset_proof_hash = NULL,
+                                     reset_proof_expires = NULL,
+                                     reset_verified_at = NULL
+                                 WHERE id = ?
+                                 LIMIT 1"
+                            );
+
+                            if (!$updateStmt) {
+                                $error = 'Database error. Please try again later.';
+                                error_log('Forgot password update prepare failed: ' . $conn->error);
+                            } else {
+                                $userId = (int)$user['id'];
+                                $updateStmt->bind_param('ssssi', $resetOtpHash, $expiresAt, $challengeId, $expiresAt, $userId);
+                                if (!$updateStmt->execute()) {
+                                    $error = 'Database error. Please try again later.';
+                                    error_log('Forgot password update execute failed: ' . $updateStmt->error);
+                                }
+                                $updateStmt->close();
+                            }
+
+                            if (empty($error)) {
+                                try {
+                                    if (trim((string)RESEND_API_KEY) === '') {
+                                        throw new RuntimeException('RESEND_API_KEY is not configured.');
+                                    }
+
+                                    $resend = \Resend::client(RESEND_API_KEY);
+                                    $recipientName = htmlspecialchars((string)($user['full_name'] ?? 'User'), ENT_QUOTES, 'UTF-8');
+                                    $htmlContent = "
+                                    <!DOCTYPE html>
+                                    <html>
+                                    <head>
+                                        <style>
+                                            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                                            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                                            .header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                                            .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
+                                            .otp-box { background: white; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; border: 2px dashed #4361ee; }
+                                            .otp-code { font-size: 32px; font-weight: bold; color: #4361ee; letter-spacing: 5px; }
+                                            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <div class='container'>
+                                            <div class='header'>
+                                                <h1>Password Reset OTP</h1>
+                                            </div>
+                                            <div class='content'>
+                                                <p>Hello {$recipientName},</p>
+                                                <p>We received a request to reset your password for your eFIND System account.</p>
+                                                <div class='otp-box'>
+                                                    <p style='margin: 0; color: #666;'>Your OTP Code:</p>
+                                                    <div class='otp-code'>{$resetOtp}</div>
+                                                </div>
+                                                <p><strong>This code will expire in 15 minutes.</strong></p>
+                                                <p>If you didn't request this, please ignore this email.</p>
+                                                <div class='footer'>
+                                                    <p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </body>
+                                    </html>";
+
+                                    $resend->emails->send([
+                                        'from' => FROM_EMAIL,
+                                        'to' => [$normalizedEmail],
+                                        'subject' => 'Password Reset OTP - eFIND System',
+                                        'html' => $htmlContent
+                                    ]);
+
+                                    $_SESSION['reset_email'] = $normalizedEmail;
+                                    $_SESSION['reset_challenge_id'] = $challengeId;
+                                    $_SESSION['user_table'] = 'users';
+                                    unset(
+                                        $_SESSION['otp_verified'],
+                                        $_SESSION['otp_attempts'],
+                                        $_SESSION['reset_user_id'],
+                                        $_SESSION['reset_proof'],
+                                        $_SESSION['password_reset_notice']
+                                    );
+
+                                    if (function_exists('logPasswordResetAttempt')) {
+                                        logPasswordResetAttempt($conn, 'forgot_request', $normalizedEmail, $clientIp, true, $challengeId);
+                                    }
+
+                                    $otpDelivered = true;
+                                    header('Location: verify-otp.php');
+                                    exit();
+                                } catch (Throwable $e) {
+                                    $error = 'Failed to send reset code. Please contact the system administrator.';
+                                    error_log('Resend Error in forgot-password: ' . $e->getMessage());
+                                    unset(
+                                        $_SESSION['reset_email'],
+                                        $_SESSION['user_table'],
+                                        $_SESSION['otp_attempts'],
+                                        $_SESSION['otp_verified'],
+                                        $_SESSION['reset_user_id'],
+                                        $_SESSION['reset_proof'],
+                                        $_SESSION['reset_challenge_id']
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!$otpDelivered && empty($error)) {
+                    $message = $genericResetMessage;
+                    if (function_exists('logPasswordResetAttempt')) {
+                        logPasswordResetAttempt($conn, 'forgot_request', $normalizedEmail, $clientIp, false);
+                    }
+                } elseif (!empty($error) && function_exists('logPasswordResetAttempt')) {
+                    logPasswordResetAttempt($conn, 'forgot_request', $normalizedEmail, $clientIp, false);
                 }
             }
         }

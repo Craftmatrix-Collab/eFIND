@@ -2995,15 +2995,76 @@ $count_stmt->close();
                 }, 5000);
             });
 
+            const parseImageSources = (rawValue) => {
+                const raw = String(rawValue || '').trim();
+                if (!raw) {
+                    return [];
+                }
+
+                let candidates = [];
+                if (raw.includes('|')) {
+                    candidates = raw.split('|');
+                } else {
+                    const maybeJsonArray = raw.startsWith('[') && raw.endsWith(']');
+                    if (maybeJsonArray) {
+                        try {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                candidates = parsed;
+                            }
+                        } catch (error) {
+                            candidates = [];
+                        }
+                    }
+
+                    if (!candidates.length && raw.includes(',')) {
+                        const commaParts = raw.split(',').map(part => part.trim()).filter(Boolean);
+                        const looksLikeUrlList = commaParts.length > 1 && commaParts.every((part) =>
+                            /^(https?:\/\/|\/|(?:uploads|images)\/)/i.test(part)
+                        );
+                        if (looksLikeUrlList) {
+                            candidates = commaParts;
+                        }
+                    }
+
+                    if (!candidates.length) {
+                        candidates = [raw];
+                    }
+                }
+
+                const unique = [];
+                const seen = new Set();
+                candidates.forEach((candidate) => {
+                    const value = String(candidate || '').trim();
+                    if (!value || seen.has(value)) {
+                        return;
+                    }
+                    seen.add(value);
+                    unique.push(value);
+                });
+                return unique;
+            };
+
             const printImagePages = (imageSrcs) => {
                 if (!Array.isArray(imageSrcs) || imageSrcs.length === 0) return;
+                const normalizedSrcs = [];
+                const seenSrcs = new Set();
+                imageSrcs.forEach((src) => {
+                    const value = String(src || '').trim();
+                    if (!value || seenSrcs.has(value)) {
+                        return;
+                    }
+                    seenSrcs.add(value);
+                    normalizedSrcs.push(value);
+                });
+                if (!normalizedSrcs.length) return;
                 const printWindow = window.open('', '_blank');
                 if (!printWindow) {
                     alert('Please allow pop-ups to print images.');
                     return;
                 }
 
-                const pagesHtml = imageSrcs.map((src, index) =>
+                const pagesHtml = normalizedSrcs.map((src, index) =>
                     `<div class="print-page"><img src="${String(src).replace(/"/g, '&quot;')}" alt="Image ${index + 1}"></div>`
                 ).join('');
 
@@ -3013,18 +3074,27 @@ $count_stmt->close();
 <head>
     <title>Print Images</title>
     <style>
-        body { margin: 0; padding: 0; }
+        @page { margin: 12mm; }
+        html, body { margin: 0; padding: 0; }
         .print-page {
+            break-after: page;
             page-break-after: always;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 12mm;
-            box-sizing: border-box;
+            text-align: center;
+            width: 100%;
         }
-        .print-page:last-child { page-break-after: auto; }
-        img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .print-page:last-child {
+            break-after: auto;
+            page-break-after: auto;
+        }
+        img {
+            display: block;
+            max-width: 100%;
+            max-height: 265mm;
+            width: auto;
+            height: auto;
+            margin: 0 auto;
+            object-fit: contain;
+        }
     </style>
 </head>
 <body>${pagesHtml}
@@ -3065,10 +3135,7 @@ $count_stmt->close();
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
-                    const imageSrcs = (this.getAttribute('data-image-src') || '')
-                        .split(/[|,]/)
-                        .map(src => src.trim())
-                        .filter(Boolean);
+                    const imageSrcs = parseImageSources(this.getAttribute('data-image-src'));
                     if (!imageSrcs.length) return;
                     const imageSrc = imageSrcs[0];
                     const modalImage = document.getElementById('modalImage');
@@ -3131,10 +3198,7 @@ $count_stmt->close();
                             document.getElementById('editExistingImagePath').value = executive_order.image_path || '';
                             const currentFileInfo = document.getElementById('currentImageInfo');
                             if (executive_order.image_path) {
-                                const imagePaths = executive_order.image_path
-                                    .split(/[|,]/)
-                                    .map(path => path.trim())
-                                    .filter(Boolean);
+                                const imagePaths = parseImageSources(executive_order.image_path);
                                 const imageLinks = imagePaths.map(path => `<a href="${path}" target="_blank" class="d-block">View Image</a>`).join('');
                                 currentFileInfo.innerHTML = `
                                     <strong>Current Image(s):</strong>
@@ -3180,10 +3244,7 @@ $count_stmt->close();
             // OCR button functionality
             document.querySelectorAll('.ocr-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
-                    var imageSrc = (btn.getAttribute('data-image-src') || '')
-                        .split(/[|,]/)
-                        .map(src => src.trim())
-                        .filter(Boolean)[0] || '';
+                    var imageSrc = parseImageSources(btn.getAttribute('data-image-src'))[0] || '';
                     var executive_orderId = btn.closest('tr').getAttribute('data-id');
                     var ocrLoading = document.getElementById('ocrLoading');
                     var ocrResult = document.getElementById('ocrResult');

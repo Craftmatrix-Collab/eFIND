@@ -2152,15 +2152,76 @@ if ($showLoginWelcomeModal) {
         
         // Handle image modal
         document.addEventListener('DOMContentLoaded', function() {
+            const parseImageSources = (rawValue) => {
+                const raw = String(rawValue || '').trim();
+                if (!raw) {
+                    return [];
+                }
+
+                let candidates = [];
+                if (raw.includes('|')) {
+                    candidates = raw.split('|');
+                } else {
+                    const maybeJsonArray = raw.startsWith('[') && raw.endsWith(']');
+                    if (maybeJsonArray) {
+                        try {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                candidates = parsed;
+                            }
+                        } catch (error) {
+                            candidates = [];
+                        }
+                    }
+
+                    if (!candidates.length && raw.includes(',')) {
+                        const commaParts = raw.split(',').map(part => part.trim()).filter(Boolean);
+                        const looksLikeUrlList = commaParts.length > 1 && commaParts.every((part) =>
+                            /^(https?:\/\/|\/|(?:uploads|images)\/)/i.test(part)
+                        );
+                        if (looksLikeUrlList) {
+                            candidates = commaParts;
+                        }
+                    }
+
+                    if (!candidates.length) {
+                        candidates = [raw];
+                    }
+                }
+
+                const unique = [];
+                const seen = new Set();
+                candidates.forEach((candidate) => {
+                    const value = String(candidate || '').trim();
+                    if (!value || seen.has(value)) {
+                        return;
+                    }
+                    seen.add(value);
+                    unique.push(value);
+                });
+                return unique;
+            };
+
             const printImagePages = (imageSrcs) => {
                 if (!Array.isArray(imageSrcs) || imageSrcs.length === 0) return;
+                const normalizedSrcs = [];
+                const seenSrcs = new Set();
+                imageSrcs.forEach((src) => {
+                    const value = String(src || '').trim();
+                    if (!value || seenSrcs.has(value)) {
+                        return;
+                    }
+                    seenSrcs.add(value);
+                    normalizedSrcs.push(value);
+                });
+                if (!normalizedSrcs.length) return;
                 const printWindow = window.open('', '_blank');
                 if (!printWindow) {
                     alert('Please allow pop-ups to print images.');
                     return;
                 }
 
-                const pagesHtml = imageSrcs.map((src, index) =>
+                const pagesHtml = normalizedSrcs.map((src, index) =>
                     `<div class="print-page"><img src="${String(src).replace(/"/g, '&quot;')}" alt="Image ${index + 1}"></div>`
                 ).join('');
 
@@ -2170,18 +2231,27 @@ if ($showLoginWelcomeModal) {
 <head>
     <title>Print Images</title>
     <style>
-        body { margin: 0; padding: 0; }
+        @page { margin: 12mm; }
+        html, body { margin: 0; padding: 0; }
         .print-page {
+            break-after: page;
             page-break-after: always;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 12mm;
-            box-sizing: border-box;
+            text-align: center;
+            width: 100%;
         }
-        .print-page:last-child { page-break-after: auto; }
-        img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .print-page:last-child {
+            break-after: auto;
+            page-break-after: auto;
+        }
+        img {
+            display: block;
+            max-width: 100%;
+            max-height: 265mm;
+            width: auto;
+            height: auto;
+            margin: 0 auto;
+            object-fit: contain;
+        }
     </style>
 </head>
 <body>${pagesHtml}
@@ -2221,10 +2291,7 @@ if ($showLoginWelcomeModal) {
             document.querySelectorAll('.image-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
-                    const imageSrcs = (this.getAttribute('data-image-src') || '')
-                        .split(/[|,]/)
-                        .map(src => src.trim())
-                        .filter(Boolean);
+                    const imageSrcs = parseImageSources(this.getAttribute('data-image-src'));
                     if (!imageSrcs.length) return;
                     const imageSrc = imageSrcs[0];
                     const modalImage = document.getElementById('modalImage');
@@ -2260,6 +2327,56 @@ if ($showLoginWelcomeModal) {
             const ocrDocumentId = document.getElementById('ocrDocumentId');
             const ocrDocumentType = document.getElementById('ocrDocumentType');
             const ocrImagePath = document.getElementById('ocrImagePath');
+
+            const parseImageSources = (rawValue) => {
+                const raw = String(rawValue || '').trim();
+                if (!raw) {
+                    return [];
+                }
+
+                let candidates = [];
+                if (raw.includes('|')) {
+                    candidates = raw.split('|');
+                } else {
+                    const maybeJsonArray = raw.startsWith('[') && raw.endsWith(']');
+                    if (maybeJsonArray) {
+                        try {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                candidates = parsed;
+                            }
+                        } catch (error) {
+                            candidates = [];
+                        }
+                    }
+
+                    if (!candidates.length && raw.includes(',')) {
+                        const commaParts = raw.split(',').map(part => part.trim()).filter(Boolean);
+                        const looksLikeUrlList = commaParts.length > 1 && commaParts.every((part) =>
+                            /^(https?:\/\/|\/|(?:uploads|images)\/)/i.test(part)
+                        );
+                        if (looksLikeUrlList) {
+                            candidates = commaParts;
+                        }
+                    }
+
+                    if (!candidates.length) {
+                        candidates = [raw];
+                    }
+                }
+
+                const unique = [];
+                const seen = new Set();
+                candidates.forEach((candidate) => {
+                    const value = String(candidate || '').trim();
+                    if (!value || seen.has(value)) {
+                        return;
+                    }
+                    seen.add(value);
+                    unique.push(value);
+                });
+                return unique;
+            };
 
             const getDocumentEndpointByType = {
                 executive_order: (id) => `executive_orders.php?action=get_executive_order&id=${id}`,
@@ -2485,10 +2602,7 @@ if ($showLoginWelcomeModal) {
                 btn.addEventListener('click', async function(event) {
                     event.preventDefault();
 
-                    const imageSrcs = (btn.getAttribute('data-image-src') || '')
-                        .split(/[|,]/)
-                        .map(src => src.trim())
-                        .filter(Boolean);
+                    const imageSrcs = parseImageSources(btn.getAttribute('data-image-src'));
                     const documentId = parseInt(btn.getAttribute('data-document-id') || '0', 10);
                     const documentType = (btn.getAttribute('data-document-type') || '').trim();
                     const existingInlineContent = cleanOcrText(btn.getAttribute('data-existing-content') || '');
