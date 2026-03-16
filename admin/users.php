@@ -2042,9 +2042,18 @@ $count_stmt->close();
                                 <small class="text-muted"><?php echo htmlspecialchars($passwordPolicy['hint']); ?></small>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="editRoleDisplay" class="form-label">Role</label>
-                                <div id="editRoleDisplay" class="form-control-plaintext fw-semibold text-capitalize">-</div>
-                                <input type="hidden" id="editRole" name="role" value="">
+                                <?php if ($is_superadmin_users_page): ?>
+                                    <label for="editRole" class="form-label">Role <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="editRole" name="role" required>
+                                        <option value="superadmin">Superadmin</option>
+                                        <option value="admin">Admin</option>
+                                        <option value="staff">Staff</option>
+                                    </select>
+                                <?php else: ?>
+                                    <label for="editRoleDisplay" class="form-label">Role</label>
+                                    <div id="editRoleDisplay" class="form-control-plaintext fw-semibold text-capitalize">-</div>
+                                    <input type="hidden" id="editRole" name="role" value="">
+                                <?php endif; ?>
                             </div>
                         </div>
                         <div class="mb-3">
