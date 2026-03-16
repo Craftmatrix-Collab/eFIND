@@ -657,8 +657,7 @@ function isSuperAdmin() {
 
     $sessionRole = (string)($_SESSION['role'] ?? ($_SESSION['staff_role'] ?? ''));
     $adminUsername = strtolower(trim((string)($_SESSION['admin_username'] ?? '')));
-    $staffUsername = strtolower(trim((string)($_SESSION['staff_username'] ?? ($_SESSION['username'] ?? ''))));
-    if (isSuperAdminRoleToken($sessionRole) || $adminUsername === 'superadmin' || $staffUsername === 'superadmin') {
+    if (isSuperAdminRoleToken($sessionRole) || ($isAdminSession && $adminUsername === 'superadmin')) {
         $resolvedIsSuperAdmin = true;
         return true;
     }

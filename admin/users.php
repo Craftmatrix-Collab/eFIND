@@ -2042,13 +2042,9 @@ $count_stmt->close();
                                 <small class="text-muted"><?php echo htmlspecialchars($passwordPolicy['hint']); ?></small>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="editRole" class="form-label">Role <span class="text-danger">*</span></label>
-                                <select class="form-select" id="editRole" name="role" required>
-                                    <option value="superadmin">Superadmin</option>
-                                    <option value="admin">Admin</option>
-                                    <option value="staff">Staff</option>
-                                    <option value="viewer">Viewer</option>
-                                </select>
+                                <label for="editRoleDisplay" class="form-label">Role</label>
+                                <div id="editRoleDisplay" class="form-control-plaintext fw-semibold text-capitalize">-</div>
+                                <input type="hidden" id="editRole" name="role" value="">
                             </div>
                         </div>
                         <div class="mb-3">
@@ -2238,7 +2234,12 @@ $count_stmt->close();
                             document.getElementById('editEmail').value = user.email;
                             document.getElementById('editOriginalEmail').value = user.email;
                             document.getElementById('editUsername').value = user.username;
-                            document.getElementById('editRole').value = user.role;
+                            const roleValue = (user.role || '').toString().trim().toLowerCase();
+                            document.getElementById('editRole').value = roleValue;
+                            const roleDisplay = document.getElementById('editRoleDisplay');
+                            if (roleDisplay) {
+                                roleDisplay.textContent = roleValue || '-';
+                            }
                             document.getElementById('editExistingProfilePicture').value = user.profile_picture || '';
                             // Store user_type in a hidden field
                             let userTypeField = document.getElementById('editUserType');

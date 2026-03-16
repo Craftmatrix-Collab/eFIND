@@ -59,7 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Resolve actor/target profile context
     $actorId = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($_SESSION['user_id'] ?? 0);
     $actorType = 'users';
-    $isActorAdmin = isset($_SESSION['admin_id']);
+    $isActorAdmin = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true && isset($_SESSION['admin_id']);
+    $isActorStaffSession = isset($_SESSION['staff_logged_in']) && $_SESSION['staff_logged_in'] === true;
+    $isActorStaffOnly = $isActorStaffSession && !$isActorAdmin;
     $isActorSuperadmin = function_exists('isSuperAdmin') && isSuperAdmin();
 
     $requestedUserId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : $actorId;
@@ -74,6 +76,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $_SESSION['error'] = 'Invalid user context.';
+        header("Location: $redirectUrl");
+        exit;
+    }
+    if ($isActorStaffOnly && ($requestedUserId !== $actorId || $requestedUserType !== $actorType)) {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Staff can only edit their own profile.']);
+            exit;
+        }
+        $_SESSION['error'] = 'Staff can only edit their own profile.';
         header("Location: $redirectUrl");
         exit;
     }
