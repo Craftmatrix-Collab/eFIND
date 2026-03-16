@@ -1,210 +1,408 @@
 <?php
 session_start();
+require_once __DIR__ . '/includes/auth.php';
 include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
 
-// Check if email is set in session
-if (!isset($_SESSION['reset_email'])) {
-    header("Location: forgot-password.php");
-    exit();
+if (!defined('RESET_OTP_LENGTH')) {
+    define('RESET_OTP_LENGTH', 6);
+}
+
+if (!defined('RESET_OTP_EXPIRY_SECONDS')) {
+    define('RESET_OTP_EXPIRY_SECONDS', 900);
+}
+
+if (!defined('OTP_VERIFY_MAX_ATTEMPTS_PER_CHALLENGE')) {
+    define('OTP_VERIFY_MAX_ATTEMPTS_PER_CHALLENGE', 5);
+}
+
+if (!defined('OTP_VERIFY_MAX_ATTEMPTS_PER_IP')) {
+    define('OTP_VERIFY_MAX_ATTEMPTS_PER_IP', 25);
+}
+
+if (!defined('OTP_VERIFY_WINDOW_SECONDS')) {
+    define('OTP_VERIFY_WINDOW_SECONDS', 900);
+}
+
+if (!defined('OTP_RESEND_MAX_ATTEMPTS_PER_EMAIL')) {
+    define('OTP_RESEND_MAX_ATTEMPTS_PER_EMAIL', 3);
+}
+
+if (!defined('OTP_RESEND_MAX_ATTEMPTS_PER_IP')) {
+    define('OTP_RESEND_MAX_ATTEMPTS_PER_IP', 10);
+}
+
+if (!defined('OTP_RESEND_WINDOW_SECONDS')) {
+    define('OTP_RESEND_WINDOW_SECONDS', 900);
+}
+
+if (!defined('RESET_PROOF_EXPIRY_SECONDS')) {
+    define('RESET_PROOF_EXPIRY_SECONDS', 900);
+}
+
+function clearPasswordResetSessionContext(): void {
+    unset(
+        $_SESSION['reset_email'],
+        $_SESSION['user_table'],
+        $_SESSION['reset_challenge_id'],
+        $_SESSION['otp_verified'],
+        $_SESSION['otp_attempts'],
+        $_SESSION['reset_user_id'],
+        $_SESSION['reset_proof'],
+        $_SESSION['password_reset_notice']
+    );
 }
 
 $error = '';
 $message = '';
-$attempts = isset($_SESSION['otp_attempts']) ? $_SESSION['otp_attempts'] : 0;
+$otpLength = (int)RESET_OTP_LENGTH;
+$sessionEmail = function_exists('normalizePasswordResetEmail')
+    ? normalizePasswordResetEmail((string)($_SESSION['reset_email'] ?? ''))
+    : strtolower(trim((string)($_SESSION['reset_email'] ?? '')));
+$sessionChallengeId = trim((string)($_SESSION['reset_challenge_id'] ?? ''));
 
-// Generate CSRF token if not exists
+if (
+    $sessionEmail === '' ||
+    filter_var($sessionEmail, FILTER_VALIDATE_EMAIL) === false ||
+    preg_match('/^[a-f0-9]{64}$/', $sessionChallengeId) !== 1
+) {
+    clearPasswordResetSessionContext();
+    header('Location: forgot-password.php');
+    exit();
+}
+
+if (!function_exists('ensurePasswordResetSecurityColumns') || !ensurePasswordResetSecurityColumns($conn, 'users')) {
+    $error = 'Password reset verification is temporarily unavailable. Please contact the system administrator.';
+}
+
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify'])) {
-    // CSRF check
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-        $error = "Invalid request. Please try again.";
-    } else {
-    $otp = trim($_POST['otp']);
-    $email = $_SESSION['reset_email'];
+$clientIp = function_exists('getPasswordResetClientIp')
+    ? getPasswordResetClientIp()
+    : trim((string)($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
 
-    if (empty($otp)) {
-        $error = "OTP is required.";
-    } elseif (strlen($otp) != 6 || !ctype_digit($otp)) {
-        $error = "Please enter a valid 6-digit OTP.";
-    } else {
-        // Check OTP in database
-        $user_table = $_SESSION['user_table'] ?? 'users';
-        if (!in_array($user_table, ['users'], true)) {
-            $user_table = 'users';
-        }
-        $query = "SELECT id, username, reset_token, reset_expires FROM $user_table WHERE email = ?";
-        $stmt = $conn->prepare($query);
-        
-        if ($stmt) {
-            $stmt->bind_param("s", $email);
-            $stmt->execute();
-            $result = $stmt->get_result();
+$verifyCounts = function_exists('getPasswordResetAttemptCounts')
+    ? getPasswordResetAttemptCounts(
+        $conn,
+        'otp_verify',
+        $sessionEmail,
+        $clientIp,
+        OTP_VERIFY_WINDOW_SECONDS,
+        $sessionChallengeId
+    )
+    : ['email' => 0, 'ip' => 0];
+$attemptsUsed = (int)$verifyCounts['email'];
+$attemptsRemaining = max(0, OTP_VERIFY_MAX_ATTEMPTS_PER_CHALLENGE - $attemptsUsed);
+$isVerificationLocked = $attemptsRemaining <= 0;
 
-            if ($result->num_rows == 1) {
-                $user = $result->fetch_assoc();
-                
-                // Check if OTP has expired
-                if (strtotime($user['reset_expires']) < time()) {
-                    // Keep reset_email so the user can still click "Resend OTP"
-                    $error = "OTP has expired. Please request a new one using the button below.";
-                } elseif ($user['reset_token'] === $otp) {
-                    // OTP is correct
-                    $_SESSION['reset_user_id'] = $user['id'];
-                    $_SESSION['otp_verified'] = true;
-                    unset($_SESSION['otp_attempts']);
-                    session_regenerate_id(true);
-                    
-                    // Redirect to reset password page
-                    header("Location: reset-password.php");
-                    exit();
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['verify'])) {
+    if (
+        !isset($_POST['csrf_token'], $_SESSION['csrf_token']) ||
+        !hash_equals((string)$_SESSION['csrf_token'], (string)$_POST['csrf_token'])
+    ) {
+        $error = 'Invalid request. Please try again.';
+    } elseif ($isVerificationLocked) {
+        clearPasswordResetSessionContext();
+        $_SESSION['fp_error'] = 'Too many failed OTP attempts. Please request a new code.';
+        header('Location: forgot-password.php');
+        exit();
+    } elseif ((int)$verifyCounts['ip'] >= OTP_VERIFY_MAX_ATTEMPTS_PER_IP) {
+        $error = 'Too many OTP verification attempts from this network. Please wait and try again.';
+    } else {
+        $otp = trim((string)($_POST['otp'] ?? ''));
+        if ($otp === '') {
+            $error = 'OTP is required.';
+        } elseif (strlen($otp) !== $otpLength || !ctype_digit($otp)) {
+            $error = "Please enter a valid {$otpLength}-digit OTP.";
+        } else {
+            $lookupStmt = $conn->prepare(
+                "SELECT id, full_name, reset_token_hash, reset_expires, reset_challenge_id, reset_challenge_expires
+                 FROM users
+                 WHERE email = ?
+                 LIMIT 1"
+            );
+
+            if (!$lookupStmt) {
+                $error = 'Database error. Please try again later.';
+                error_log('Verify OTP lookup prepare failed: ' . $conn->error);
+            } else {
+                $lookupStmt->bind_param('s', $sessionEmail);
+                if (!$lookupStmt->execute()) {
+                    $error = 'Database error. Please try again later.';
+                    error_log('Verify OTP lookup execute failed: ' . $lookupStmt->error);
                 } else {
-                    $attempts++;
-                    $_SESSION['otp_attempts'] = $attempts;
-                    
-                    if ($attempts >= 5) {
-                        unset($_SESSION['reset_email']);
-                        unset($_SESSION['otp_attempts']);
-                        $_SESSION['fp_error'] = "Too many failed OTP attempts. Please request a new code.";
-                        header("Location: forgot-password.php");
-                        exit();
+                    $user = $lookupStmt->get_result()->fetch_assoc();
+
+                    $hasValidChallenge = $user
+                        && !empty($user['reset_challenge_id'])
+                        && hash_equals((string)$user['reset_challenge_id'], $sessionChallengeId);
+                    $isOtpExpired = !$user || empty($user['reset_expires']) || strtotime((string)$user['reset_expires']) < time();
+                    $isChallengeExpired = !$user || empty($user['reset_challenge_expires']) || strtotime((string)$user['reset_challenge_expires']) < time();
+                    $tokenHash = (string)($user['reset_token_hash'] ?? '');
+                    $otpMatches = $tokenHash !== '' && password_verify($otp, $tokenHash);
+
+                    if (!$hasValidChallenge || $isOtpExpired || $isChallengeExpired || !$otpMatches) {
+                        if (function_exists('logPasswordResetAttempt')) {
+                            logPasswordResetAttempt($conn, 'otp_verify', $sessionEmail, $clientIp, false, $sessionChallengeId);
+                        }
+
+                        $verifyCounts = function_exists('getPasswordResetAttemptCounts')
+                            ? getPasswordResetAttemptCounts(
+                                $conn,
+                                'otp_verify',
+                                $sessionEmail,
+                                $clientIp,
+                                OTP_VERIFY_WINDOW_SECONDS,
+                                $sessionChallengeId
+                            )
+                            : ['email' => $attemptsUsed + 1, 'ip' => 0];
+                        $attemptsUsed = (int)$verifyCounts['email'];
+                        $attemptsRemaining = max(0, OTP_VERIFY_MAX_ATTEMPTS_PER_CHALLENGE - $attemptsUsed);
+                        $isVerificationLocked = $attemptsRemaining <= 0;
+
+                        if ($isVerificationLocked) {
+                            clearPasswordResetSessionContext();
+                            $_SESSION['fp_error'] = 'Too many failed OTP attempts. Please request a new code.';
+                            header('Location: forgot-password.php');
+                            exit();
+                        }
+
+                        if ($isOtpExpired || $isChallengeExpired) {
+                            $error = 'OTP has expired. Please request a new one using the resend button.';
+                        } else {
+                            $error = "Invalid OTP. You have {$attemptsRemaining} attempt(s) remaining.";
+                        }
                     } else {
-                        $error = "Invalid OTP. You have " . (5 - $attempts) . " attempts remaining.";
+                        $userId = (int)$user['id'];
+                        $resetProof = bin2hex(random_bytes(32));
+                        $resetProofHash = password_hash($resetProof, PASSWORD_DEFAULT);
+                        $proofExpiresAt = date('Y-m-d H:i:s', time() + RESET_PROOF_EXPIRY_SECONDS);
+
+                        $updateStmt = $conn->prepare(
+                            "UPDATE users
+                             SET reset_proof_hash = ?,
+                                 reset_proof_expires = ?,
+                                 reset_verified_at = NOW(),
+                                 reset_token_hash = NULL,
+                                 reset_token = NULL,
+                                 reset_expires = NULL
+                             WHERE id = ?
+                               AND reset_challenge_id = ?
+                               AND reset_challenge_expires > NOW()
+                             LIMIT 1"
+                        );
+
+                        if (!$updateStmt) {
+                            $error = 'Database error. Please try again later.';
+                            error_log('Verify OTP proof update prepare failed: ' . $conn->error);
+                        } else {
+                            $updateStmt->bind_param('ssis', $resetProofHash, $proofExpiresAt, $userId, $sessionChallengeId);
+                            if (!$updateStmt->execute() || $updateStmt->affected_rows !== 1) {
+                                $error = 'Unable to verify OTP right now. Please request a new code.';
+                                error_log('Verify OTP proof update execute failed: ' . $updateStmt->error);
+                            }
+                            $updateStmt->close();
+                        }
+
+                        if (empty($error)) {
+                            if (function_exists('logPasswordResetAttempt')) {
+                                logPasswordResetAttempt($conn, 'otp_verify', $sessionEmail, $clientIp, true, $sessionChallengeId);
+                            }
+                            $_SESSION['reset_user_id'] = $userId;
+                            $_SESSION['otp_verified'] = true;
+                            $_SESSION['reset_proof'] = $resetProof;
+                            $_SESSION['password_reset_notice'] = 'OTP verified. Create your new password below.';
+                            session_regenerate_id(true);
+                            header('Location: reset-password.php');
+                            exit();
+                        }
                     }
                 }
-            } else {
-                unset($_SESSION['reset_email']);
-                header("Location: forgot-password.php");
-                exit();
+                $lookupStmt->close();
             }
-            
-            $stmt->close();
-        } else {
-            $error = "Database error. Please try again later.";
         }
     }
-    } // end csrf-valid else
 }
 
-// Resend OTP functionality
-if (isset($_POST['resend_otp'])) {
-    // CSRF check
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-        $error = "Invalid request. Please try again.";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_otp'])) {
+    if (
+        !isset($_POST['csrf_token'], $_SESSION['csrf_token']) ||
+        !hash_equals((string)$_SESSION['csrf_token'], (string)$_POST['csrf_token'])
+    ) {
+        $error = 'Invalid request. Please try again.';
     } else {
-    $email = $_SESSION['reset_email'];
-    
-    // Generate new OTP using cryptographically secure method
-    $otp = sprintf("%06d", random_int(0, 999999));
-    $expires = date("Y-m-d H:i:s", strtotime('+15 minutes'));
-    
-    // Update OTP in database
-    $user_table = $_SESSION['user_table'] ?? 'users';
-    if (!in_array($user_table, ['users'], true)) {
-        $user_table = 'users';
-    }
-    $update_query = "UPDATE $user_table SET reset_token = ?, reset_expires = ? WHERE email = ?";
-    $update_stmt = $conn->prepare($update_query);
-    if (!$update_stmt) {
-        $error = "Database error. Please try again later.";
-        error_log("Verify OTP resend update prepare failed: " . $conn->error);
-    } else {
-        $update_stmt->bind_param("sss", $otp, $expires, $email);
-        if (!$update_stmt->execute()) {
-            $error = "Database error. Please try again later.";
-            error_log("Verify OTP resend update execute failed: " . $update_stmt->error);
-        }
-        $update_stmt->close();
-    }
-    
-    // Get user details for email
-    $user = null;
-    if (empty($error)) {
-        $query = "SELECT full_name FROM $user_table WHERE email = ?";
-        $stmt = $conn->prepare($query);
-        if (!$stmt) {
-            $error = "Database error. Please try again later.";
-            error_log("Verify OTP resend select prepare failed: " . $conn->error);
-        } else {
-            $stmt->bind_param("s", $email);
-            if (!$stmt->execute()) {
-                $error = "Database error. Please try again later.";
-                error_log("Verify OTP resend select execute failed: " . $stmt->error);
-            } else {
-                $result = $stmt->get_result();
-                $user = $result->fetch_assoc();
-            }
-            $stmt->close();
-        }
-    }
+        $resendCounts = function_exists('getPasswordResetAttemptCounts')
+            ? getPasswordResetAttemptCounts(
+                $conn,
+                'otp_resend',
+                $sessionEmail,
+                $clientIp,
+                OTP_RESEND_WINDOW_SECONDS
+            )
+            : ['email' => 0, 'ip' => 0];
 
-    if (empty($error) && !$user) {
-        $error = "Account not found. Please restart the password reset process.";
-    } elseif (empty($error)) {
-    // Send OTP via Resend
-    try {
-        if (trim((string)RESEND_API_KEY) === '') {
-            throw new RuntimeException('RESEND_API_KEY is not configured.');
+        if (
+            (int)$resendCounts['email'] >= OTP_RESEND_MAX_ATTEMPTS_PER_EMAIL ||
+            (int)$resendCounts['ip'] >= OTP_RESEND_MAX_ATTEMPTS_PER_IP
+        ) {
+            $error = 'Too many OTP resend requests. Please wait before requesting another code.';
+            if (function_exists('logPasswordResetAttempt')) {
+                logPasswordResetAttempt($conn, 'otp_resend', $sessionEmail, $clientIp, false);
+            }
+        } else {
+            $lookupStmt = $conn->prepare(
+                "SELECT id, full_name, reset_challenge_id, reset_challenge_expires
+                 FROM users
+                 WHERE email = ?
+                 LIMIT 1"
+            );
+
+            if (!$lookupStmt) {
+                $error = 'Database error. Please try again later.';
+                error_log('Verify OTP resend lookup prepare failed: ' . $conn->error);
+            } else {
+                $lookupStmt->bind_param('s', $sessionEmail);
+                if (!$lookupStmt->execute()) {
+                    $error = 'Database error. Please try again later.';
+                    error_log('Verify OTP resend lookup execute failed: ' . $lookupStmt->error);
+                } else {
+                    $user = $lookupStmt->get_result()->fetch_assoc();
+                    if (
+                        !$user ||
+                        empty($user['reset_challenge_id']) ||
+                        !hash_equals((string)$user['reset_challenge_id'], $sessionChallengeId) ||
+                        empty($user['reset_challenge_expires']) ||
+                        strtotime((string)$user['reset_challenge_expires']) < time()
+                    ) {
+                        clearPasswordResetSessionContext();
+                        $_SESSION['fp_error'] = 'Your reset request has expired. Please start again.';
+                        header('Location: forgot-password.php');
+                        exit();
+                    }
+
+                    $maxOtpValue = (10 ** $otpLength) - 1;
+                    $newOtp = str_pad((string)random_int(0, $maxOtpValue), $otpLength, '0', STR_PAD_LEFT);
+                    $newOtpHash = password_hash($newOtp, PASSWORD_DEFAULT);
+                    $newChallengeId = bin2hex(random_bytes(32));
+                    $expiresAt = date('Y-m-d H:i:s', time() + RESET_OTP_EXPIRY_SECONDS);
+                    $userId = (int)$user['id'];
+
+                    $updateStmt = $conn->prepare(
+                        "UPDATE users
+                         SET reset_token = NULL,
+                             reset_token_hash = ?,
+                             reset_expires = ?,
+                             reset_challenge_id = ?,
+                             reset_challenge_expires = ?,
+                             reset_proof_hash = NULL,
+                             reset_proof_expires = NULL,
+                             reset_verified_at = NULL
+                         WHERE id = ?
+                         LIMIT 1"
+                    );
+
+                    if (!$updateStmt) {
+                        $error = 'Database error. Please try again later.';
+                        error_log('Verify OTP resend update prepare failed: ' . $conn->error);
+                    } else {
+                        $updateStmt->bind_param('ssssi', $newOtpHash, $expiresAt, $newChallengeId, $expiresAt, $userId);
+                        if (!$updateStmt->execute() || $updateStmt->affected_rows !== 1) {
+                            $error = 'Unable to resend OTP right now. Please try again.';
+                            error_log('Verify OTP resend update execute failed: ' . $updateStmt->error);
+                        }
+                        $updateStmt->close();
+                    }
+
+                    if (empty($error)) {
+                        try {
+                            if (trim((string)RESEND_API_KEY) === '') {
+                                throw new RuntimeException('RESEND_API_KEY is not configured.');
+                            }
+                            $resend = \Resend::client(RESEND_API_KEY);
+                            $recipientName = htmlspecialchars((string)($user['full_name'] ?? 'User'), ENT_QUOTES, 'UTF-8');
+                            $htmlContent = "
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <style>
+                                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                                    .header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                                    .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
+                                    .otp-box { background: white; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; border: 2px dashed #4361ee; }
+                                    .otp-code { font-size: 32px; font-weight: bold; color: #4361ee; letter-spacing: 5px; }
+                                    .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+                                </style>
+                            </head>
+                            <body>
+                                <div class='container'>
+                                    <div class='header'>
+                                        <h1>Password Reset OTP</h1>
+                                    </div>
+                                    <div class='content'>
+                                        <p>Hello {$recipientName},</p>
+                                        <p>We received a request to reset your password for your eFIND System account.</p>
+                                        <div class='otp-box'>
+                                            <p style='margin: 0; color: #666;'>Your OTP Code:</p>
+                                            <div class='otp-code'>{$newOtp}</div>
+                                        </div>
+                                        <p><strong>This code will expire in 15 minutes.</strong></p>
+                                        <p>If you didn't request this, please ignore this email.</p>
+                                        <div class='footer'>
+                                            <p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </body>
+                            </html>";
+
+                            $resend->emails->send([
+                                'from' => FROM_EMAIL,
+                                'to' => [$sessionEmail],
+                                'subject' => 'Password Reset OTP - eFIND System',
+                                'html' => $htmlContent
+                            ]);
+
+                            $_SESSION['reset_challenge_id'] = $newChallengeId;
+                            unset($_SESSION['otp_verified'], $_SESSION['reset_user_id'], $_SESSION['reset_proof'], $_SESSION['password_reset_notice']);
+                            $sessionChallengeId = $newChallengeId;
+                            $message = 'A new OTP has been sent to your email.';
+
+                            if (function_exists('logPasswordResetAttempt')) {
+                                logPasswordResetAttempt($conn, 'otp_resend', $sessionEmail, $clientIp, true);
+                            }
+                        } catch (Throwable $e) {
+                            $error = 'Failed to resend OTP email. Please contact the system administrator.';
+                            error_log('Resend Error in verify-otp resend: ' . $e->getMessage());
+                            if (function_exists('logPasswordResetAttempt')) {
+                                logPasswordResetAttempt($conn, 'otp_resend', $sessionEmail, $clientIp, false);
+                            }
+                        }
+                    } elseif (function_exists('logPasswordResetAttempt')) {
+                        logPasswordResetAttempt($conn, 'otp_resend', $sessionEmail, $clientIp, false);
+                    }
+                }
+                $lookupStmt->close();
+            }
         }
-        $resend = \Resend::client(RESEND_API_KEY);
-        
-        $html_content = "
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background: linear-gradient(135deg, #4361ee, #3a0ca3); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-                .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
-                .otp-box { background: white; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; border: 2px dashed #4361ee; }
-                .otp-code { font-size: 32px; font-weight: bold; color: #4361ee; letter-spacing: 5px; }
-                .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-            </style>
-        </head>
-        <body>
-            <div class='container'>
-                <div class='header'>
-                    <h1>Password Reset OTP</h1>
-                </div>
-                <div class='content'>
-                    <p>Hello " . htmlspecialchars($user['full_name']) . ",</p>
-                    <p>We received a request to reset your password for your eFIND System account.</p>
-                    <div class='otp-box'>
-                        <p style='margin: 0; color: #666;'>Your OTP Code:</p>
-                        <div class='otp-code'>" . $otp . "</div>
-                    </div>
-                    <p><strong>This code will expire in 15 minutes.</strong></p>
-                    <p>If you didn't request this, please ignore this email.</p>
-                    <div class='footer'>
-                        <p>&copy; " . date('Y') . " eFIND System - Barangay Poblacion South</p>
-                    </div>
-                </div>
-            </div>
-        </body>
-        </html>
-        ";
-        
-        $resend->emails->send([
-            'from' => FROM_EMAIL,
-            'to' => [$email],
-            'subject' => 'Password Reset OTP - eFIND System',
-            'html' => $html_content
-        ]);
-        
-        $message = "A new OTP has been sent to your email.";
-        $_SESSION['otp_attempts'] = 0;
-        
-    } catch (Throwable $e) {
-        $error = "Failed to resend OTP email. Please contact the system administrator.";
-        error_log("Resend Error in verify-otp resend: " . $e->getMessage());
     }
-    }
-    } // end csrf-valid else
 }
+
+$verifyCounts = function_exists('getPasswordResetAttemptCounts')
+    ? getPasswordResetAttemptCounts(
+        $conn,
+        'otp_verify',
+        $sessionEmail,
+        $clientIp,
+        OTP_VERIFY_WINDOW_SECONDS,
+        $sessionChallengeId
+    )
+    : ['email' => 0, 'ip' => 0];
+$attemptsUsed = (int)$verifyCounts['email'];
+$attemptsRemaining = max(0, OTP_VERIFY_MAX_ATTEMPTS_PER_CHALLENGE - $attemptsUsed);
+$isVerificationLocked = $attemptsRemaining <= 0;
 ?>
 
 <!DOCTYPE html>
@@ -377,6 +575,28 @@ if (isset($_POST['resend_otp'])) {
             padding: 12px 16px;
             font-size: 0.95rem;
             margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .notice-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .notice-card i {
+            margin-top: 2px;
+        }
+
+        .attempt-chip {
+            display: inline-block;
+            background: rgba(67, 97, 238, 0.1);
+            color: var(--primary-blue);
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
         }
     </style>
 </head>
@@ -387,38 +607,47 @@ if (isset($_POST['resend_otp'])) {
         </div>
 
         <h2>Verify OTP</h2>
-        <p class="subtitle">Enter the 6-digit code sent to your email</p>
+        <p class="subtitle">Enter the <?php echo (int)$otpLength; ?>-digit code sent to your email</p>
 
         <div class="email-display">
-            <i class="fas fa-envelope me-2"></i><?php echo htmlspecialchars($_SESSION['reset_email'] ?? ''); ?>
+            <i class="fas fa-envelope me-2"></i><?php echo htmlspecialchars($sessionEmail); ?>
         </div>
 
         <?php if (isset($message) && $message): ?>
-            <div class="alert alert-success">
-                <?php echo $message; ?>
+            <div class="alert alert-success" role="alert">
+                <div class="notice-card">
+                    <i class="fas fa-circle-check"></i>
+                    <div><?php echo $message; ?></div>
+                </div>
             </div>
         <?php endif; ?>
 
         <?php if ($error): ?>
-            <div class="alert alert-danger">
-                <?php echo $error; ?>
+            <div class="alert alert-danger" role="alert">
+                <div class="notice-card">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <div><?php echo $error; ?></div>
+                </div>
             </div>
         <?php endif; ?>
+
+        <div class="attempt-chip">
+            <i class="fas fa-shield-halved me-1"></i><?php echo (int)$attemptsRemaining; ?> verification attempt(s) remaining
+        </div>
+
+        <div id="clientNotice" class="alert alert-danger d-none" role="alert"></div>
 
         <form method="post" action="verify-otp.php" id="otpForm">
             <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
             <div class="otp-input-group">
-                <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
-                <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
-                <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
-                <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
-                <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
-                <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
+                <?php for ($digitIndex = 0; $digitIndex < $otpLength; $digitIndex++): ?>
+                    <input type="text" class="form-control otp-input" maxlength="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" required>
+                <?php endfor; ?>
             </div>
 
             <input type="hidden" name="otp" id="otpValue">
 
-            <button type="submit" class="btn btn-verify" name="verify">
+            <button type="submit" class="btn btn-verify" name="verify" <?php echo $isVerificationLocked ? 'disabled' : ''; ?>>
                 <i class="fas fa-check-circle me-2"></i>Verify OTP
             </button>
         </form>
@@ -439,13 +668,26 @@ if (isset($_POST['resend_otp'])) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        const otpLength = <?php echo (int)$otpLength; ?>;
         const inputs = document.querySelectorAll('.otp-input');
         const form = document.getElementById('otpForm');
         const otpValue = document.getElementById('otpValue');
+        const clientNotice = document.getElementById('clientNotice');
+
+        function showClientNotice(message) {
+            clientNotice.textContent = message;
+            clientNotice.classList.remove('d-none');
+        }
+
+        function clearClientNotice() {
+            clientNotice.textContent = '';
+            clientNotice.classList.add('d-none');
+        }
 
         inputs.forEach((input, index) => {
             input.addEventListener('input', function(e) {
                 const value = e.target.value;
+                clearClientNotice();
                 
                 // Only allow digits
                 if (!/^\d$/.test(value)) {
@@ -473,7 +715,7 @@ if (isset($_POST['resend_otp'])) {
                 e.preventDefault();
                 const pasteData = e.clipboardData.getData('text').trim();
                 
-                if (/^\d{6}$/.test(pasteData)) {
+                if (new RegExp(`^\\d{${otpLength}}$`).test(pasteData)) {
                     pasteData.split('').forEach((char, i) => {
                         if (inputs[i]) {
                             inputs[i].value = char;
@@ -491,15 +733,18 @@ if (isset($_POST['resend_otp'])) {
         }
 
         form.addEventListener('submit', function(e) {
+            clearClientNotice();
             updateOTPValue();
-            if (otpValue.value.length !== 6) {
+            if (otpValue.value.length !== otpLength) {
                 e.preventDefault();
-                alert('Please enter all 6 digits');
+                showClientNotice(`Please enter all ${otpLength} digits.`);
             }
         });
 
         // Auto-focus first input
-        inputs[0].focus();
+        if (inputs.length > 0) {
+            inputs[0].focus();
+        }
     </script>
 </body>
 </html>

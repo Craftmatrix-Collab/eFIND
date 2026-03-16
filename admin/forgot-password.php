@@ -67,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
                     FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS
                 )
                 : ['email' => 0, 'ip' => 0];
+            $attemptLogged = false;
 
             if (
                 $attemptCounts['email'] >= FORGOT_PASSWORD_MAX_ATTEMPTS_PER_EMAIL ||
@@ -75,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
                 $error = 'Too many reset requests. Please wait a few minutes before trying again.';
                 if (function_exists('logPasswordResetAttempt')) {
                     logPasswordResetAttempt($conn, 'forgot_request', $normalizedEmail, $clientIp, false);
+                    $attemptLogged = true;
                 }
             } else {
                 $user = null;
@@ -202,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
 
                                     if (function_exists('logPasswordResetAttempt')) {
                                         logPasswordResetAttempt($conn, 'forgot_request', $normalizedEmail, $clientIp, true, $challengeId);
+                                        $attemptLogged = true;
                                     }
 
                                     $otpDelivered = true;
@@ -229,8 +232,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
                     $message = $genericResetMessage;
                     if (function_exists('logPasswordResetAttempt')) {
                         logPasswordResetAttempt($conn, 'forgot_request', $normalizedEmail, $clientIp, false);
+                        $attemptLogged = true;
                     }
-                } elseif (!empty($error) && function_exists('logPasswordResetAttempt')) {
+                } elseif (!empty($error) && !$attemptLogged && function_exists('logPasswordResetAttempt')) {
                     logPasswordResetAttempt($conn, 'forgot_request', $normalizedEmail, $clientIp, false);
                 }
             }
@@ -576,6 +580,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
             background-color: rgba(220, 53, 69, 0.1);
         }
 
+        .notice-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .notice-card i {
+            margin-top: 2px;
+        }
+
         .floating-shapes {
             position: absolute;
             width: 100%;
@@ -681,29 +695,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
             <div class="branding">
                 <img src="images/logo_pbsth.png" alt="eFIND Logo" class="efind-logo">
                 <div class="brand-name">Forgot Password?</div>
-                <p class="brand-subtitle">Enter your email to reset your password</p>
+                <p class="brand-subtitle">Enter your email to receive a one-time verification code</p>
             </div>
 
             <div class="reset-form">
                 <?php if ($message): ?>
-                    <div class="alert alert-success alert-dismissible fade show">
-                        <?php echo $message; ?>
+                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                        <div class="notice-card">
+                            <i class="fas fa-circle-check"></i>
+                            <div><?php echo $message; ?></div>
+                        </div>
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 <?php endif; ?>
 
                 <?php if ($error): ?>
-                    <div class="alert alert-danger alert-dismissible fade show">
-                        <?php echo $error; ?>
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <div class="notice-card">
+                            <i class="fas fa-triangle-exclamation"></i>
+                            <div><?php echo $error; ?></div>
+                        </div>
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 <?php endif; ?>
 
+                <div id="clientNotice" class="alert alert-danger d-none" role="alert"></div>
+
                 <div class="instruction-box">
-                    <p><i class="fas fa-info-circle me-2"></i>Enter your email address and we'll send you a link to reset your password.</p>
+                    <p><i class="fas fa-info-circle me-2"></i>For security, we send an OTP code that expires in 15 minutes.</p>
                 </div>
 
-                <form method="post" action="forgot-password.php">
+                <form method="post" action="forgot-password.php" id="forgotPasswordForm">
                     <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
                     
                     <div class="mb-3">
@@ -713,7 +735,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
                     </div>
 
                     <button type="submit" class="btn btn-reset" name="reset">
-                        <i class="fas fa-paper-plane me-2"></i>Send Reset Link
+                        <i class="fas fa-paper-plane me-2"></i>Send OTP Code
                     </button>
 
                     <div class="back-to-login">
@@ -743,13 +765,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset'])) {
             shape.style.animationDelay = `${randomDelay}s`;
         });
 
+        const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+        const clientNotice = document.getElementById('clientNotice');
+
         // Form validation
-        document.querySelector('form').addEventListener('submit', function(e) {
+        forgotPasswordForm.addEventListener('submit', function(e) {
             const email = document.getElementById('email').value.trim();
+            clientNotice.classList.add('d-none');
+            clientNotice.textContent = '';
             
             if (!email) {
                 e.preventDefault();
-                alert('Email address is required!');
+                clientNotice.textContent = 'Email address is required.';
+                clientNotice.classList.remove('d-none');
                 return false;
             }
             

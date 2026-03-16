@@ -7,6 +7,74 @@ require_once __DIR__ . '/includes/password_policy.php';
 $error = '';
 $message = '';
 $passwordPolicy = getPasswordPolicyClientConfig();
+$otpFlowTable = 'users';
+
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+function clearResetPasswordSessionState(): void {
+    unset(
+        $_SESSION['otp_verified'],
+        $_SESSION['reset_user_id'],
+        $_SESSION['user_table'],
+        $_SESSION['reset_email'],
+        $_SESSION['reset_proof'],
+        $_SESSION['reset_challenge_id'],
+        $_SESSION['password_reset_notice']
+    );
+}
+
+function fetchResetPasswordContext(mysqli $conn, int $userId): ?array {
+    $stmt = $conn->prepare(
+        "SELECT id, email, reset_challenge_id, reset_proof_hash, reset_proof_expires
+         FROM users
+         WHERE id = ?
+         LIMIT 1"
+    );
+    if (!$stmt) {
+        error_log('Reset password context prepare failed: ' . $conn->error);
+        return null;
+    }
+
+    $stmt->bind_param('i', $userId);
+    if (!$stmt->execute()) {
+        error_log('Reset password context execute failed: ' . $stmt->error);
+        $stmt->close();
+        return null;
+    }
+
+    $context = $stmt->get_result()->fetch_assoc() ?: null;
+    $stmt->close();
+    return $context;
+}
+
+function isResetPasswordContextValid(?array $context, string $email, string $challengeId, string $proof): bool {
+    if (!$context || $email === '' || $challengeId === '' || $proof === '') {
+        return false;
+    }
+
+    $dbEmail = function_exists('normalizePasswordResetEmail')
+        ? normalizePasswordResetEmail((string)($context['email'] ?? ''))
+        : strtolower(trim((string)($context['email'] ?? '')));
+    $dbChallenge = trim((string)($context['reset_challenge_id'] ?? ''));
+    $dbProofHash = (string)($context['reset_proof_hash'] ?? '');
+    $dbProofExpires = trim((string)($context['reset_proof_expires'] ?? ''));
+
+    if (
+        $dbEmail === '' ||
+        !hash_equals($dbEmail, $email) ||
+        $dbChallenge === '' ||
+        !hash_equals($dbChallenge, $challengeId) ||
+        $dbProofHash === '' ||
+        $dbProofExpires === '' ||
+        strtotime($dbProofExpires) < time()
+    ) {
+        return false;
+    }
+
+    return password_verify($proof, $dbProofHash);
+}
 
 function ensurePasswordResetAccountLockColumns($tableName) {
     global $conn;
@@ -34,63 +102,60 @@ function ensurePasswordResetAccountLockColumns($tableName) {
     }
 }
 
-// Accept either session-based auth (from OTP flow) or token-based auth (legacy)
-$use_session_auth = false;
-$token = ''; // always defined to avoid undefined-variable notice in form action
-
-if (isset($_SESSION['otp_verified']) && $_SESSION['otp_verified'] === true && isset($_SESSION['reset_user_id'])) {
-    // OTP flow: user already verified via verify-otp.php
-    $use_session_auth = true;
-    $reset_user_id = (int) $_SESSION['reset_user_id'];
-    $user_table_param = $_SESSION['user_table'] ?? 'users';
-    // Whitelist allowed tables
-    $allowed_tables = ['users'];
-    if (!in_array($user_table_param, $allowed_tables)) {
-        $user_table_param = 'users';
-    }
-} else {
-    // Token-based flow (fallback)
-    $token = trim($_GET['token'] ?? '');
-    $user_table_param = trim($_GET['table'] ?? 'users');
-
-    // Whitelist allowed tables
-    $allowed_tables = ['users'];
-    if (!in_array($user_table_param, $allowed_tables)) {
-        $user_table_param = 'users';
-    }
-
-    if (empty($token) || !preg_match('/^[a-f0-9]{64}$/', $token)) {
-        header("Location: forgot-password.php");
-        exit();
-    }
-
-    // Look up user by token
-    $lookup = $conn->prepare("SELECT id FROM $user_table_param WHERE reset_token = ? AND reset_expires > NOW()");
-    if (!$lookup) {
-        header("Location: forgot-password.php");
-        exit();
-    }
-    $lookup->bind_param("s", $token);
-    $lookup->execute();
-    $lookup_result = $lookup->get_result();
-    if ($lookup_result->num_rows !== 1) {
-        header("Location: forgot-password.php?expired=1");
-        exit();
-    }
-    $reset_user = $lookup_result->fetch_assoc();
-    $reset_user_id = $reset_user['id'];
-    $lookup->close();
+if (isset($_SESSION['password_reset_notice'])) {
+    $message = (string)$_SESSION['password_reset_notice'];
+    unset($_SESSION['password_reset_notice']);
 }
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
-    $password = $_POST['password'];
-    $confirm_password = $_POST['confirm_password'];
+$reset_user_id = (int)($_SESSION['reset_user_id'] ?? 0);
+$reset_email = function_exists('normalizePasswordResetEmail')
+    ? normalizePasswordResetEmail((string)($_SESSION['reset_email'] ?? ''))
+    : strtolower(trim((string)($_SESSION['reset_email'] ?? '')));
+$reset_challenge_id = trim((string)($_SESSION['reset_challenge_id'] ?? ''));
+$reset_proof = trim((string)($_SESSION['reset_proof'] ?? ''));
+$hasOtpSession = isset($_SESSION['otp_verified']) && $_SESSION['otp_verified'] === true;
 
-    if (empty($password) || empty($confirm_password)) {
+if (
+    !$hasOtpSession ||
+    $reset_user_id <= 0 ||
+    filter_var($reset_email, FILTER_VALIDATE_EMAIL) === false ||
+    preg_match('/^[a-f0-9]{64}$/', $reset_challenge_id) !== 1 ||
+    preg_match('/^[a-f0-9]{64}$/', $reset_proof) !== 1
+) {
+    clearResetPasswordSessionState();
+    header('Location: forgot-password.php');
+    exit();
+}
+
+if (!function_exists('ensurePasswordResetSecurityColumns') || !ensurePasswordResetSecurityColumns($conn, $otpFlowTable)) {
+    clearResetPasswordSessionState();
+    header('Location: forgot-password.php');
+    exit();
+}
+
+$resetContext = fetchResetPasswordContext($conn, $reset_user_id);
+if (!isResetPasswordContextValid($resetContext, $reset_email, $reset_challenge_id, $reset_proof)) {
+    clearResetPasswordSessionState();
+    header('Location: forgot-password.php?expired=1');
+    exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_password'])) {
+    if (
+        !isset($_POST['csrf_token'], $_SESSION['csrf_token']) ||
+        !hash_equals((string)$_SESSION['csrf_token'], (string)$_POST['csrf_token'])
+    ) {
+        $error = 'Invalid security token. Please refresh and try again.';
+    }
+
+    $password = (string)($_POST['password'] ?? '');
+    $confirm_password = (string)($_POST['confirm_password'] ?? '');
+
+    if (empty($error) && (empty($password) || empty($confirm_password))) {
         $error = "Both fields are required.";
-    } elseif ($password !== $confirm_password) {
+    } elseif (empty($error) && $password !== $confirm_password) {
         $error = "Passwords do not match.";
-    } else {
+    } elseif (empty($error)) {
         $passwordValidation = validatePasswordPolicy($password);
         if (!$passwordValidation['is_valid']) {
             $error = $passwordValidation['message'];
@@ -98,19 +163,45 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
     }
 
     if (empty($error)) {
+        $resetContext = fetchResetPasswordContext($conn, $reset_user_id);
+        if (!isResetPasswordContextValid($resetContext, $reset_email, $reset_challenge_id, $reset_proof)) {
+            $error = 'Your reset session has expired. Please request a new OTP.';
+        }
+    }
+
+    if (empty($error)) {
         // Hash the password
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
         $pass_column = 'password';
-        ensurePasswordResetAccountLockColumns($user_table_param);
+        ensurePasswordResetAccountLockColumns($otpFlowTable);
         
-        // Update password, clear reset token, and unlock account state.
-        $update_query = "UPDATE $user_table_param SET $pass_column = ?, reset_token = NULL, reset_expires = NULL, failed_login_attempts = 0, account_locked = 0, account_locked_at = NULL, failed_window_started_at = NULL, lockout_until = NULL, lockout_level = 0 WHERE id = ?";
+        // Update password, clear reset artifacts, and unlock account state.
+        $update_query = "UPDATE $otpFlowTable
+                         SET $pass_column = ?,
+                             reset_token = NULL,
+                             reset_token_hash = NULL,
+                             reset_expires = NULL,
+                             reset_challenge_id = NULL,
+                             reset_challenge_expires = NULL,
+                             reset_proof_hash = NULL,
+                             reset_proof_expires = NULL,
+                             reset_verified_at = NULL,
+                             failed_login_attempts = 0,
+                             account_locked = 0,
+                             account_locked_at = NULL,
+                             failed_window_started_at = NULL,
+                             lockout_until = NULL,
+                             lockout_level = 0
+                         WHERE id = ?
+                           AND reset_challenge_id = ?
+                           AND reset_proof_expires > NOW()
+                         LIMIT 1";
         $stmt = $conn->prepare($update_query);
         
         if ($stmt) {
-            $stmt->bind_param("si", $hashed_password, $reset_user_id);
+            $stmt->bind_param("sis", $hashed_password, $reset_user_id, $reset_challenge_id);
             
-            if ($stmt->execute()) {
+            if ($stmt->execute() && $stmt->affected_rows === 1) {
                 if (function_exists('updateAccountPasswordChangedAt')) {
                     updateAccountPasswordChangedAt(
                         $conn,
@@ -118,8 +209,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
                         (int)$reset_user_id
                     );
                 }
-                // Clear OTP session vars
-                unset($_SESSION['otp_verified'], $_SESSION['reset_user_id'], $_SESSION['user_table'], $_SESSION['reset_email']);
+
+                if (defined('PRIMARY_LOGIN_SESSION_TABLE') && function_exists('ensurePrimaryLoginSessionTable') && ensurePrimaryLoginSessionTable($conn)) {
+                    $accountKey = buildPrimaryAccountKey('staff', (int)$reset_user_id);
+                    $revokeStmt = $conn->prepare("DELETE FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1");
+                    if ($revokeStmt) {
+                        $revokeStmt->bind_param('s', $accountKey);
+                        if (!$revokeStmt->execute()) {
+                            error_log('Failed to revoke primary session after password reset: ' . $revokeStmt->error);
+                        }
+                        $revokeStmt->close();
+                    } else {
+                        error_log('Failed to prepare primary session revoke query: ' . $conn->error);
+                    }
+                }
+
+                clearResetPasswordSessionState();
+                session_regenerate_id(true);
                 $_SESSION['password_reset_success'] = true;
                 header("Location: login.php");
                 exit();
@@ -326,6 +432,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
             padding: 12px 16px;
             font-size: 0.95rem;
             margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .notice-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .notice-card i {
+            margin-top: 2px;
         }
     </style>
 </head>
@@ -336,13 +453,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
         </div>
 
         <h2>Reset Password</h2>
-        <p class="subtitle">Create a new strong password for your account</p>
+        <p class="subtitle">Create a strong password to complete your secure reset session</p>
 
-        <?php if ($error): ?>
-            <div class="alert alert-danger">
-                <?php echo $error; ?>
+        <?php if ($message): ?>
+            <div class="alert alert-info" role="alert">
+                <div class="notice-card">
+                    <i class="fas fa-circle-info"></i>
+                    <div><?php echo $message; ?></div>
+                </div>
             </div>
         <?php endif; ?>
+
+        <?php if ($error): ?>
+            <div class="alert alert-danger" role="alert">
+                <div class="notice-card">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <div><?php echo $error; ?></div>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <div id="clientNotice" class="alert alert-danger d-none" role="alert"></div>
 
         <div class="requirements">
             <strong>Password Requirements:</strong>
@@ -354,7 +485,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
             </ul>
         </div>
 
-        <form method="post" action="reset-password.php?token=<?php echo htmlspecialchars($token); ?>&table=<?php echo htmlspecialchars($user_table_param); ?>">
+        <form method="post" action="reset-password.php" id="resetPasswordForm">
+            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
             <div class="mb-3">
                 <label for="password" class="form-label">New Password</label>
                 <div class="password-wrapper">
@@ -411,6 +543,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
         const password = document.getElementById('password');
         const toggleConfirmPassword = document.getElementById('toggleConfirmPassword');
         const confirmPassword = document.getElementById('confirm_password');
+        const form = document.getElementById('resetPasswordForm');
+        const clientNotice = document.getElementById('clientNotice');
+
+        function showClientNotice(message) {
+            clientNotice.textContent = message;
+            clientNotice.classList.remove('d-none');
+        }
+
+        function clearClientNotice() {
+            clientNotice.textContent = '';
+            clientNotice.classList.add('d-none');
+        }
 
         togglePassword.addEventListener('click', function() {
             const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
@@ -428,6 +572,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
 
         // Password strength checker
         password.addEventListener('input', function() {
+            clearClientNotice();
             const value = this.value;
             const strengthBar = document.getElementById('strengthBar');
             const checks = evaluatePasswordPolicy(value);
@@ -444,20 +589,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
         });
 
         // Form validation
-        document.querySelector('form').addEventListener('submit', function(e) {
+        form.addEventListener('submit', function(e) {
+            clearClientNotice();
             const pass = password.value;
             const confirmPass = confirmPassword.value;
 
             const checks = evaluatePasswordPolicy(pass);
             if (!checks.length || !checks.uppercase || !checks.number || !checks.special) {
                 e.preventDefault();
-                alert(resetPasswordPolicy.hint);
+                showClientNotice(resetPasswordPolicy.hint);
                 return false;
             }
 
             if (pass !== confirmPass) {
                 e.preventDefault();
-                alert('Passwords do not match!');
+                showClientNotice('Passwords do not match.');
                 return false;
             }
             

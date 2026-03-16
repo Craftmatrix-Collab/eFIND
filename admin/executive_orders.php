@@ -3077,14 +3077,11 @@ $count_stmt->close();
         @page { margin: 12mm; }
         html, body { margin: 0; padding: 0; }
         .print-page {
-            break-after: page;
-            page-break-after: always;
             text-align: center;
             width: 100%;
         }
-        .print-page:last-child {
-            break-after: auto;
-            page-break-after: auto;
+        .print-page:not(:last-of-type) {
+            page-break-after: always;
         }
         img {
             display: block;
