@@ -146,6 +146,7 @@ if ($search_length > 100) {
 $document_type = isset($_GET['document_type']) ? $_GET['document_type'] : '';
 $year = isset($_GET['year']) ? $_GET['year'] : '';
 $is_superadmin_dashboard = function_exists('isSuperAdmin') && isSuperAdmin();
+$can_manage_users_dashboard_card = (function_exists('isAdmin') && isAdmin()) || $is_superadmin_dashboard;
 if ($is_superadmin_dashboard && function_exists('checkRecycleBinTable')) {
     checkRecycleBinTable();
 }
@@ -1502,17 +1503,19 @@ if ($showLoginWelcomeModal) {
                 </div>
             </div>
         </a>
-        <a href="users.php" class="stat-card-link">
-            <div class="stat-card users">
-                <div class="stat-content">
-                    <div class="stat-number"><?php echo $users_count; ?></div>
-                    <div class="stat-label">Users</div>
+        <?php if ($can_manage_users_dashboard_card): ?>
+            <a href="users.php" class="stat-card-link">
+                <div class="stat-card users">
+                    <div class="stat-content">
+                        <div class="stat-number"><?php echo $users_count; ?></div>
+                        <div class="stat-label">Users</div>
+                    </div>
+                    <div class="stat-icon users">
+                        <i class="fas fa-users"></i>
+                    </div>
                 </div>
-                <div class="stat-icon users">
-                    <i class="fas fa-users"></i>
-                </div>
-            </div>
-        </a>
+            </a>
+        <?php endif; ?>
     </div>
 </div>
 
