@@ -3098,22 +3098,35 @@ $count_stmt->close();
 <head>
     <title>Print Images</title>
     <style>
-        @page { margin: 12mm; }
-        html, body { margin: 0; padding: 0; }
-        .print-page {
-            text-align: center;
+        @page { margin: 0; }
+        html, body {
+            margin: 0;
+            padding: 0;
             width: 100%;
         }
-        .print-page:not(:last-of-type) {
-            page-break-after: always;
+        .print-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100vh;
+            box-sizing: border-box;
+            padding: 10mm;
+            overflow: hidden;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .print-page + .print-page {
+            break-before: page;
+            page-break-before: always;
         }
         img {
             display: block;
             max-width: 100%;
-            max-height: 265mm;
+            max-height: 240mm;
+            max-height: calc(100vh - 20mm);
             width: auto;
             height: auto;
-            margin: 0 auto;
             object-fit: contain;
         }
     </style>
@@ -3122,27 +3135,49 @@ $count_stmt->close();
 <script>
 (function () {
     const images = Array.from(document.images);
-    if (!images.length) {
-        window.print();
-        return;
-    }
-    let loaded = 0;
-    const done = () => {
-        loaded += 1;
-        if (loaded >= images.length) {
-            setTimeout(() => {
-                window.focus();
-                window.print();
-            }, 300);
+    const waitForImage = (img) => {
+        if (img.complete && img.naturalWidth > 0) {
+            if (typeof img.decode === 'function') {
+                return img.decode().catch(() => {});
+            }
+            return Promise.resolve();
         }
+        return new Promise((resolve) => {
+            const finalize = () => {
+                if (typeof img.decode === 'function') {
+                    img.decode().catch(() => {}).finally(resolve);
+                    return;
+                }
+                resolve();
+            };
+            img.addEventListener('load', finalize, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+            if (img.complete) {
+                finalize();
+            }
+        });
     };
-    images.forEach((img) => {
-        if (img.complete) {
-            done();
-        } else {
-            img.onload = done;
-            img.onerror = done;
+
+    const waitForImages = images.length
+        ? Promise.all(images.map(waitForImage))
+        : Promise.resolve();
+
+    waitForImages.finally(() => {
+        const brokenImages = Array.from(document.images).filter((img) => img.naturalWidth === 0);
+        brokenImages.forEach((img) => {
+            const page = img.closest('.print-page');
+            if (page) {
+                page.remove();
+            }
+        });
+        if (!document.images.length) {
+            window.close();
+            return;
         }
+        setTimeout(() => {
+            window.focus();
+            window.print();
+        }, 400);
     });
     window.onafterprint = function () { window.close(); };
 })();
