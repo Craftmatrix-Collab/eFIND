@@ -145,7 +145,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         $_GET['print_end_date'] ?? ''
     );
     if ($printDateRangeError !== null) {
-        die($printDateRangeError);
+        renderPrintDateRangeErrorAndExit($printDateRangeError);
     }
     // Build query with filters for print
     $printQuery = "SELECT id, title, resolution_number, date_posted, resolution_date, reference_number FROM resolutions WHERE 1=1";
@@ -3389,10 +3389,20 @@ $count_stmt->close();
                     alert('End date must be after start date.');
                     return;
                 }
-                let printUrl = window.location.pathname + '?print=1';
-                if (startDate) printUrl += '&print_start_date=' + encodeURIComponent(startDate);
-                if (endDate) printUrl += '&print_end_date=' + encodeURIComponent(endDate);
-                window.open(printUrl, '_blank');
+                const printUrl = new URL(window.location.href);
+                printUrl.searchParams.set('print', '1');
+                printUrl.searchParams.delete('page');
+                if (startDate) {
+                    printUrl.searchParams.set('print_start_date', startDate);
+                } else {
+                    printUrl.searchParams.delete('print_start_date');
+                }
+                if (endDate) {
+                    printUrl.searchParams.set('print_end_date', endDate);
+                } else {
+                    printUrl.searchParams.delete('print_end_date');
+                }
+                window.open(printUrl.toString(), '_blank');
                 const printModal = bootstrap.Modal.getInstance(document.getElementById('printDateRangeModal'));
                 printModal.hide();
             });

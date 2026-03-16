@@ -196,10 +196,14 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         $_GET['print_start_date'] ?? '',
         $_GET['print_end_date'] ?? ''
     );
-    $printUserRole = $_GET['print_user_role'] ?? '';
+    $printUserRole = strtolower(trim((string)($_GET['print_user_role'] ?? '')));
+    $allowedPrintRoles = ['admin', 'superadmin', 'staff', 'system'];
+    if ($printUserRole !== '' && !in_array($printUserRole, $allowedPrintRoles, true)) {
+        $printUserRole = '';
+    }
 
     if ($printDateRangeError !== null) {
-        die($printDateRangeError);
+        renderPrintDateRangeErrorAndExit($printDateRangeError);
     }
 
     // Build query with filters for print
@@ -213,9 +217,14 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
 
     appendPrintDateRangeConditions('al.log_time', $printStartDate, $printEndDate, $printConditions, $printParams, $printTypes);
 
-    if (!empty($printUserRole)) {
-        $printConditions[] = "al.user_role = ?";
-        $printParams[] = $printUserRole;
+    if ($printUserRole !== '') {
+        if ($printUserRole === 'system') {
+            $printConditions[] = "(LOWER(TRIM(COALESCE(al.user_role, ''))) = ? OR COALESCE(al.user_role, '') = '')";
+            $printParams[] = 'system';
+        } else {
+            $printConditions[] = "LOWER(TRIM(COALESCE(al.user_role, ''))) = ?";
+            $printParams[] = $printUserRole;
+        }
         $printTypes .= 's';
     }
 
@@ -1540,6 +1549,16 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                         <label for="modalPrintEndDate" class="form-label">End Date</label>
                         <input type="date" class="form-control" id="modalPrintEndDate">
                     </div>
+                    <div class="mb-3">
+                        <label for="modalPrintUserRole" class="form-label">User Role (optional)</label>
+                        <select class="form-select" id="modalPrintUserRole">
+                            <option value="">All Roles</option>
+                            <option value="admin">Admin</option>
+                            <option value="superadmin">Superadmin</option>
+                            <option value="staff">Staff</option>
+                            <option value="system">System</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1608,6 +1627,14 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
             // Print button logic
             document.getElementById('printButton').addEventListener('click', function() {
                 // Show modal for date range selection
+                const roleSelect = document.getElementById('modalPrintUserRole');
+                if (roleSelect) {
+                    const currentUrl = new URL(window.location.href);
+                    const roleFromQuery = currentUrl.searchParams.get('filter_user_role')
+                        || currentUrl.searchParams.get('print_user_role')
+                        || '';
+                    roleSelect.value = roleFromQuery;
+                }
                 const printModal = new bootstrap.Modal(document.getElementById('printDateRangeModal'));
                 printModal.show();
             });
@@ -1615,6 +1642,7 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
             document.getElementById('confirmPrint').addEventListener('click', function() {
                 const startDate = document.getElementById('modalPrintStartDate').value;
                 const endDate = document.getElementById('modalPrintEndDate').value;
+                const selectedRole = (document.getElementById('modalPrintUserRole').value || '').trim();
 
                 // Validate date range
                 if (startDate && endDate && startDate > endDate) {
@@ -1622,13 +1650,33 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                     return;
                 }
 
-                // Build print URL with date range
-                let printUrl = window.location.pathname + '?print=1';
-                if (startDate) printUrl += '&print_start_date=' + encodeURIComponent(startDate);
-                if (endDate) printUrl += '&print_end_date=' + encodeURIComponent(endDate);
+                // Build print URL while preserving existing list filters/search parameters.
+                const printUrl = new URL(window.location.href);
+                printUrl.searchParams.set('print', '1');
+                printUrl.searchParams.delete('page');
+                if (startDate) {
+                    printUrl.searchParams.set('print_start_date', startDate);
+                } else {
+                    printUrl.searchParams.delete('print_start_date');
+                }
+                if (endDate) {
+                    printUrl.searchParams.set('print_end_date', endDate);
+                } else {
+                    printUrl.searchParams.delete('print_end_date');
+                }
+                if (selectedRole !== '') {
+                    printUrl.searchParams.set('print_user_role', selectedRole);
+                } else {
+                    const currentRoleFilter = (printUrl.searchParams.get('filter_user_role') || '').trim();
+                    if (currentRoleFilter !== '') {
+                        printUrl.searchParams.set('print_user_role', currentRoleFilter);
+                    } else {
+                        printUrl.searchParams.delete('print_user_role');
+                    }
+                }
 
                 // Open print window
-                window.open(printUrl, '_blank');
+                window.open(printUrl.toString(), '_blank');
 
                 // Close modal
                 const printModal = bootstrap.Modal.getInstance(document.getElementById('printDateRangeModal'));

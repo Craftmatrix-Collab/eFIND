@@ -311,6 +311,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_otp'])) {
                         if (!$updateStmt->execute() || $updateStmt->affected_rows !== 1) {
                             $error = 'Unable to resend OTP right now. Please try again.';
                             error_log('Verify OTP resend update execute failed: ' . $updateStmt->error);
+                        } else {
+                            // Keep session and database challenge IDs synchronized even if email delivery fails.
+                            $_SESSION['reset_challenge_id'] = $newChallengeId;
+                            unset($_SESSION['otp_verified'], $_SESSION['reset_user_id'], $_SESSION['reset_proof'], $_SESSION['password_reset_notice']);
+                            $sessionChallengeId = $newChallengeId;
                         }
                         $updateStmt->close();
                     }
@@ -365,9 +370,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_otp'])) {
                                 'html' => $htmlContent
                             ]);
 
-                            $_SESSION['reset_challenge_id'] = $newChallengeId;
-                            unset($_SESSION['otp_verified'], $_SESSION['reset_user_id'], $_SESSION['reset_proof'], $_SESSION['password_reset_notice']);
-                            $sessionChallengeId = $newChallengeId;
                             $message = 'A new OTP has been sent to your email.';
 
                             if (function_exists('logPasswordResetAttempt')) {

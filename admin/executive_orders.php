@@ -171,7 +171,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
         $_GET['print_end_date'] ?? ''
     );
     if ($printDateRangeError !== null) {
-        die($printDateRangeError);
+        renderPrintDateRangeErrorAndExit($printDateRangeError);
     }
 
     // Build query with filters for print
@@ -3261,13 +3261,23 @@ $count_stmt->close();
                     return;
                 }
                 
-                // Build print URL with date range
-                let printUrl = window.location.pathname + '?print=1';
-                if (startDate) printUrl += '&print_start_date=' + encodeURIComponent(startDate);
-                if (endDate) printUrl += '&print_end_date=' + encodeURIComponent(endDate);
+                // Build print URL while preserving current page filters/search params.
+                const printUrl = new URL(window.location.href);
+                printUrl.searchParams.set('print', '1');
+                printUrl.searchParams.delete('page');
+                if (startDate) {
+                    printUrl.searchParams.set('print_start_date', startDate);
+                } else {
+                    printUrl.searchParams.delete('print_start_date');
+                }
+                if (endDate) {
+                    printUrl.searchParams.set('print_end_date', endDate);
+                } else {
+                    printUrl.searchParams.delete('print_end_date');
+                }
                 
                 // Open print window
-                window.open(printUrl, '_blank');
+                window.open(printUrl.toString(), '_blank');
                 
                 // Close modal
                 const printModal = bootstrap.Modal.getInstance(document.getElementById('printDateRangeModal'));

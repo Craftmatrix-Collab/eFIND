@@ -211,10 +211,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_password'])) {
                 }
 
                 if (defined('PRIMARY_LOGIN_SESSION_TABLE') && function_exists('ensurePrimaryLoginSessionTable') && ensurePrimaryLoginSessionTable($conn)) {
-                    $accountKey = buildPrimaryAccountKey('staff', (int)$reset_user_id);
-                    $revokeStmt = $conn->prepare("DELETE FROM " . PRIMARY_LOGIN_SESSION_TABLE . " WHERE account_key = ? LIMIT 1");
+                    $revokeStmt = $conn->prepare(
+                        "DELETE FROM " . PRIMARY_LOGIN_SESSION_TABLE . "
+                         WHERE account_id = ?
+                           AND account_type IN ('admin', 'staff')"
+                    );
                     if ($revokeStmt) {
-                        $revokeStmt->bind_param('s', $accountKey);
+                        $accountId = (int)$reset_user_id;
+                        $revokeStmt->bind_param('i', $accountId);
                         if (!$revokeStmt->execute()) {
                             error_log('Failed to revoke primary session after password reset: ' . $revokeStmt->error);
                         }

@@ -301,6 +301,8 @@ function ensurePasswordResetSecurityColumns(mysqli $conn, $table = 'users'): boo
     }
 
     $migrations = [
+        'reset_token' => "ALTER TABLE {$table} ADD COLUMN reset_token VARCHAR(255) NULL DEFAULT NULL",
+        'reset_expires' => "ALTER TABLE {$table} ADD COLUMN reset_expires DATETIME NULL DEFAULT NULL",
         'reset_token_hash' => "ALTER TABLE {$table} ADD COLUMN reset_token_hash VARCHAR(255) NULL DEFAULT NULL",
         'reset_challenge_id' => "ALTER TABLE {$table} ADD COLUMN reset_challenge_id CHAR(64) NULL DEFAULT NULL",
         'reset_challenge_expires' => "ALTER TABLE {$table} ADD COLUMN reset_challenge_expires DATETIME NULL DEFAULT NULL",
