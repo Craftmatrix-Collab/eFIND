@@ -154,7 +154,7 @@ $allowed_document_types = ['executive_order', 'resolution', 'meeting'];
 if ($document_type !== '' && !in_array($document_type, $allowed_document_types, true)) {
     $document_type = '';
 }
-$dashboard_search_placeholder = 'Search any document field (title, number, content, uploader, etc.)...';
+$dashboard_search_placeholder = 'Search any document field (title, number, content, etc.)...';
 // Validate year
 if (!empty($year) && (!is_numeric($year) || $year < 1900 || $year > date('Y'))) {
     $year = '';

@@ -1830,7 +1830,7 @@ $count_stmt->close();
                     <div class="col-lg-7 col-md-6 col-12">
                         <div class="search-box">
                             <i class="fas fa-search"></i>
-                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any Executive Order field (title, number, content, uploader, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
+                            <input type="text" name="search_query" id="searchInput" class="form-control" placeholder="Search any Executive Order field (title, number, content, etc.)..." value="<?php echo htmlspecialchars($search_query); ?>">
                         </div>
                     </div>
                     <div class="col-lg-2 col-md-2 col-sm-4 col-12">
