@@ -2911,9 +2911,9 @@ if ($showLoginWelcomeModal) {
                onclick="document.getElementById('ud-file-input').click()">
             <i class="fas fa-cloud-upload-alt" style="font-size:2.5rem;color:#adb5bd;"></i>
             <p class="mt-2 mb-1 fw-semibold">Click or drag files here</p>
-            <p class="text-muted small mb-0">Images (JPG, PNG) or PDF · 10 MB max per file</p>
+            <p class="text-muted small mb-0">Images (JPG, PNG, GIF, BMP, WEBP) · 10 MB max per file</p>
           </div>
-          <input type="file" id="ud-file-input" class="d-none" accept="image/*,.pdf" multiple>
+          <input type="file" id="ud-file-input" class="d-none" accept="image/*" multiple>
           <div id="ud-file-list" class="mb-3"></div>
 
           <div class="d-flex justify-content-between">
@@ -3161,7 +3161,7 @@ if ($showLoginWelcomeModal) {
     udPollTimer = setInterval(async () => {
       if (!udMobileSession || udHandledComplete) return;
       try {
-        const r = await fetch(`mobile_session?action=check&session=${encodeURIComponent(udMobileSession)}&_=${Date.now()}`, {
+        const r = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(udMobileSession)}&_=${Date.now()}`, {
           cache: 'no-store',
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -3196,16 +3196,22 @@ if ($showLoginWelcomeModal) {
           body:    JSON.stringify({doc_type: udType}),
         });
         const d = await r.json();
-        if (d.success) udMobileSession = d.session_id;
-      } catch (e) { /* proceed without session */ }
+        if (!r.ok || !d.success || !d.session_id) {
+          throw new Error(d.error || 'Failed to create mobile upload session');
+        }
+        udMobileSession = d.session_id;
+      } catch (e) {
+        const message = (e && e.message) ? e.message : 'Unable to create mobile upload session.';
+        alert(`${message} Please refresh and login again on desktop.`);
+        panel.classList.add('d-none');
+        return;
+      }
     }
 
-    const mobileUploadUrl = new URL('mobile_upload', window.location.href);
+    const mobileUploadUrl = new URL('mobile_upload.php', window.location.href);
     mobileUploadUrl.searchParams.set('type', udType);
     mobileUploadUrl.searchParams.set('camera', '1');
-    if (udMobileSession) {
-      mobileUploadUrl.searchParams.set('session', udMobileSession);
-    }
+    mobileUploadUrl.searchParams.set('session', udMobileSession);
     const url = mobileUploadUrl.toString();
     document.getElementById('ud-qr-link').href = url;
 
@@ -3287,6 +3293,13 @@ if ($showLoginWelcomeModal) {
     const MAX = 10 * 1024 * 1024;
     files.forEach(f => {
       if (f.size > MAX) { alert(`${f.name} exceeds 10 MB limit.`); return; }
+      const fileName = (f.name || '').toLowerCase();
+      const isImageType = !!f.type && f.type.startsWith('image/');
+      const hasImageExt = /\.(jpe?g|png|gif|bmp|webp)$/i.test(fileName);
+      if (!isImageType && !hasImageExt) {
+        alert(`${f.name} is not an image. Only image uploads are allowed.`);
+        return;
+      }
       if (udFiles.find(x => x.name === f.name && x.size === f.size)) return;
       udFiles.push(f);
     });
@@ -3360,8 +3373,16 @@ if ($showLoginWelcomeModal) {
         presignedUrl = data.presigned_url;
         objectKey    = data.object_key;
       } catch (err) {
-        udSetFileStatus(rowId, 'danger', `Error: ${err.message}`);
-        allOk = false; continue;
+        udSetFileStatus(rowId, 'danger', `URL failed: ${err.message}. Trying secure fallback…`);
+        try {
+          const fallbackUpload = await udUploadViaServerFallback(file, rowId);
+          objectKeys.push(fallbackUpload.objectKey);
+          udSetFileStatus(rowId, 'success', 'Uploaded ✓ (secure fallback)');
+        } catch (fallbackErr) {
+          udSetFileStatus(rowId, 'danger', `Error: ${fallbackErr.message}`);
+          allOk = false;
+        }
+        continue;
       }
 
       try {
@@ -3369,8 +3390,15 @@ if ($showLoginWelcomeModal) {
         objectKeys.push(objectKey);
         udSetFileStatus(rowId, 'success', 'Uploaded ✓');
       } catch (err) {
-        udSetFileStatus(rowId, 'danger', `Upload failed: ${err.message}`);
-        allOk = false;
+        udSetFileStatus(rowId, 'danger', `Direct upload failed: ${err.message}. Trying secure fallback…`);
+        try {
+          const fallbackUpload = await udUploadViaServerFallback(file, rowId);
+          objectKeys.push(fallbackUpload.objectKey);
+          udSetFileStatus(rowId, 'success', 'Uploaded ✓ (secure fallback)');
+        } catch (fallbackErr) {
+          udSetFileStatus(rowId, 'danger', `Upload failed: ${fallbackErr.message}`);
+          allOk = false;
+        }
       }
     }
 
@@ -3413,6 +3441,59 @@ if ($showLoginWelcomeModal) {
       xhr.onerror = () => reject(new Error('Network error'));
       xhr.send(file);
     });
+  }
+
+  async function udUploadViaServerFallback(file, rowId, maxAttempts = 2) {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (attempt > 1) {
+        const st = document.getElementById(`${rowId}-status`);
+        if (st) st.textContent = `Retrying secure fallback (${attempt}/${maxAttempts})…`;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      try {
+        const body = new FormData();
+        body.append('doc_type', udType);
+        body.append('file', file, file.name || `upload_${Date.now()}.jpg`);
+
+        const response = await fetch('upload_mobile_fallback.php', {
+          method: 'POST',
+          body,
+          signal: controller.signal,
+        });
+
+        const raw = await response.text();
+        let data = {};
+        if (raw) {
+          try {
+            data = JSON.parse(raw);
+          } catch (parseErr) {
+            throw new Error(`Fallback endpoint returned invalid JSON (HTTP ${response.status})`);
+          }
+        }
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || data.message || `Secure fallback failed (HTTP ${response.status})`);
+        }
+        if (!data.object_key) {
+          throw new Error('Secure fallback did not return an object key');
+        }
+
+        return { objectKey: data.object_key };
+      } catch (err) {
+        lastError = err.name === 'AbortError' ? new Error('Secure fallback timed out') : err;
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    throw lastError || new Error('Secure fallback upload failed');
   }
 
   function udSetFileStatus(rowId, type, msg) {
