@@ -1,6 +1,7 @@
 <?php
 // Fetch profile data directly for the modal (no AJAX needed)
 require_once __DIR__ . '/password_policy.php';
+require_once __DIR__ . '/profile_picture_helper.php';
 $_navbar_password_policy = getPasswordPolicyClientConfig();
 $_navbar_profile = null;
 $_navbar_last_active = null;
@@ -82,21 +83,8 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                 <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
                    <?php
             // Check if session variables exist before using them
-            $profile_picture = trim((string)($_SESSION['profile_picture'] ?? ''));
             $full_name = $_SESSION['full_name'] ?? 'Admin';
-            $profile_path = 'images/profile.jpg';
-            if ($profile_picture !== '') {
-                if (preg_match('#^(https?:)?//#i', $profile_picture) || stripos($profile_picture, 'data:image/') === 0) {
-                    $profile_path = $profile_picture;
-                } elseif (preg_match('#^/?images/#i', $profile_picture)) {
-                    $profile_path = ltrim($profile_picture, '/');
-                } else {
-                    $profile_path = 'uploads/profiles/' . basename($profile_picture);
-                }
-            }
-            if (strpos($profile_path, 'data:') !== 0 && !preg_match('#^images/#i', $profile_path)) {
-                $profile_path .= (strpos($profile_path, '?') === false ? '?t=' : '&t=') . time();
-            }
+            $profile_path = efind_resolve_profile_picture_src($_SESSION['profile_picture'] ?? '');
             echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null;this.src=\'images/profile.jpg\';">';
             ?>
                     <span class="text-white"><?php echo htmlspecialchars($full_name); ?></span>
@@ -183,20 +171,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                             <div class="card-body text-center">
                                 <div class="mb-3">
                                     <?php
-                                    $_np_profile_raw = trim((string)($_np['profile_picture'] ?? ''));
-                                    $_np_profile_path = 'images/profile.jpg';
-                                    if ($_np_profile_raw !== '') {
-                                        if (preg_match('#^(https?:)?//#i', $_np_profile_raw) || stripos($_np_profile_raw, 'data:image/') === 0) {
-                                            $_np_profile_path = $_np_profile_raw;
-                                        } elseif (preg_match('#^/?images/#i', $_np_profile_raw)) {
-                                            $_np_profile_path = ltrim($_np_profile_raw, '/');
-                                        } else {
-                                            $_np_profile_path = 'uploads/profiles/' . basename($_np_profile_raw);
-                                        }
-                                    }
-                                    if (strpos($_np_profile_path, 'data:') !== 0 && !preg_match('#^images/#i', $_np_profile_path)) {
-                                        $_np_profile_path .= (strpos($_np_profile_path, '?') === false ? '?t=' : '&t=') . time();
-                                    }
+                                    $_np_profile_path = efind_resolve_profile_picture_src($_np['profile_picture'] ?? '');
                                     ?>
                                     <img src="<?php echo htmlspecialchars($_np_profile_path); ?>"
                                          class="img-thumbnail rounded-circle"
@@ -737,13 +712,32 @@ function showToast(message, type = 'success') {
 
 function normalizeNavbarProfilePicturePath(path) {
     if (!path) return 'images/profile.jpg';
-    if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:')) {
+    if (path.startsWith('data:')) {
         return path;
     }
     if (/^\/?images\//i.test(path)) {
         return path.replace(/^\/+/, '');
     }
-    const file = path.split('/').pop().replace(/^\/+/, '');
+    if (/^(https?:)?\/\//i.test(path)) {
+        try {
+            const normalizedUrl = new URL(path, window.location.origin);
+            const localHosts = ['localhost', '127.0.0.1', '::1', 'minio', 'host.docker.internal'];
+            if (localHosts.includes(normalizedUrl.hostname.toLowerCase())) {
+                normalizedUrl.hostname = window.location.hostname;
+                if (window.location.protocol === 'https:' && normalizedUrl.protocol === 'http:') {
+                    normalizedUrl.protocol = 'https:';
+                }
+            }
+            return normalizedUrl.toString();
+        } catch (error) {
+            return path;
+        }
+    }
+    const normalizedPath = path.replace(/^\/+/, '');
+    if (/^uploads\//i.test(normalizedPath)) {
+        return normalizedPath;
+    }
+    const file = normalizedPath.split('/').pop();
     return file ? `uploads/profiles/${file}` : 'images/profile.jpg';
 }
 
@@ -875,7 +869,7 @@ function initNavbarJQueryHandlers() {
                         
                         // Update navbar if profile picture changed
                         if (response.profile_picture) {
-                            const normalizedProfilePath = normalizeNavbarProfilePicturePath(response.profile_picture);
+                            const normalizedProfilePath = response.profile_picture_src || normalizeNavbarProfilePicturePath(response.profile_picture);
                             const profileSrc = normalizedProfilePath
                                 ? normalizedProfilePath + (normalizedProfilePath.includes('?') ? '&' : '?') + 't=' + Date.now()
                                 : '';

@@ -4,6 +4,7 @@ include 'includes/config.php';
 require_once __DIR__ . '/includes/resend_delivery_helper.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
+require_once __DIR__ . '/includes/profile_picture_helper.php';
 
 // Check if this is an AJAX request
 $is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
@@ -632,6 +633,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'success' => true, 
                 'message' => 'Profile updated successfully!',
                 'profile_picture' => $profilePicture,
+                'profile_picture_src' => $profilePicture ? efind_resolve_profile_picture_src($profilePicture) : null,
                 'full_name' => $fullName
             ]);
             exit;

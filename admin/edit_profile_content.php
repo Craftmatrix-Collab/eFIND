@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 include_once __DIR__ . '/includes/config.php';
+require_once __DIR__ . '/includes/profile_picture_helper.php';
 
 if (!isLoggedIn()) {
     die('<div class="alert alert-danger alert-dismissible fade show">
@@ -64,20 +65,7 @@ try {
                     <p class="profile-photo-subtitle">Choose a clear square image for best quality.</p>
                     <div class="profile-picture-container mb-3">
                         <?php
-                        $profile_picture_raw = trim((string)($user['profile_picture'] ?? ''));
-                        $profile_picture_src = 'images/profile.jpg';
-                        if ($profile_picture_raw !== '') {
-                            if (preg_match('#^(https?:)?//#i', $profile_picture_raw) || stripos($profile_picture_raw, 'data:image/') === 0) {
-                                $profile_picture_src = $profile_picture_raw;
-                            } elseif (preg_match('#^/?images/#i', $profile_picture_raw)) {
-                                $profile_picture_src = ltrim($profile_picture_raw, '/');
-                            } else {
-                                $profile_picture_src = 'uploads/profiles/' . basename($profile_picture_raw);
-                            }
-                        }
-                        if (strpos($profile_picture_src, 'data:') !== 0 && !preg_match('#^images/#i', $profile_picture_src)) {
-                            $profile_picture_src .= (strpos($profile_picture_src, '?') === false ? '?t=' : '&t=') . time();
-                        }
+                        $profile_picture_src = efind_resolve_profile_picture_src($user['profile_picture'] ?? '');
                         ?>
                         <img id="profileImagePreview"
                              src="<?php echo htmlspecialchars($profile_picture_src); ?>"

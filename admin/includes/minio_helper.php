@@ -294,6 +294,18 @@ class MinioS3Client {
             $publicUrl = $protocol . '://' . $publicUrl;
         }
 
+        $parsedPublicUrl = parse_url($publicUrl);
+        if (is_array($parsedPublicUrl) && !empty($parsedPublicUrl['host']) && $this->isLocalOnlyHost((string)$parsedPublicUrl['host'])) {
+            $browserConfig = $this->resolveBrowserUploadEndpoint();
+            if (!empty($browserConfig['endpoint'])) {
+                $publicScheme = trim((string)($browserConfig['scheme'] ?? ''));
+                if (!in_array($publicScheme, ['http', 'https'], true)) {
+                    $publicScheme = $this->useSSL ? 'https' : 'http';
+                }
+                $publicUrl = $publicScheme . '://' . trim((string)$browserConfig['endpoint']);
+            }
+        }
+
         return rtrim($publicUrl, '/');
     }
 

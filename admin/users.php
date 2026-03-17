@@ -11,6 +11,7 @@ require_once __DIR__ . '/includes/resend_delivery_helper.php';
 require_once __DIR__ . '/includes/password_policy.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
+require_once __DIR__ . '/includes/profile_picture_helper.php';
 $passwordPolicy = getPasswordPolicyClientConfig();
 
 // Check if user is logged in - redirect to login if not
@@ -873,6 +874,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user' && isset($_GET['id'
             echo json_encode(['error' => 'You are not authorized to edit this profile.']);
             exit();
         }
+        $user['profile_picture_src'] = efind_resolve_profile_picture_src($user['profile_picture'] ?? '');
         header('Content-Type: application/json');
         echo json_encode($user);
         exit();
@@ -1754,20 +1756,7 @@ $count_stmt->close();
                                         </td>
                                         <td>
                                             <?php
-                                            $profilePicturePath = trim((string)($user['profile_picture'] ?? ''));
-                                            $profilePictureSrc = 'images/profile.jpg';
-                                            if ($profilePicturePath !== '') {
-                                                if (preg_match('#^(https?:)?//#i', $profilePicturePath) || stripos($profilePicturePath, 'data:image/') === 0) {
-                                                    $profilePictureSrc = $profilePicturePath;
-                                                } elseif (preg_match('#^/?images/#i', $profilePicturePath)) {
-                                                    $profilePictureSrc = ltrim($profilePicturePath, '/');
-                                                } else {
-                                                    $profilePictureSrc = 'uploads/profiles/' . basename($profilePicturePath);
-                                                }
-                                            }
-                                            if (strpos($profilePictureSrc, 'data:') !== 0 && !preg_match('#^images/#i', $profilePictureSrc)) {
-                                                $profilePictureSrc .= (strpos($profilePictureSrc, '?') === false ? '?t=' : '&t=') . time();
-                                            }
+                                            $profilePictureSrc = efind_resolve_profile_picture_src($user['profile_picture'] ?? '');
                                             ?>
                                             <img src="<?php echo htmlspecialchars($profilePictureSrc); ?>"
                                                  alt="Profile Picture"
@@ -2134,10 +2123,27 @@ $count_stmt->close();
         }
         function normalizeProfilePicturePath(path) {
             if (!path) return 'images/profile.jpg';
-            if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:')) return path;
+            if (path.startsWith('data:')) return path;
             if (/^\/?images\//i.test(path)) return path.replace(/^\/+/, '');
-            const normalizedPath = path.startsWith('uploads/profiles/') ? path : `uploads/profiles/${path.replace(/^\/+/, '')}`;
-            return normalizedPath || 'images/profile.jpg';
+            if (/^(https?:)?\/\//i.test(path)) {
+                try {
+                    const normalizedUrl = new URL(path, window.location.origin);
+                    const localHosts = ['localhost', '127.0.0.1', '::1', 'minio', 'host.docker.internal'];
+                    if (localHosts.includes(normalizedUrl.hostname.toLowerCase())) {
+                        normalizedUrl.hostname = window.location.hostname;
+                        if (window.location.protocol === 'https:' && normalizedUrl.protocol === 'http:') {
+                            normalizedUrl.protocol = 'https:';
+                        }
+                    }
+                    return normalizedUrl.toString();
+                } catch (error) {
+                    return path;
+                }
+            }
+            const normalizedPath = path.replace(/^\/+/, '');
+            if (/^uploads\//i.test(normalizedPath)) return normalizedPath;
+            const filename = normalizedPath.split('/').pop();
+            return filename ? `uploads/profiles/${filename}` : 'images/profile.jpg';
         }
         const usersPasswordPolicy = <?php echo json_encode($passwordPolicy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 
@@ -2302,7 +2308,7 @@ $count_stmt->close();
                             }
                             userTypeField.value = user.user_type;
                             const currentProfilePictureInfo = document.getElementById('currentProfilePictureInfo');
-                            const normalizedProfilePicture = normalizeProfilePicturePath(user.profile_picture || '');
+                            const normalizedProfilePicture = user.profile_picture_src || normalizeProfilePicturePath(user.profile_picture || '');
                             const profilePictureSrc = /^\/?images\//i.test(normalizedProfilePicture) || normalizedProfilePicture.startsWith('data:')
                                 ? normalizedProfilePicture
                                 : `${normalizedProfilePicture}${normalizedProfilePicture.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
