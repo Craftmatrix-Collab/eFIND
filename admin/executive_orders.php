@@ -2404,7 +2404,7 @@ $count_stmt->close();
 
         async function ordEnsureSession() {
             if (ordMobileSession) return ordMobileSession;
-            const res = await fetch('mobile_session.php', {
+            const res = await fetch('mobile_session', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ doc_type: 'executive_orders' }),
@@ -2457,7 +2457,7 @@ $count_stmt->close();
         async function ordGenerateQR() {
             if (ordQrCreated && ordMobileSession) return;
             const sessionId = await ordEnsureSession();
-            const mobileUploadUrl = new URL('mobile_upload.php', window.location.href);
+            const mobileUploadUrl = new URL('mobile_upload', window.location.href);
             mobileUploadUrl.searchParams.set('type', 'executive_orders');
             mobileUploadUrl.searchParams.set('camera', '1');
             mobileUploadUrl.searchParams.set('flow', 'modal_ocr');
@@ -2570,7 +2570,7 @@ $count_stmt->close();
             if (!ordMobileSession) return;
             ordPollTimer = setInterval(async function () {
                 try {
-                    const response = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(ordMobileSession)}&_=${Date.now()}`, {
+                    const response = await fetch(`mobile_session?action=check&session=${encodeURIComponent(ordMobileSession)}&_=${Date.now()}`, {
                         cache: 'no-store',
                         headers: {
                             'Cache-Control': 'no-cache, no-store, must-revalidate',

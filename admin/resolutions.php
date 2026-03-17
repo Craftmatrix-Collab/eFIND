@@ -2467,7 +2467,7 @@ $count_stmt->close();
 
         async function resEnsureSession() {
             if (resMobileSession) return resMobileSession;
-            const res = await fetch('mobile_session.php', {
+            const res = await fetch('mobile_session', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ doc_type: 'resolutions' }),
@@ -2520,7 +2520,7 @@ $count_stmt->close();
         async function resGenerateQR() {
             if (resQrCreated && resMobileSession) return;
             const sessionId = await resEnsureSession();
-            const mobileUploadUrl = new URL('mobile_upload.php', window.location.href);
+            const mobileUploadUrl = new URL('mobile_upload', window.location.href);
             mobileUploadUrl.searchParams.set('type', 'resolutions');
             mobileUploadUrl.searchParams.set('camera', '1');
             mobileUploadUrl.searchParams.set('flow', 'modal_ocr');
@@ -2633,7 +2633,7 @@ $count_stmt->close();
             if (!resMobileSession) return;
             resPollTimer = setInterval(async function () {
                 try {
-                    const response = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(resMobileSession)}&_=${Date.now()}`, {
+                    const response = await fetch(`mobile_session?action=check&session=${encodeURIComponent(resMobileSession)}&_=${Date.now()}`, {
                         cache: 'no-store',
                         headers: {
                             'Cache-Control': 'no-cache, no-store, must-revalidate',

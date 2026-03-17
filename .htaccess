@@ -40,7 +40,14 @@
     RewriteRule ^([^\.]+)$ $1.php [NC,L]
     
     # Redirect .php URLs to clean URLs
-    RewriteCond %{THE_REQUEST} ^GET\ /(.*)\.php
+    # Preserve HTTPS when behind a reverse proxy/CDN (for example Cloudflare),
+    # otherwise browsers can block redirected XHR/fetch requests as mixed content.
+    RewriteCond %{THE_REQUEST} ^GET\ /(.*)\.php [NC]
+    RewriteCond %{HTTP:X-Forwarded-Proto} =https [OR]
+    RewriteCond %{HTTPS} on
+    RewriteRule ^(.*)\.php$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+    RewriteCond %{THE_REQUEST} ^GET\ /(.*)\.php [NC]
     RewriteRule ^(.*)\.php$ /$1 [R=301,L]
     
     # Force HTTPS in production (uncomment when ready)

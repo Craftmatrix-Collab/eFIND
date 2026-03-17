@@ -3161,7 +3161,7 @@ if ($showLoginWelcomeModal) {
     udPollTimer = setInterval(async () => {
       if (!udMobileSession || udHandledComplete) return;
       try {
-        const r = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(udMobileSession)}&_=${Date.now()}`, {
+        const r = await fetch(`mobile_session?action=check&session=${encodeURIComponent(udMobileSession)}&_=${Date.now()}`, {
           cache: 'no-store',
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -3190,7 +3190,7 @@ if ($showLoginWelcomeModal) {
 
     if (!udMobileSession) {
       try {
-        const r = await fetch('mobile_session.php', {
+        const r = await fetch('mobile_session', {
           method:  'POST',
           headers: {'Content-Type': 'application/json'},
           body:    JSON.stringify({doc_type: udType}),
@@ -3208,7 +3208,7 @@ if ($showLoginWelcomeModal) {
       }
     }
 
-    const mobileUploadUrl = new URL('mobile_upload.php', window.location.href);
+    const mobileUploadUrl = new URL('mobile_upload', window.location.href);
     mobileUploadUrl.searchParams.set('type', udType);
     mobileUploadUrl.searchParams.set('camera', '1');
     mobileUploadUrl.searchParams.set('session', udMobileSession);
