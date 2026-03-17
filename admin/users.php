@@ -31,7 +31,21 @@ $current_users_page_actor_type = 'users';
 function normalizeManagedProfileRole($role): string
 {
     $normalized = strtolower(trim((string)$role));
-    return in_array($normalized, ['superadmin', 'admin', 'staff', 'viewer'], true) ? $normalized : '';
+    if ($normalized === '') {
+        return '';
+    }
+
+    $token = preg_replace('/[^a-z0-9]/', '', $normalized) ?? '';
+    $roleAliases = [
+        'superadmin' => 'superadmin',
+        'superadministrator' => 'superadmin',
+        'admin' => 'admin',
+        'administrator' => 'admin',
+        'staff' => 'staff',
+        'viewer' => 'viewer',
+    ];
+
+    return $roleAliases[$token] ?? '';
 }
 
 function managedProfileRoleRank(string $role): int
@@ -143,7 +157,7 @@ function canAssignManagedRole(int $targetId, int $currentActorId, string $target
 }
 
 $current_users_page_actor_role = resolveCurrentManagedProfileRole($current_users_page_actor_id, $is_superadmin_users_page);
-$can_superadmin_manage_admin_staff_roles = $current_users_page_actor_role === 'superadmin';
+$can_superadmin_manage_admin_staff_roles = $is_superadmin_users_page || $current_users_page_actor_role === 'superadmin';
 
 function ensureUsersAccountLockColumns(string $tableName): void
 {
@@ -572,7 +586,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
         exit();
     }
 
-    $targetRole = strtolower((string)($delRow['role'] ?? ''));
+    $targetRole = normalizeManagedProfileRole($delRow['role'] ?? '');
     $canDeleteTarget = $can_superadmin_manage_admin_staff_roles
         ? in_array($targetRole, ['admin', 'staff'], true)
         : ($targetRole === 'staff');
@@ -1767,7 +1781,7 @@ $count_stmt->close();
                                         </td>
                                         <td>
                                             <?php
-                                            $targetRole = strtolower((string)($user['role'] ?? ''));
+                                            $targetRole = normalizeManagedProfileRole($user['role'] ?? '');
                                             $targetUserType = (string)($user['user_type'] ?? 'users');
                                             $canEditRow = canEditManagedProfile(
                                                 (int)$user['id'],
@@ -2146,6 +2160,41 @@ $count_stmt->close();
             return filename ? `uploads/profiles/${filename}` : 'images/profile.jpg';
         }
         const usersPasswordPolicy = <?php echo json_encode($passwordPolicy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+        const currentUsersPageActorId = <?php echo (int)$current_users_page_actor_id; ?>;
+        const canSuperadminManageAdminStaffRoles = <?php echo $can_superadmin_manage_admin_staff_roles ? 'true' : 'false'; ?>;
+
+        function normalizeManagedRoleToken(roleValue) {
+            const normalized = (roleValue || '').toString().trim().toLowerCase();
+            if (!normalized) {
+                return '';
+            }
+            const token = normalized.replace(/[^a-z0-9]/g, '');
+            if (token === 'administrator') {
+                return 'admin';
+            }
+            if (token === 'superadministrator') {
+                return 'superadmin';
+            }
+            return ['superadmin', 'admin', 'staff', 'viewer'].includes(token) ? token : '';
+        }
+
+        function updateEditRoleOptionsForTarget(targetUserId) {
+            if (!canSuperadminManageAdminStaffRoles) {
+                return;
+            }
+            const roleField = document.getElementById('editRole');
+            if (!roleField || roleField.tagName !== 'SELECT') {
+                return;
+            }
+            const superadminOption = roleField.querySelector('option[value="superadmin"]');
+            if (!superadminOption) {
+                return;
+            }
+            const numericTargetUserId = Number.parseInt(String(targetUserId || ''), 10);
+            const isSelfEdit = Number.isInteger(numericTargetUserId) && numericTargetUserId === currentUsersPageActorId;
+            superadminOption.disabled = !isSelfEdit;
+            superadminOption.hidden = !isSelfEdit;
+        }
 
         function evaluateUsersPasswordChecks(passwordValue) {
             return {
@@ -2290,11 +2339,13 @@ $count_stmt->close();
                             document.getElementById('editEmail').value = user.email;
                             document.getElementById('editOriginalEmail').value = user.email;
                             document.getElementById('editUsername').value = user.username;
-                            const roleValue = (user.role || '').toString().trim().toLowerCase();
+                            const roleValue = normalizeManagedRoleToken(user.role);
+                            updateEditRoleOptionsForTarget(user.id);
                             document.getElementById('editRole').value = roleValue;
                             const roleDisplay = document.getElementById('editRoleDisplay');
                             if (roleDisplay) {
-                                roleDisplay.textContent = roleValue || '-';
+                                const fallbackRoleValue = (user.role || '').toString().trim();
+                                roleDisplay.textContent = roleValue || fallbackRoleValue || '-';
                             }
                             document.getElementById('editExistingProfilePicture').value = user.profile_picture || '';
                             // Store user_type in a hidden field
