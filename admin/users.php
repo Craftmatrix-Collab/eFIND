@@ -2358,6 +2358,7 @@ $count_stmt->close();
     // ── Email Verification OTP (Add User Modal) ──────────────────────────────
     (function () {
         const csrfToken   = '<?php echo $_SESSION['csrf_token']; ?>';
+        const usersAjaxEndpoint = window.location.pathname || 'users';
         let otpTimer      = null;
         let verifiedEmail = '';
 
@@ -2404,7 +2405,7 @@ $count_stmt->close();
             sendOtpBtn.disabled = true;
             sendOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending…';
 
-            fetch('users.php', {
+            fetch(usersAjaxEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ action: 'send_verify_otp', email: email, csrf_token: csrfToken })
@@ -2450,7 +2451,7 @@ $count_stmt->close();
             verifyOtpBtn.disabled = true;
             verifyOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
 
-            fetch('users.php', {
+            fetch(usersAjaxEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ action: 'check_verify_otp', email: email, otp: otp, csrf_token: csrfToken })
@@ -2529,6 +2530,7 @@ $count_stmt->close();
     // ── Email Verification OTP (Edit User Modal) ─────────────────────────────
     (function () {
         const csrfToken = '<?php echo $_SESSION['csrf_token']; ?>';
+        const usersAjaxEndpoint = window.location.pathname || 'users';
         let otpTimer = null;
         let originalEmail = '';
         let verifiedEmail = '';
@@ -2763,7 +2765,7 @@ $count_stmt->close();
             sendOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending…';
             verifiedEmail = '';
 
-            fetch('users.php', {
+            fetch(usersAjaxEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({
@@ -2818,7 +2820,7 @@ $count_stmt->close();
             verifyOtpBtn.disabled = true;
             verifyOtpBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
 
-            fetch('users.php', {
+            fetch(usersAjaxEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({
