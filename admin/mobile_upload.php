@@ -3,7 +3,8 @@
  * Mobile-first direct-upload page.
  * Users on mobile devices upload images/documents for resolutions,
  * minutes of meeting, and executive_orders directly to MinIO via presigned URLs.
- * The PHP server only orchestrates — it never handles the file bytes.
+ * If direct browser upload fails (e.g., blocked port/CORS/network), the page
+ * falls back to a server-side relay endpoint so uploads can still complete.
  *
  * Access: /admin/mobile_upload.php
  */
@@ -924,10 +925,22 @@ async function startUpload() {
     try {
       fileToUpload = await compressImageBeforeUpload(file);
     } catch (err) {
-      const errMsg = err && err.message ? err.message : 'Image processing failed';
-      setFileStatus(rowId, 'danger', `Error: ${errMsg}`);
-      failedFiles.push(file.name);
-      failedReasons.push(errMsg);
+      const statusEl = document.getElementById(`${rowId}-status`);
+      if (statusEl) {
+        statusEl.textContent = 'Image optimization failed. Trying secure fallback…';
+      }
+      try {
+        const fallbackUpload = await uploadViaServerFallback(file, rowId);
+        objectKeys.push(fallbackUpload.objectKey);
+        setFileStatus(rowId, 'success', 'Uploaded ✓ (secure fallback)');
+      } catch (fallbackErr) {
+        const errMsg = fallbackErr && fallbackErr.message
+          ? fallbackErr.message
+          : (err && err.message ? err.message : 'Image processing failed');
+        setFileStatus(rowId, 'danger', `Error: ${errMsg}`);
+        failedFiles.push(file.name);
+        failedReasons.push(errMsg);
+      }
       continue;
     }
     document.getElementById(`${rowId}-status`).textContent = 'Getting upload URL…';
@@ -949,9 +962,20 @@ async function startUpload() {
       objectKeys.push(objectKey);
       setFileStatus(rowId, 'success', 'Uploaded ✓');
     } catch (err) {
-      setFileStatus(rowId, 'danger', `Upload failed: ${err.message}`);
-      failedFiles.push(file.name);
-      failedReasons.push(err.message || 'Upload failed');
+      const statusEl = document.getElementById(`${rowId}-status`);
+      if (statusEl) {
+        statusEl.textContent = 'Direct upload failed. Trying secure fallback…';
+      }
+      try {
+        const fallbackUpload = await uploadViaServerFallback(fileToUpload, rowId);
+        objectKeys.push(fallbackUpload.objectKey);
+        setFileStatus(rowId, 'success', 'Uploaded ✓ (secure fallback)');
+      } catch (fallbackErr) {
+        const errMsg = fallbackErr && fallbackErr.message ? fallbackErr.message : (err.message || 'Upload failed');
+        setFileStatus(rowId, 'danger', `Upload failed: ${errMsg}`);
+        failedFiles.push(file.name);
+        failedReasons.push(errMsg);
+      }
     }
   }
 
@@ -1072,6 +1096,62 @@ async function uploadToMinioWithRetry(file, presignedUrl, rowId, maxAttempts = 2
   }
 
   throw lastError || new Error('Upload failed');
+}
+
+async function uploadViaServerFallback(file, rowId, maxAttempts = 2) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) {
+      const statusEl = document.getElementById(`${rowId}-status`);
+      if (statusEl) statusEl.textContent = `Retrying secure fallback (${attempt}/${maxAttempts})…`;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    try {
+      const body = new FormData();
+      body.append('doc_type', selectedType);
+      if (mobileSession) {
+        body.append('session_id', mobileSession);
+      }
+      body.append('file', file, file.name || `image_${Date.now()}.jpg`);
+
+      const response = await fetch('upload_mobile_fallback.php', {
+        method: 'POST',
+        body,
+        signal: controller.signal,
+      });
+
+      const raw = await response.text();
+      let data = {};
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch (parseErr) {
+          throw new Error(`Fallback endpoint returned invalid JSON (HTTP ${response.status})`);
+        }
+      }
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || `Secure fallback failed (HTTP ${response.status})`);
+      }
+      if (!data.object_key) {
+        throw new Error('Secure fallback did not return an object key');
+      }
+
+      return { objectKey: data.object_key };
+    } catch (err) {
+      lastError = err.name === 'AbortError' ? new Error('Secure fallback timed out') : err;
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  throw lastError || new Error('Secure fallback upload failed');
 }
 
 function uploadToMinio(file, presignedUrl, rowId) {
