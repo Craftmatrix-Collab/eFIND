@@ -141,6 +141,7 @@ function canAssignManagedRole(int $targetId, int $currentActorId, string $target
 }
 
 $current_users_page_actor_role = resolveCurrentManagedProfileRole($current_users_page_actor_id, $is_superadmin_users_page);
+$can_superadmin_manage_admin_staff_roles = $current_users_page_actor_role === 'superadmin';
 
 function ensureUsersAccountLockColumns(string $tableName): void
 {
@@ -531,7 +532,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     }
 
     $targetRole = strtolower((string)($delRow['role'] ?? ''));
-    $canDeleteTarget = $is_superadmin_users_page
+    $canDeleteTarget = $can_superadmin_manage_admin_staff_roles
         ? in_array($targetRole, ['admin', 'staff'], true)
         : ($targetRole === 'staff');
     if (!$canDeleteTarget) {
@@ -1747,7 +1748,7 @@ $count_stmt->close();
                                                 $current_users_page_actor_type,
                                                 $current_users_page_actor_role
                                             );
-                                            $canDeleteRow = $is_superadmin_users_page
+                                            $canDeleteRow = $can_superadmin_manage_admin_staff_roles
                                                 ? in_array($targetRole, ['admin', 'staff'], true)
                                                 : ($targetRole === 'staff');
                                             ?>
@@ -2042,7 +2043,7 @@ $count_stmt->close();
                                 <small class="text-muted"><?php echo htmlspecialchars($passwordPolicy['hint']); ?></small>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <?php if ($is_superadmin_users_page): ?>
+                                <?php if ($can_superadmin_manage_admin_staff_roles): ?>
                                     <label for="editRole" class="form-label">Role <span class="text-danger">*</span></label>
                                     <select class="form-select" id="editRole" name="role" required>
                                         <option value="superadmin">Superadmin</option>

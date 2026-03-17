@@ -78,8 +78,15 @@ class MinioS3Client {
 
     private function normalizeEndpointCandidate(string $endpoint, int $defaultPort): ?string
     {
-        $parts = $this->parseEndpointHostAndPort($endpoint);
-        if ($parts === null) {
+        $rawEndpoint = trim((string)$endpoint);
+        if ($rawEndpoint === '') {
+            return null;
+        }
+
+        $hasScheme = strpos($rawEndpoint, '://') !== false;
+        $normalized = $hasScheme ? $rawEndpoint : ('http://' . $rawEndpoint);
+        $parts = parse_url($normalized);
+        if (!is_array($parts) || empty($parts['host'])) {
             return null;
         }
 
@@ -88,12 +95,35 @@ class MinioS3Client {
             return null;
         }
 
-        $port = $parts['port'];
+        $port = isset($parts['port']) ? (int)$parts['port'] : null;
         if ($port === null || $port <= 0 || $port > 65535) {
-            $port = $defaultPort;
+            $scheme = strtolower((string)($parts['scheme'] ?? ''));
+            if ($hasScheme && in_array($scheme, ['http', 'https'], true)) {
+                $port = $scheme === 'https' ? 443 : 80;
+            } else {
+                $port = $defaultPort;
+            }
         }
 
-        return $host . ':' . (int)$port;
+        return strtolower($host) . ':' . (int)$port;
+    }
+
+    private function getConfiguredFallbackEndpoints(): array
+    {
+        $raw = trim((string)(getenv('MINIO_FALLBACK_ENDPOINTS') ?: ''));
+        if ($raw === '') {
+            return [];
+        }
+
+        $endpoints = [];
+        foreach (explode(',', $raw) as $candidate) {
+            $candidate = trim((string)$candidate);
+            if ($candidate !== '' && !in_array($candidate, $endpoints, true)) {
+                $endpoints[] = $candidate;
+            }
+        }
+
+        return $endpoints;
     }
 
     private function canReachEndpoint(string $endpoint): bool
@@ -160,19 +190,35 @@ class MinioS3Client {
             $append('127.0.0.1:' . $defaultPort);
         }
 
+        if ($this->isLocalOnlyHost((string)$parts['host'])) {
+            $requestHost = $this->resolveRequestHostForBrowserUpload();
+            if ($requestHost !== null && !$this->isLocalOnlyHost($requestHost)) {
+                $append($requestHost . ':' . $defaultPort);
+            }
+        }
+
         $apiUrl = trim((string)(getenv('MINIO_API_URL') ?: (defined('MINIO_API_URL') ? MINIO_API_URL : '')));
         if ($apiUrl !== '') {
             $append($apiUrl);
         }
 
-        $fallbackRaw = trim((string)(getenv('MINIO_FALLBACK_ENDPOINTS') ?: ''));
-        if ($fallbackRaw !== '') {
-            foreach (explode(',', $fallbackRaw) as $fallbackEndpoint) {
-                $fallbackEndpoint = trim((string)$fallbackEndpoint);
-                if ($fallbackEndpoint !== '') {
-                    $append($fallbackEndpoint);
-                }
-            }
+        $publicUrl = trim((string)(getenv('MINIO_PUBLIC_URL') ?: ''));
+        if ($publicUrl !== '') {
+            $append($publicUrl);
+        }
+
+        $browserEndpoint = trim((string)(getenv('MINIO_BROWSER_ENDPOINT') ?: ''));
+        if ($browserEndpoint !== '') {
+            $append($browserEndpoint);
+        }
+
+        $browserUrl = trim((string)(getenv('MINIO_BROWSER_URL') ?: ''));
+        if ($browserUrl !== '') {
+            $append($browserUrl);
+        }
+
+        foreach ($this->getConfiguredFallbackEndpoints() as $fallbackEndpoint) {
+            $append($fallbackEndpoint);
         }
 
         return $candidates;
@@ -204,7 +250,7 @@ class MinioS3Client {
         $normalizedConfigured = $this->normalizeEndpointCandidate($endpoint, $defaultPort) ?? $endpoint;
 
         $probeHosts = ['localhost', '127.0.0.1', '::1', 'minio', 'host.docker.internal'];
-        $hasFallbackEndpoints = trim((string)(getenv('MINIO_FALLBACK_ENDPOINTS') ?: '')) !== '';
+        $hasFallbackEndpoints = !empty($this->getConfiguredFallbackEndpoints());
         if (!$hasFallbackEndpoints && !in_array($parts['host'], $probeHosts, true)) {
             return $normalizedConfigured;
         }
@@ -359,7 +405,9 @@ class MinioS3Client {
         }
 
         $candidates[] = trim((string)(getenv('MINIO_API_URL') ?: ''));
+        $candidates = array_merge($candidates, $this->getConfiguredFallbackEndpoints());
         $candidates[] = trim((string)$this->endpoint);
+        $deferredLocalReplacement = null;
 
         foreach ($candidates as $candidate) {
             if ($candidate === '') {
@@ -372,10 +420,12 @@ class MinioS3Client {
             }
 
             $host = $parsed['host'];
+            $usedRequestHostFallback = false;
             if ($this->isLocalOnlyHost($host)) {
                 $requestHost = $this->resolveRequestHostForBrowserUpload();
                 if ($requestHost !== null && !$this->isLocalOnlyHost($requestHost)) {
                     $host = $requestHost;
+                    $usedRequestHostFallback = true;
                 }
             }
 
@@ -385,10 +435,20 @@ class MinioS3Client {
                 $hostWithPort .= ':' . $parsed['port'];
             }
 
-            return [
+            $resolved = [
                 'scheme' => $parsed['scheme'],
                 'endpoint' => $hostWithPort,
             ];
+            if (!$usedRequestHostFallback) {
+                return $resolved;
+            }
+            if ($deferredLocalReplacement === null) {
+                $deferredLocalReplacement = $resolved;
+            }
+        }
+
+        if ($deferredLocalReplacement !== null) {
+            return $deferredLocalReplacement;
         }
 
         return [
@@ -413,6 +473,10 @@ class MinioS3Client {
             $probeSummary = $this->formatEndpointProbeResults();
             if ($probeSummary !== '') {
                 $message .= " Endpoint probe results: {$probeSummary}.";
+            }
+            $endpointParts = $this->parseEndpointHostAndPort($this->endpoint);
+            if ($endpointParts !== null && $this->isLocalOnlyHost((string)$endpointParts['host'])) {
+                $message .= " MINIO endpoint is configured as a local-only host ({$endpointParts['host']}). Set MINIO_ENDPOINT/MINIO_API_URL or MINIO_FALLBACK_ENDPOINTS to a host reachable from this runtime.";
             }
             $message .= ' Ensure MinIO is running and reachable from the PHP runtime.';
         }
