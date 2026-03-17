@@ -662,8 +662,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($isEditingOwnProfile) {
             $_SESSION['full_name'] = $fullName;
             $_SESSION['username'] = $username;
-            if ($profilePicture) {
-                $_SESSION['profile_picture'] = $profilePicture;
+            $activeProfilePicture = trim((string)($profilePicture ?: $oldPicturePath));
+            if ($activeProfilePicture !== '') {
+                $_SESSION['profile_picture'] = $activeProfilePicture;
             }
         }
         unset(

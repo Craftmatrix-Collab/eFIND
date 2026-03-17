@@ -82,9 +82,23 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
             <li class="nav-item dropdown">
                 <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
                    <?php
-            // Check if session variables exist before using them
-            $full_name = $_SESSION['full_name'] ?? 'Admin';
-            $profile_path = efind_resolve_profile_picture_src($_SESSION['profile_picture'] ?? '');
+            // Prefer database profile values when available, then fall back to session.
+            $session_full_name = trim((string)($_SESSION['full_name'] ?? ''));
+            $session_profile_picture = trim((string)($_SESSION['profile_picture'] ?? ''));
+            $db_full_name = trim((string)(is_array($_navbar_profile) ? ($_navbar_profile['full_name'] ?? '') : ''));
+            $db_profile_picture = trim((string)(is_array($_navbar_profile) ? ($_navbar_profile['profile_picture'] ?? '') : ''));
+
+            $full_name = $db_full_name !== '' ? $db_full_name : ($session_full_name !== '' ? $session_full_name : 'Admin');
+            $effective_profile_picture = $db_profile_picture !== '' ? $db_profile_picture : $session_profile_picture;
+            $profile_path = efind_resolve_profile_picture_src($effective_profile_picture);
+
+            if ($db_full_name !== '' && $session_full_name !== $db_full_name) {
+                $_SESSION['full_name'] = $db_full_name;
+            }
+            if ($db_profile_picture !== '' && $session_profile_picture !== $db_profile_picture) {
+                $_SESSION['profile_picture'] = $db_profile_picture;
+            }
+
             echo '<img src="' . htmlspecialchars($profile_path) . '" alt="Profile Picture" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.onerror=null;this.src=\'images/profile.jpg\';">';
             ?>
                     <span class="text-white"><?php echo htmlspecialchars($full_name); ?></span>
