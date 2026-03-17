@@ -8,6 +8,8 @@ require_once __DIR__ . '/minio_config.php';
 
 class MinioS3Client {
     private $endpoint;
+    private $requestEndpoint;
+    private $publicBaseUrl;
     private $accessKey;
     private $secretKey;
     private $bucket;
@@ -21,6 +23,8 @@ class MinioS3Client {
         $this->bucket = MINIO_BUCKET;
         $this->region = MINIO_REGION;
         $this->useSSL = MINIO_USE_SSL;
+        $this->requestEndpoint = $this->resolveRequestEndpoint($this->endpoint);
+        $this->publicBaseUrl = $this->resolvePublicBaseUrl();
     }
 
     private function applyCurlTlsOptions($ch): void
@@ -28,6 +32,107 @@ class MinioS3Client {
         $verifyPeer = !(defined('MINIO_INSECURE_SSL') && MINIO_INSECURE_SSL);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verifyPeer);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
+    }
+
+    private function isRunningInContainer(): bool
+    {
+        return is_file('/.dockerenv') || getenv('container') !== false;
+    }
+
+    private function parseEndpointHostAndPort($endpoint): ?array
+    {
+        $normalized = trim((string)$endpoint);
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (strpos($normalized, '://') === false) {
+            $normalized = 'http://' . $normalized;
+        }
+
+        $parts = parse_url($normalized);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return null;
+        }
+
+        return [
+            'host' => strtolower((string)$parts['host']),
+            'port' => isset($parts['port']) ? (int)$parts['port'] : null,
+        ];
+    }
+
+    private function resolveRequestEndpoint($configuredEndpoint)
+    {
+        $endpoint = trim((string)$configuredEndpoint);
+        $parts = $this->parseEndpointHostAndPort($endpoint);
+        if ($parts === null) {
+            return $endpoint;
+        }
+
+        $localHosts = ['localhost', '127.0.0.1', '::1'];
+        if (!$this->isRunningInContainer() || !in_array($parts['host'], $localHosts, true)) {
+            return $endpoint;
+        }
+
+        $dockerHost = trim((string)(getenv('MINIO_DOCKER_HOST') ?: 'host.docker.internal'));
+        if ($dockerHost === '') {
+            return $endpoint;
+        }
+
+        if ($dockerHost === 'host.docker.internal') {
+            $resolved = gethostbyname($dockerHost);
+            if ($resolved === $dockerHost) {
+                return $endpoint;
+            }
+        }
+
+        $mappedEndpoint = $dockerHost . ($parts['port'] !== null ? ':' . $parts['port'] : '');
+        if ($mappedEndpoint !== $endpoint) {
+            error_log("MinIO endpoint remapped for container runtime: {$endpoint} -> {$mappedEndpoint}");
+        }
+
+        return $mappedEndpoint;
+    }
+
+    private function resolvePublicBaseUrl(): string
+    {
+        $publicUrl = trim((string)(getenv('MINIO_PUBLIC_URL') ?: ''));
+        if ($publicUrl === '' && defined('MINIO_API_URL')) {
+            $publicUrl = trim((string)MINIO_API_URL);
+        }
+        if ($publicUrl === '' && getenv('MINIO_API_URL') !== false) {
+            $publicUrl = trim((string)getenv('MINIO_API_URL'));
+        }
+
+        if ($publicUrl === '') {
+            return $this->buildEndpointUrl($this->endpoint);
+        }
+
+        if (strpos($publicUrl, '://') === false) {
+            $protocol = $this->useSSL ? 'https' : 'http';
+            $publicUrl = $protocol . '://' . $publicUrl;
+        }
+
+        return rtrim($publicUrl, '/');
+    }
+
+    private function buildUploadFailureMessage($httpCode, $curlError, $response): string
+    {
+        $details = trim((string)($curlError !== '' ? $curlError : $response));
+        $message = "Upload failed with HTTP code: $httpCode.";
+        if ($details !== '') {
+            $message .= ' ' . $details;
+        }
+
+        if ((int)$httpCode === 0) {
+            $message .= " MinIO upload endpoint: {$this->requestEndpoint}.";
+            if ($this->requestEndpoint !== $this->endpoint) {
+                $message .= " Configured MINIO_ENDPOINT: {$this->endpoint}.";
+            }
+            $message .= ' Ensure MinIO is running and reachable from the PHP runtime.';
+        }
+
+        return $message;
     }
     
     /**
@@ -64,7 +169,7 @@ class MinioS3Client {
             }
             
             // Prepare request
-            $url = $this->getEndpointUrl() . '/' . $this->bucket . '/' . ltrim($objectName, '/');
+            $url = $this->getRequestEndpointUrl() . '/' . $this->bucket . '/' . ltrim($objectName, '/');
             $date = gmdate('D, d M Y H:i:s T');
             $contentMD5 = base64_encode(md5($fileContent, true));
             
@@ -74,7 +179,7 @@ class MinioS3Client {
             
             // Set headers
             $headers = [
-                'Host: ' . $this->endpoint,
+                'Host: ' . $this->requestEndpoint,
                 'Date: ' . $date,
                 'Content-Type: ' . $contentType,
                 'Content-MD5: ' . $contentMD5,
@@ -108,7 +213,7 @@ class MinioS3Client {
                 error_log("MinIO upload failed. HTTP Code: $httpCode, Response: $response, cURL Error: $curlError");
                 return [
                     'success' => false,
-                    'error' => "Upload failed with HTTP code: $httpCode. " . ($curlError ?: $response),
+                    'error' => $this->buildUploadFailureMessage($httpCode, $curlError, $response),
                     'http_code' => $httpCode
                 ];
             }
@@ -195,14 +300,14 @@ class MinioS3Client {
      */
     private function ensureBucketExists() {
         // Check if bucket exists
-        $url = $this->getEndpointUrl() . '/' . $this->bucket;
+        $url = $this->getRequestEndpointUrl() . '/' . $this->bucket;
         $date = gmdate('D, d M Y H:i:s T');
         
         $stringToSign = "HEAD\n\n\n{$date}\n/{$this->bucket}";
         $signature = base64_encode(hash_hmac('sha1', $stringToSign, $this->secretKey, true));
         
         $headers = [
-            'Host: ' . $this->endpoint,
+            'Host: ' . $this->requestEndpoint,
             'Date: ' . $date,
             'Authorization: AWS ' . $this->accessKey . ':' . $signature
         ];
@@ -228,14 +333,14 @@ class MinioS3Client {
      * Create bucket
      */
     private function createBucket() {
-        $url = $this->getEndpointUrl() . '/' . $this->bucket;
+        $url = $this->getRequestEndpointUrl() . '/' . $this->bucket;
         $date = gmdate('D, d M Y H:i:s T');
         
         $stringToSign = "PUT\n\n\n{$date}\n/{$this->bucket}";
         $signature = base64_encode(hash_hmac('sha1', $stringToSign, $this->secretKey, true));
         
         $headers = [
-            'Host: ' . $this->endpoint,
+            'Host: ' . $this->requestEndpoint,
             'Date: ' . $date,
             'Authorization: AWS ' . $this->accessKey . ':' . $signature
         ];
@@ -274,14 +379,14 @@ class MinioS3Client {
             ]
         ]);
         
-        $url = $this->getEndpointUrl() . '/' . $this->bucket . '?policy';
+        $url = $this->getRequestEndpointUrl() . '/' . $this->bucket . '?policy';
         $date = gmdate('D, d M Y H:i:s T');
         
         $stringToSign = "PUT\n\napplication/json\n{$date}\n/{$this->bucket}?policy";
         $signature = base64_encode(hash_hmac('sha1', $stringToSign, $this->secretKey, true));
         
         $headers = [
-            'Host: ' . $this->endpoint,
+            'Host: ' . $this->requestEndpoint,
             'Date: ' . $date,
             'Content-Type: application/json',
             'Authorization: AWS ' . $this->accessKey . ':' . $signature,
@@ -303,14 +408,14 @@ class MinioS3Client {
      * Delete file from MinIO
      */
     public function deleteFile($objectName) {
-        $url = $this->getEndpointUrl() . '/' . $this->bucket . '/' . ltrim($objectName, '/');
+        $url = $this->getRequestEndpointUrl() . '/' . $this->bucket . '/' . ltrim($objectName, '/');
         $date = gmdate('D, d M Y H:i:s T');
         
         $stringToSign = "DELETE\n\n\n{$date}\n/{$this->bucket}/{$objectName}";
         $signature = base64_encode(hash_hmac('sha1', $stringToSign, $this->secretKey, true));
         
         $headers = [
-            'Host: ' . $this->endpoint,
+            'Host: ' . $this->requestEndpoint,
             'Date: ' . $date,
             'Authorization: AWS ' . $this->accessKey . ':' . $signature
         ];
@@ -331,16 +436,20 @@ class MinioS3Client {
     /**
      * Get endpoint URL
      */
-    private function getEndpointUrl() {
+    private function buildEndpointUrl($endpoint) {
         $protocol = $this->useSSL ? 'https' : 'http';
-        return $protocol . '://' . $this->endpoint;
+        return $protocol . '://' . trim((string)$endpoint);
+    }
+
+    private function getRequestEndpointUrl() {
+        return $this->buildEndpointUrl($this->requestEndpoint);
     }
     
     /**
      * Get public URL for an object
      */
     public function getPublicUrl($objectName) {
-        return $this->getEndpointUrl() . '/' . $this->bucket . '/' . ltrim($objectName, '/');
+        return $this->publicBaseUrl . '/' . $this->bucket . '/' . ltrim($objectName, '/');
     }
 
     /**
