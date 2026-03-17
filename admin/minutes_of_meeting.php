@@ -2469,7 +2469,7 @@ $count_stmt->close();
         async function momGenerateQR() {
             if (momQrCreated && momMobileSession) return;
             const sessionId = await momEnsureSession();
-            const mobileUploadUrl = new URL('mobile_upload', window.location.href);
+            const mobileUploadUrl = new URL('mobile_upload.php', window.location.href);
             mobileUploadUrl.searchParams.set('type', 'minutes');
             mobileUploadUrl.searchParams.set('camera', '1');
             mobileUploadUrl.searchParams.set('flow', 'modal_ocr');
@@ -2582,7 +2582,7 @@ $count_stmt->close();
             if (!momMobileSession) return;
             momPollTimer = setInterval(async function () {
                 try {
-                    const response = await fetch(`mobile_session?action=check&session=${encodeURIComponent(momMobileSession)}&_=${Date.now()}`, {
+                    const response = await fetch(`mobile_session.php?action=check&session=${encodeURIComponent(momMobileSession)}&_=${Date.now()}`, {
                         cache: 'no-store',
                         headers: {
                             'Cache-Control': 'no-cache, no-store, must-revalidate',

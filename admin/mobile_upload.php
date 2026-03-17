@@ -12,18 +12,60 @@ session_start();
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 
-if (!isLoggedIn()) {
+$allowedDocTypes = ['resolutions', 'minutes', 'executive_orders'];
+$preselectedType = in_array($_GET['type'] ?? '', $allowedDocTypes, true)
+    ? (string)$_GET['type']
+    : '';
+$mobileSession  = preg_replace('/[^a-f0-9]/', '', (string)($_GET['session'] ?? ''));
+$mobileSessionDocType = '';
+$isMobileSessionAuth = false;
+
+if ($mobileSession !== '') {
+    $conn->query("CREATE TABLE IF NOT EXISTS mobile_upload_sessions (
+        session_id VARCHAR(64) PRIMARY KEY,
+        doc_type VARCHAR(50) NOT NULL DEFAULT '',
+        status VARCHAR(20) NOT NULL DEFAULT 'waiting',
+        result_id INT DEFAULT NULL,
+        object_keys_json LONGTEXT DEFAULT NULL,
+        image_urls_json LONGTEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $sessionStmt = $conn->prepare(
+        "SELECT doc_type FROM mobile_upload_sessions WHERE session_id = ? AND status = 'waiting' LIMIT 1"
+    );
+    if ($sessionStmt) {
+        $sessionStmt->bind_param('s', $mobileSession);
+        $sessionStmt->execute();
+        $sessionRow = $sessionStmt->get_result()->fetch_assoc();
+        $sessionStmt->close();
+
+        if ($sessionRow) {
+            $candidateDocType = trim((string)($sessionRow['doc_type'] ?? ''));
+            if (in_array($candidateDocType, $allowedDocTypes, true)) {
+                $mobileSessionDocType = $candidateDocType;
+                $isMobileSessionAuth = true;
+            }
+        }
+    }
+}
+
+if (!isLoggedIn() && !$isMobileSessionAuth) {
     header('Location: login.php');
     exit;
 }
 
-
-$preselectedType = in_array($_GET['type'] ?? '', ['resolutions', 'minutes', 'executive_orders'])
-    ? $_GET['type']
-    : '';
+if ($isMobileSessionAuth && $mobileSessionDocType !== '') {
+    if ($preselectedType === '') {
+        $preselectedType = $mobileSessionDocType;
+    } elseif ($preselectedType !== $mobileSessionDocType) {
+        http_response_code(400);
+        echo 'Invalid mobile session type for this upload.';
+        exit;
+    }
+}
 
 $autoCameraMode = ($preselectedType !== '' && ($_GET['camera'] ?? '') === '1');
-$mobileSession  = preg_replace('/[^a-f0-9]/', '', $_GET['session'] ?? '');
 $deferToDesktop = (($_GET['flow'] ?? '') === 'modal_ocr');
 ?>
 <!DOCTYPE html>
