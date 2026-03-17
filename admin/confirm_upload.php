@@ -254,6 +254,22 @@ function sanitizeObjectKeys($rawObjectKeys, string $docType): array
     return array_keys($cleanKeys);
 }
 
+function resolveStoredImagePathFromObjectKey(MinioS3Client $minio, string $objectKey): string
+{
+    $normalizedKey = ltrim(trim($objectKey), '/');
+    if ($normalizedKey === '') {
+        return $minio->getPublicUrl($objectKey);
+    }
+
+    $localRelativePath = 'uploads/' . $normalizedKey;
+    $localAbsolutePath = __DIR__ . '/' . $localRelativePath;
+    if (is_file($localAbsolutePath)) {
+        return $localRelativePath;
+    }
+
+    return $minio->getPublicUrl($normalizedKey);
+}
+
 try {
     if ($isMobileAuth && $mobileSessionDocType !== '' && $mobileSessionDocType !== $docType) {
         http_response_code(400);
@@ -277,7 +293,7 @@ try {
     $minio = new MinioS3Client();
     $imagePaths = [];
     foreach ($objectKeys as $key) {
-        $imagePaths[] = $minio->getPublicUrl($key);
+        $imagePaths[] = resolveStoredImagePathFromObjectKey($minio, $key);
     }
     $imagePath = implode('|', $imagePaths);
 

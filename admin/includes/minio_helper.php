@@ -18,6 +18,7 @@ class MinioS3Client {
     private $bucket;
     private $region;
     private $useSSL;
+    private $allowLocalFallback;
     
     public function __construct() {
         $this->endpoint = MINIO_ENDPOINT;
@@ -26,6 +27,8 @@ class MinioS3Client {
         $this->bucket = MINIO_BUCKET;
         $this->region = MINIO_REGION;
         $this->useSSL = MINIO_USE_SSL;
+        $allowLocalFallbackRaw = strtolower((string)(getenv('MINIO_LOCAL_FALLBACK') ?: 'true'));
+        $this->allowLocalFallback = in_array($allowLocalFallbackRaw, ['1', 'true', 'yes', 'on'], true);
         $this->requestEndpoint = $this->resolveRequestEndpoint($this->endpoint);
         $this->publicBaseUrl = $this->resolvePublicBaseUrl();
         $browserUploadConfig = $this->resolveBrowserUploadEndpoint();
@@ -502,10 +505,17 @@ class MinioS3Client {
 
     private function buildUploadFailureMessage($httpCode, $curlError, $response): string
     {
-        $details = trim((string)($curlError !== '' ? $curlError : $response));
+        $response = (string)$response;
+        $responseSummary = $this->extractErrorSummaryFromResponse($response);
+        $details = trim((string)($curlError !== '' ? $curlError : $responseSummary));
         $message = "Upload failed with HTTP code: $httpCode.";
         if ($details !== '') {
             $message .= ' ' . $details;
+        }
+
+        $errorCode = $this->extractErrorCodeFromResponse($response);
+        if ((int)$httpCode === 403 && $errorCode === 'InvalidAccessKeyId') {
+            $message .= " MinIO credentials were rejected (InvalidAccessKeyId). Update MINIO_ACCESS_KEY/MINIO_SECRET_KEY (or MINIO_ROOT_USER/MINIO_ROOT_PASSWORD) for endpoint {$this->requestEndpoint}.";
         }
 
         if ((int)$httpCode === 0) {
@@ -525,6 +535,115 @@ class MinioS3Client {
         }
 
         return $message;
+    }
+
+    private function extractErrorCodeFromResponse(string $response): string
+    {
+        if ($response === '') {
+            return '';
+        }
+
+        if (preg_match('/<Code>\s*([^<]+)\s*<\/Code>/i', $response, $matches)) {
+            return trim((string)$matches[1]);
+        }
+
+        return '';
+    }
+
+    private function extractErrorSummaryFromResponse(string $response): string
+    {
+        $response = trim($response);
+        if ($response === '') {
+            return '';
+        }
+
+        $code = $this->extractErrorCodeFromResponse($response);
+        $message = '';
+        if (preg_match('/<Message>\s*([^<]+)\s*<\/Message>/i', $response, $matches)) {
+            $message = trim((string)$matches[1]);
+        }
+
+        if ($code !== '' && $message !== '') {
+            return $code . ': ' . $message;
+        }
+        if ($message !== '') {
+            return $message;
+        }
+
+        return trim((string)preg_replace('/\s+/', ' ', strip_tags($response)));
+    }
+
+    private function shouldUseLocalFallbackForFailure(int $httpCode, string $curlError, string $response): bool
+    {
+        if (!$this->allowLocalFallback) {
+            return false;
+        }
+
+        if ($httpCode === 0 || trim($curlError) !== '') {
+            return true;
+        }
+
+        if ($httpCode >= 500) {
+            return true;
+        }
+
+        $errorCode = $this->extractErrorCodeFromResponse($response);
+        return $httpCode === 403 && in_array($errorCode, ['InvalidAccessKeyId', 'SignatureDoesNotMatch', 'AccessDenied'], true);
+    }
+
+    private function resolveLocalFallbackTarget(string $objectName): ?array
+    {
+        $normalizedObjectName = ltrim(str_replace('\\', '/', trim((string)$objectName)), '/');
+        if ($normalizedObjectName === '' || strpos($normalizedObjectName, '..') !== false) {
+            return null;
+        }
+
+        $relativePath = 'uploads/' . $normalizedObjectName;
+        $absolutePath = dirname(__DIR__) . '/' . $relativePath;
+
+        return [
+            'object_name' => $normalizedObjectName,
+            'relative_path' => $relativePath,
+            'absolute_path' => $absolutePath,
+        ];
+    }
+
+    private function uploadFileToLocalFallback(string $objectName, string $fileContent, string $minioError, int $httpCode): array
+    {
+        $target = $this->resolveLocalFallbackTarget($objectName);
+        if ($target === null) {
+            return [
+                'success' => false,
+                'error' => 'Invalid local fallback target path.',
+            ];
+        }
+
+        $targetDirectory = dirname((string)$target['absolute_path']);
+        if (!is_dir($targetDirectory) && !mkdir($targetDirectory, 0755, true) && !is_dir($targetDirectory)) {
+            return [
+                'success' => false,
+                'error' => 'Unable to create local fallback directory.',
+            ];
+        }
+
+        $bytesWritten = @file_put_contents((string)$target['absolute_path'], $fileContent, LOCK_EX);
+        if ($bytesWritten === false) {
+            return [
+                'success' => false,
+                'error' => 'Unable to write fallback upload file.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'url' => (string)$target['relative_path'],
+            'object_name' => (string)$target['object_name'],
+            'bucket' => $this->bucket,
+            'storage' => 'local',
+            'warning' => 'MinIO upload failed; file was saved to local storage fallback.',
+            'minio_error' => $minioError,
+            'http_code' => $httpCode,
+        ];
     }
     
     /**
@@ -603,9 +722,22 @@ class MinioS3Client {
                 ];
             } else {
                 error_log("MinIO upload failed. HTTP Code: $httpCode, Response: $response, cURL Error: $curlError");
+                $failureMessage = $this->buildUploadFailureMessage($httpCode, $curlError, $response);
+                if ($this->shouldUseLocalFallbackForFailure((int)$httpCode, (string)$curlError, (string)$response)) {
+                    $fallbackResult = $this->uploadFileToLocalFallback((string)$objectName, (string)$fileContent, $failureMessage, (int)$httpCode);
+                    if (!empty($fallbackResult['success'])) {
+                        error_log("MinIO upload fallback activated for {$objectName}. Reason: {$failureMessage}");
+                        return $fallbackResult;
+                    }
+                    $fallbackError = trim((string)($fallbackResult['error'] ?? ''));
+                    if ($fallbackError !== '') {
+                        $failureMessage .= ' Local fallback error: ' . $fallbackError;
+                    }
+                }
+
                 return [
                     'success' => false,
-                    'error' => $this->buildUploadFailureMessage($httpCode, $curlError, $response),
+                    'error' => $failureMessage,
                     'http_code' => $httpCode
                 ];
             }
@@ -821,8 +953,20 @@ class MinioS3Client {
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        
-        return ($httpCode == 204 || $httpCode == 200);
+
+        if ($httpCode == 204 || $httpCode == 200) {
+            return true;
+        }
+
+        if ($this->allowLocalFallback) {
+            $target = $this->resolveLocalFallbackTarget((string)$objectName);
+            $localPath = is_array($target) ? (string)($target['absolute_path'] ?? '') : '';
+            if ($localPath !== '' && is_file($localPath)) {
+                return @unlink($localPath);
+            }
+        }
+
+        return false;
     }
     
     /**

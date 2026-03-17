@@ -171,10 +171,14 @@ try {
         exit;
     }
 
-    $publicUrl = (string)($uploadResult['url'] ?? $minio->getPublicUrl($objectKey));
+    $resolvedObjectKey = ltrim((string)($uploadResult['object_name'] ?? $objectKey), '/');
+    if ($resolvedObjectKey === '') {
+        $resolvedObjectKey = ltrim($objectKey, '/');
+    }
+    $publicUrl = (string)($uploadResult['url'] ?? $minio->getPublicUrl($resolvedObjectKey));
     echo json_encode([
         'success' => true,
-        'object_key' => $objectKey,
+        'object_key' => $resolvedObjectKey,
         'public_url' => $publicUrl,
     ]);
 } catch (Throwable $e) {
