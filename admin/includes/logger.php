@@ -88,6 +88,17 @@ if (!function_exists('checkActivityLogsTable')) {
     }
 }
 
+if (!function_exists('normalizeActivityLogTextValue')) {
+    function normalizeActivityLogTextValue($value): string {
+        $normalized = trim((string)$value);
+        $placeholder = strtolower($normalized);
+        if (in_array($placeholder, ['', 'n/a', 'na', 'none', 'null', '-', '--'], true)) {
+            return '';
+        }
+        return $normalized;
+    }
+}
+
 if (!function_exists('checkRecycleBinTable')) {
     /**
      * Ensure recycle_bin table exists
@@ -314,7 +325,19 @@ if (!function_exists('logActivity')) {
         // Get IP address and user agent
         $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
         $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $action_text = trim((string)$action);
+        $description = normalizeActivityLogTextValue($description);
+        $details = normalizeActivityLogTextValue($details);
 
+        if ($description === '') {
+            $humanAction = $action_text !== '' ? strtolower(str_replace('_', ' ', $action_text)) : 'system activity';
+            $description = "User performed {$humanAction}.";
+        }
+
+        if ($details === '') {
+            $details = $description;
+        }
+ 
         $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, user_name, user_role, action, description, details, ip_address, user_agent, document_id, document_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if ($stmt) {
             $stmt->bind_param("isssssssis", $user_id, $user_name, $user_role, $action, $description, $details, $ip_address, $user_agent, $document_id, $document_type);

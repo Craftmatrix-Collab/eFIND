@@ -175,6 +175,104 @@ function resolveActivityDocumentTypeLabel(?string $documentType, string $effecti
     return 'System';
 }
 
+function isMeaningfulActivityText(?string $value): bool {
+    $normalized = strtolower(trim((string)$value));
+    return !in_array($normalized, ['', 'n/a', 'na', 'none', 'null', '-', '--'], true);
+}
+
+function getActivityTextLength(string $value): int {
+    if (function_exists('mb_strlen')) {
+        return mb_strlen($value);
+    }
+    return strlen($value);
+}
+
+function getActivityTextPreview(string $value, int $maxLength): string {
+    if (function_exists('mb_substr')) {
+        return mb_substr($value, 0, $maxLength);
+    }
+    return substr($value, 0, $maxLength);
+}
+
+function buildActivityActionNarrative(string $effectiveAction, string $documentTypeLabel): string {
+    $normalizedDocumentType = strtolower(trim($documentTypeLabel));
+    $isSystem = ($normalizedDocumentType === '' || $normalizedDocumentType === 'system');
+    $documentPhrase = $isSystem ? 'document' : strtolower($documentTypeLabel) . ' document';
+
+    switch ($effectiveAction) {
+        case 'login':
+            return 'signed in to the system.';
+        case 'failed_login':
+            return 'attempted to sign in but failed authentication.';
+        case 'logout':
+            return 'signed out of the system.';
+        case 'upload':
+            return 'uploaded a ' . $documentPhrase . '.';
+        case 'create':
+        case 'user_create':
+            return 'created a new user account.';
+        case 'update':
+        case 'user_update':
+            return $isSystem ? 'updated account or system data.' : 'updated a ' . $documentPhrase . '.';
+        case 'ocr_edit':
+        case 'ocr_update':
+            return 'edited OCR content for a ' . $documentPhrase . '.';
+        case 'delete':
+        case 'user_delete':
+            return $isSystem ? 'deleted account or system data.' : 'deleted a ' . $documentPhrase . '.';
+        case 'restore':
+        case 'restore_document':
+            return 'restored a document from the recycle bin.';
+        case 'download':
+            return 'downloaded a ' . $documentPhrase . '.';
+        case 'view':
+            return 'viewed a ' . $documentPhrase . '.';
+        case 'search':
+            return 'performed a document search.';
+        case 'profile_update':
+            return 'updated profile information.';
+        case 'password_change':
+            return 'changed account password.';
+        case 'chatbot':
+            return 'interacted with the chatbot assistant.';
+        case 'login_attempts_reset':
+            return 'reset login attempt counters.';
+        case 'settings_update':
+            return 'updated system settings.';
+        default:
+            return 'performed a ' . strtolower(getActivityActionLabel($effectiveAction)) . ' action.';
+    }
+}
+
+function resolveActivityDescriptionText(?string $description, string $effectiveAction, string $documentTypeLabel): string {
+    if (isMeaningfulActivityText($description)) {
+        return trim((string)$description);
+    }
+    return 'User ' . buildActivityActionNarrative($effectiveAction, $documentTypeLabel);
+}
+
+function resolveActivityDetailsText(
+    ?string $details,
+    string $resolvedDescription,
+    string $effectiveAction,
+    string $documentTypeLabel,
+    ?string $resolvedUser = null
+): string {
+    if (isMeaningfulActivityText($details)) {
+        return trim((string)$details);
+    }
+
+    if (isMeaningfulActivityText($resolvedDescription)) {
+        return $resolvedDescription;
+    }
+
+    $actor = trim((string)$resolvedUser);
+    if ($actor === '') {
+        return 'User ' . buildActivityActionNarrative($effectiveAction, $documentTypeLabel);
+    }
+    return $actor . ' ' . buildActivityActionNarrative($effectiveAction, $documentTypeLabel);
+}
+
 $baseEffectiveActionSql = "CASE
     WHEN LOWER(TRIM(al.action)) REGEXP '^[0-9]+$'
          AND LOWER(TRIM(al.description)) REGEXP '^[a-z0-9_]+$'
@@ -352,6 +450,14 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 $log['description'] ?? null,
                 $log['details'] ?? null
             );
+            $resolvedDescription = resolveActivityDescriptionText($log['description'] ?? null, $effectiveAction, $documentTypeLabel);
+            $resolvedDetails = resolveActivityDetailsText(
+                $log['details'] ?? null,
+                $resolvedDescription,
+                $effectiveAction,
+                $documentTypeLabel,
+                $resolved_user
+            );
             echo '<tr>
                 <td>' . $count . '</td>
                 <td>' . htmlspecialchars($resolved_user) . '</td>
@@ -359,9 +465,9 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
                 <td>
                     <span class="badge ' . htmlspecialchars(getActivityActionBadgeClass($effectiveAction)) . '">' . htmlspecialchars(getActivityActionLabel($effectiveAction)) . '</span>
                 </td>
-                <td>' . htmlspecialchars($log['description'] ?? 'N/A') . '</td>
+                <td>' . htmlspecialchars($resolvedDescription) . '</td>
                 <td>' . htmlspecialchars($documentTypeLabel) . '</td>
-                <td>' . htmlspecialchars($log['details'] ?? 'N/A') . '</td>
+                <td>' . htmlspecialchars($resolvedDetails) . '</td>
                 <!-- <td>' . htmlspecialchars($log['ip_address'] ?? 'N/A') . '</td> -->
                 <td>' . formatPhilippineTime($log['log_time'] ?? $log['created_at']) . '</td>
             </tr>';
@@ -1404,6 +1510,14 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                             $log['description'] ?? null,
                             $log['details'] ?? null
                         );
+                        $resolvedDescription = resolveActivityDescriptionText($log['description'] ?? null, $effectiveAction, $documentTypeLabel);
+                        $resolvedDetails = resolveActivityDetailsText(
+                            $log['details'] ?? null,
+                            $resolvedDescription,
+                            $effectiveAction,
+                            $documentTypeLabel,
+                            $resolved_user
+                        );
                         ?>
                         <tr>
                             <td><?php echo $row_num++; ?></td>
@@ -1420,13 +1534,14 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                             </td>
                             <td class="text-start">
                                 <?php
-                                $description = htmlspecialchars($log['description'] ?? 'N/A');
-                                if (strlen($description) > 50): ?>
-                                    <span class="truncated-text" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo $description; ?>">
-                                        <?php echo substr($description, 0, 50) . '...'; ?>
+                                $descriptionFull = $resolvedDescription;
+                                $descriptionEscaped = htmlspecialchars($descriptionFull);
+                                if (getActivityTextLength($descriptionFull) > 50): ?>
+                                    <span class="truncated-text" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo $descriptionEscaped; ?>">
+                                        <?php echo htmlspecialchars(getActivityTextPreview($descriptionFull, 50) . '...'); ?>
                                     </span>
                                 <?php else: ?>
-                                    <?php echo $description; ?>
+                                    <?php echo $descriptionEscaped; ?>
                                 <?php endif; ?>
                             </td>
                             <td>
@@ -1438,13 +1553,14 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
                             </td>
                             <td class="text-start small">
                                 <?php
-                                $details = htmlspecialchars($log['details'] ?? 'N/A');
-                                if (strlen($details) > 50): ?>
-                                    <span class="truncated-text" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo $details; ?>">
-                                        <?php echo substr($details, 0, 50) . '...'; ?>
+                                $detailsFull = $resolvedDetails;
+                                $detailsEscaped = htmlspecialchars($detailsFull);
+                                if (getActivityTextLength($detailsFull) > 50): ?>
+                                    <span class="truncated-text" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo $detailsEscaped; ?>">
+                                        <?php echo htmlspecialchars(getActivityTextPreview($detailsFull, 50) . '...'); ?>
                                     </span>
                                 <?php else: ?>
-                                    <?php echo $details; ?>
+                                    <?php echo $detailsEscaped; ?>
                                 <?php endif; ?>
                             </td>
                             <!-- <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($log['ip_address'] ?? 'N/A'); ?></span></td> -->
