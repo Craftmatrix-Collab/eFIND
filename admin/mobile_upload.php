@@ -770,18 +770,38 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function getPreferredImageMimeType(mimeType) {
+  const normalized = (mimeType || '').toLowerCase();
+  if (normalized === 'image/jpg') return 'image/jpeg';
+  if (normalized === 'image/jpeg' || normalized === 'image/png' || normalized === 'image/webp') {
+    return normalized;
+  }
+  return 'image/jpeg';
+}
+
+function buildConvertedImageFileName(name, mimeType) {
+  const extensionByMime = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
+  const extension = extensionByMime[mimeType] || 'jpg';
+  const baseName = (name || 'image').replace(/\.[^/.]+$/, '').trim() || 'image';
+  return `${baseName}.${extension}`;
+}
+
 function compressImageBeforeUpload(file) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (!file.type || !file.type.startsWith('image/')) {
       resolve(file);
       return;
     }
 
-    const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!supportedTypes.includes(file.type)) {
-      resolve(file);
-      return;
-    }
+    const normalizedOriginalType = (file.type || '').toLowerCase() === 'image/jpg'
+      ? 'image/jpeg'
+      : (file.type || '').toLowerCase();
+    const targetType = getPreferredImageMimeType(normalizedOriginalType);
+    const requiresFormatConversion = targetType !== normalizedOriginalType;
 
     const img = new Image();
     const srcUrl = URL.createObjectURL(file);
@@ -803,6 +823,10 @@ function compressImageBeforeUpload(file) {
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         URL.revokeObjectURL(srcUrl);
+        if (requiresFormatConversion) {
+          reject(new Error(`${file.name} could not be processed on this device. Please use JPG or PNG.`));
+          return;
+        }
         resolve(file);
         return;
       }
@@ -810,16 +834,33 @@ function compressImageBeforeUpload(file) {
       ctx.drawImage(img, 0, 0, width, height);
       canvas.toBlob((blob) => {
         URL.revokeObjectURL(srcUrl);
-        if (blob && blob.size > 0 && blob.size < file.size) {
-          resolve(new File([blob], file.name, { type: file.type, lastModified: file.lastModified }));
+        if (!blob || blob.size <= 0) {
+          if (requiresFormatConversion) {
+            reject(new Error(`${file.name} could not be converted to JPG. Please retake or save it as JPG/PNG and retry.`));
+            return;
+          }
+          resolve(file);
+          return;
+        }
+
+        const shouldUseBlob = requiresFormatConversion || blob.size < file.size;
+        if (shouldUseBlob) {
+          const outputName = requiresFormatConversion
+            ? buildConvertedImageFileName(file.name, targetType)
+            : file.name;
+          resolve(new File([blob], outputName, { type: targetType, lastModified: file.lastModified }));
           return;
         }
         resolve(file);
-      }, file.type, 0.82);
+      }, targetType, targetType === 'image/png' ? undefined : 0.82);
     };
 
     img.onerror = () => {
       URL.revokeObjectURL(srcUrl);
+      if (requiresFormatConversion) {
+        reject(new Error(`${file.name} uses ${file.type || 'an unsupported format'} that this browser cannot convert. Please use JPG or PNG.`));
+        return;
+      }
       resolve(file);
     };
 
@@ -862,6 +903,7 @@ async function startUpload() {
 
   const objectKeys = [];
   const failedFiles = [];
+  const failedReasons = [];
 
   for (let i = 0; i < selectedFiles.length; i++) {
     const file = selectedFiles[i];
@@ -879,7 +921,15 @@ async function startUpload() {
       </div>`);
 
     document.getElementById(`${rowId}-status`).textContent = 'Optimizing image…';
-    fileToUpload = await compressImageBeforeUpload(file);
+    try {
+      fileToUpload = await compressImageBeforeUpload(file);
+    } catch (err) {
+      const errMsg = err && err.message ? err.message : 'Image processing failed';
+      setFileStatus(rowId, 'danger', `Error: ${errMsg}`);
+      failedFiles.push(file.name);
+      failedReasons.push(errMsg);
+      continue;
+    }
     document.getElementById(`${rowId}-status`).textContent = 'Getting upload URL…';
 
     // 1. Request presigned URL from PHP
@@ -889,6 +939,7 @@ async function startUpload() {
     } catch (err) {
       setFileStatus(rowId, 'danger', `Error: ${err.message}`);
       failedFiles.push(file.name);
+      failedReasons.push(err.message || 'Failed to get upload URL');
       continue;
     }
 
@@ -900,13 +951,16 @@ async function startUpload() {
     } catch (err) {
       setFileStatus(rowId, 'danger', `Upload failed: ${err.message}`);
       failedFiles.push(file.name);
+      failedReasons.push(err.message || 'Upload failed');
     }
   }
 
   if (failedFiles.length > 0 || objectKeys.length === 0) {
     uploadInProgress = false;
     const failedCount = failedFiles.length || selectedFiles.length;
-    showResult(false, `${failedCount} of ${selectedFiles.length} image(s) failed to upload. Check the red rows and tap Go Back to retry.`);
+    const firstReason = failedReasons.find(Boolean);
+    const reasonSuffix = firstReason ? ` First error: ${firstReason}` : '';
+    showResult(false, `${failedCount} of ${selectedFiles.length} image(s) failed to upload. Check the red rows and tap Go Back to retry.${reasonSuffix}`);
     return;
   }
 
