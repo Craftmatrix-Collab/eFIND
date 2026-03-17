@@ -270,6 +270,55 @@ function resolveStoredImagePathFromObjectKey(MinioS3Client $minio, string $objec
     return $minio->getPublicUrl($normalizedKey);
 }
 
+function markMobileSessionComplete(
+    mysqli $conn,
+    string $mobileSession,
+    ?int $resultId,
+    array $objectKeys,
+    array $imagePaths
+): void {
+    if ($mobileSession === '') {
+        return;
+    }
+
+    ensureMobileSessionPayloadColumns($conn);
+
+    $objectKeysJson = json_encode($objectKeys, JSON_UNESCAPED_SLASHES);
+    $imageUrlsJson = json_encode($imagePaths, JSON_UNESCAPED_SLASHES);
+    if ($objectKeysJson === false || $imageUrlsJson === false) {
+        throw new Exception('Failed to encode uploaded image payload');
+    }
+
+    if ($resultId === null) {
+        $stmt = $conn->prepare(
+            "UPDATE mobile_upload_sessions
+             SET status='complete', result_id=NULL, object_keys_json=?, image_urls_json=?
+             WHERE session_id=?"
+        );
+        if (!$stmt) {
+            throw new Exception('Failed to prepare mobile session update: ' . $conn->error);
+        }
+        $stmt->bind_param('sss', $objectKeysJson, $imageUrlsJson, $mobileSession);
+    } else {
+        $stmt = $conn->prepare(
+            "UPDATE mobile_upload_sessions
+             SET status='complete', result_id=?, object_keys_json=?, image_urls_json=?
+             WHERE session_id=?"
+        );
+        if (!$stmt) {
+            throw new Exception('Failed to prepare mobile session update: ' . $conn->error);
+        }
+        $stmt->bind_param('isss', $resultId, $objectKeysJson, $imageUrlsJson, $mobileSession);
+    }
+
+    $stmt->execute();
+    if ($stmt->affected_rows < 1) {
+        $stmt->close();
+        throw new Exception('Mobile session is no longer active');
+    }
+    $stmt->close();
+}
+
 try {
     if ($isMobileAuth && $mobileSessionDocType !== '' && $mobileSessionDocType !== $docType) {
         http_response_code(400);
@@ -298,25 +347,7 @@ try {
     $imagePath = implode('|', $imagePaths);
 
     if ($shouldDeferToDesktop) {
-        ensureMobileSessionPayloadColumns($conn);
-
-        $objectKeysJson = json_encode($objectKeys, JSON_UNESCAPED_SLASHES);
-        $imageUrlsJson = json_encode($imagePaths, JSON_UNESCAPED_SLASHES);
-        if ($objectKeysJson === false || $imageUrlsJson === false) {
-            throw new Exception('Failed to encode uploaded image payload');
-        }
-
-        $stDeferred = $conn->prepare("UPDATE mobile_upload_sessions SET status='complete', result_id=NULL, object_keys_json=?, image_urls_json=? WHERE session_id=?");
-        if (!$stDeferred) {
-            throw new Exception('Failed to prepare mobile session update: ' . $conn->error);
-        }
-        $stDeferred->bind_param('sss', $objectKeysJson, $imageUrlsJson, $mobileSession);
-        $stDeferred->execute();
-        if ($stDeferred->affected_rows < 1) {
-            $stDeferred->close();
-            throw new Exception('Mobile session is no longer active');
-        }
-        $stDeferred->close();
+        markMobileSessionComplete($conn, $mobileSession, null, $objectKeys, $imagePaths);
 
         echo json_encode([
             'success' => true,
@@ -440,6 +471,10 @@ try {
         $logStmt->close();
     }
 
+    if ($mobileSession && $isMobileAuth) {
+        markMobileSessionComplete($conn, $mobileSession, (int)$newId, $objectKeys, $imagePaths);
+    }
+
     echo json_encode([
         'success' => true,
         'id' => $newId,
@@ -448,13 +483,6 @@ try {
         'object_keys' => $objectKeys,
         'image_urls' => $imagePaths,
     ]);
-
-    // Notify desktop that mobile upload is complete
-    if ($mobileSession && $isMobileAuth) {
-        $st2 = $conn->prepare("UPDATE mobile_upload_sessions SET status='complete', result_id=? WHERE session_id=?");
-        $st2->bind_param('is', $newId, $mobileSession);
-        $st2->execute();
-    }
 
 
 } catch (Exception $e) {
