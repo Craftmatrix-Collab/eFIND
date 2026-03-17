@@ -643,10 +643,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $content_type = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
                 $minioClient = new MinioS3Client();
                 $uploadResult = $minioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $object_name, $content_type);
-                if (!empty($uploadResult['success'])) {
-                    $profile_picture = (string)$uploadResult['url'];
+                $uploadStorageError = null;
+                $resolvedUploadPath = efind_resolve_durable_profile_picture_upload(
+                    is_array($uploadResult) ? $uploadResult : [],
+                    'User creation',
+                    $uploadStorageError
+                );
+                if ($resolvedUploadPath !== null) {
+                    $profile_picture = $resolvedUploadPath;
                 } else {
-                    $_SESSION['error'] = "Failed to upload profile picture.";
+                    $_SESSION['error'] = $uploadStorageError ?: "Failed to upload profile picture.";
                     header("Location: " . $_SERVER['PHP_SELF']);
                     exit();
                 }
@@ -782,7 +788,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit();
             }
-            $profile_picture = $currentUser['profile_picture'] ?? '';
+            $old_profile_picture = trim((string)($currentUser['profile_picture'] ?? ''));
+            $profile_picture = $old_profile_picture;
+            $has_new_profile_picture_upload = false;
+            $new_uploaded_profile_picture = '';
 
             // Handle file upload if present (only after validating target user)
             if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
@@ -795,16 +804,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $minioClient = new MinioS3Client();
 
-                    // Delete old file if exists
-                    if (!empty($profile_picture)) {
-                        $oldObjectName = $minioClient->extractObjectNameFromUrl((string)$profile_picture);
-                        if (!empty($oldObjectName)) {
-                            $minioClient->deleteFile($oldObjectName);
-                        } else {
-                            @unlink(__DIR__ . '/uploads/profiles/' . basename((string)$profile_picture));
-                        }
-                    }
-
                     $file_ext = strtolower(pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION));
                     if ($file_ext === '') {
                         $file_ext = ($file_type === 'image/png') ? 'png' : 'jpg';
@@ -813,10 +812,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $object_name = 'profiles/' . date('Y/m/') . $file_name;
                     $content_type = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
                     $uploadResult = $minioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $object_name, $content_type);
-                    if (!empty($uploadResult['success'])) {
-                        $profile_picture = (string)$uploadResult['url'];
+                    $uploadStorageError = null;
+                    $resolvedUploadPath = efind_resolve_durable_profile_picture_upload(
+                        is_array($uploadResult) ? $uploadResult : [],
+                        'User update',
+                        $uploadStorageError
+                    );
+                    if ($resolvedUploadPath !== null) {
+                        $profile_picture = $resolvedUploadPath;
+                        $has_new_profile_picture_upload = true;
+                        $new_uploaded_profile_picture = $profile_picture;
                     } else {
-                        $_SESSION['error'] = "Failed to upload profile picture.";
+                        $_SESSION['error'] = $uploadStorageError ?: "Failed to upload profile picture.";
                         header("Location: " . $_SERVER['PHP_SELF']);
                         exit();
                     }
@@ -831,6 +838,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param("ssssssi", $full_name, $contact_number, $email, $username, $role, $profile_picture, $id);
             }
             if ($stmt->execute()) {
+                if (
+                    $has_new_profile_picture_upload
+                    && $new_uploaded_profile_picture !== ''
+                    && $old_profile_picture !== ''
+                    && $old_profile_picture !== $new_uploaded_profile_picture
+                ) {
+                    efind_delete_profile_picture_asset($old_profile_picture);
+                }
                 $userRoleDisplay = $role;
                 logActivity('user_update', "User updated: $username", "Role: $userRoleDisplay | Email: $email", $id);
                 unset(
@@ -845,6 +860,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $_SESSION['success'] = "User updated successfully!";
             } else {
+                if (
+                    $has_new_profile_picture_upload
+                    && $new_uploaded_profile_picture !== ''
+                    && $new_uploaded_profile_picture !== $old_profile_picture
+                ) {
+                    efind_delete_profile_picture_asset($new_uploaded_profile_picture);
+                }
                 $_SESSION['error'] = "Error updating user: " . $stmt->error;
             }
             $stmt->close();

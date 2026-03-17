@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Include dependencies
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
+require_once __DIR__ . '/includes/profile_picture_helper.php';
 
 // Sanitize and validate inputs
 $full_name = htmlspecialchars(trim($_POST['full_name']));
@@ -64,10 +65,16 @@ if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] ===
     $content_type = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
     $uploadResult = $profileMinioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $object_name, $content_type);
 
-    if (!empty($uploadResult['success'])) {
-        $profile_picture = (string)$uploadResult['url'];
+    $uploadStorageError = null;
+    $resolvedUploadPath = efind_resolve_durable_profile_picture_upload(
+        is_array($uploadResult) ? $uploadResult : [],
+        'Add staff',
+        $uploadStorageError
+    );
+    if ($resolvedUploadPath !== null) {
+        $profile_picture = $resolvedUploadPath;
     } else {
-        echo json_encode(['success' => false, 'message' => 'Failed to upload profile picture.']);
+        echo json_encode(['success' => false, 'message' => $uploadStorageError ?: 'Failed to upload profile picture.']);
         exit;
     }
 }
@@ -92,10 +99,7 @@ try {
     $stmt->close();
 } catch (Throwable $e) {
     if ($profile_picture && $profileMinioClient instanceof MinioS3Client) {
-        $objectName = $profileMinioClient->extractObjectNameFromUrl((string)$profile_picture);
-        if (!empty($objectName)) {
-            $profileMinioClient->deleteFile($objectName);
-        }
+        efind_delete_profile_picture_asset($profile_picture);
     }
     echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }

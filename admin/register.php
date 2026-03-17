@@ -4,6 +4,7 @@ include('includes/config.php');
 require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
+require_once __DIR__ . '/includes/profile_picture_helper.php';
 require_once __DIR__ . '/includes/password_policy.php';
 
 // Redirect if already logged in
@@ -69,11 +70,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $object_name = 'profiles/' . date('Y/m/') . $file_name;
                         $content_type = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
                         $uploadResult = $profileMinioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $object_name, $content_type);
-                        
-                        if (!empty($uploadResult['success'])) {
-                            $profile_picture = (string)$uploadResult['url'];
+
+                        $uploadStorageError = null;
+                        $resolvedUploadPath = efind_resolve_durable_profile_picture_upload(
+                            is_array($uploadResult) ? $uploadResult : [],
+                            'Registration',
+                            $uploadStorageError
+                        );
+
+                        if ($resolvedUploadPath !== null) {
+                            $profile_picture = $resolvedUploadPath;
                         } else {
-                            $error = "Error uploading profile picture.";
+                            $error = $uploadStorageError ?: "Error uploading profile picture.";
                         }
                     } else {
                         $error = "Profile picture size exceeds 2MB limit.";
@@ -157,10 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     
                     // Delete uploaded MinIO object if registration failed
                     if ($profile_picture && $profileMinioClient instanceof MinioS3Client) {
-                        $objectName = $profileMinioClient->extractObjectNameFromUrl((string)$profile_picture);
-                        if (!empty($objectName)) {
-                            $profileMinioClient->deleteFile($objectName);
-                        }
+                        efind_delete_profile_picture_asset($profile_picture);
                     }
                 }
             }

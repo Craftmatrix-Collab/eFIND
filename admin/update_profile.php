@@ -593,6 +593,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle profile picture upload
     $profilePicture = null;
     $uploadError = null;
+    $hasNewProfilePictureUpload = false;
+    $newUploadedProfilePicturePath = '';
     if (isset($_FILES['profile_picture']) && is_array($_FILES['profile_picture'])) {
         $profileUploadErrorCode = (int)($_FILES['profile_picture']['error'] ?? UPLOAD_ERR_NO_FILE);
         if ($profileUploadErrorCode === UPLOAD_ERR_OK) {
@@ -605,50 +607,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $objectName = 'profiles/' . date('Y/m/') . $newFileName;
                 $contentType = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
                 $uploadResult = $minioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $objectName, $contentType);
-                $minioError = '';
+                $uploadStorageError = null;
+                $resolvedUploadPath = efind_resolve_durable_profile_picture_upload(
+                    is_array($uploadResult) ? $uploadResult : [],
+                    'Profile update',
+                    $uploadStorageError
+                );
 
-                if (!empty($uploadResult['success'])) {
-                    $profilePicture = (string)$uploadResult['url'];
+                if ($resolvedUploadPath !== null) {
+                    $profilePicture = $resolvedUploadPath;
+                    $hasNewProfilePictureUpload = true;
+                    $newUploadedProfilePicturePath = $profilePicture;
                 } else {
-                    $minioError = trim((string)($uploadResult['error'] ?? 'Unknown MinIO upload error.'));
-                    error_log('Profile picture MinIO upload failed for user ' . $userId . ': ' . $minioError);
-
-                    // Fallback: store profile pictures locally when MinIO is unavailable.
-                    $localProfileDir = __DIR__ . '/uploads/profiles';
-                    if (!is_dir($localProfileDir) && !mkdir($localProfileDir, 0755, true) && !is_dir($localProfileDir)) {
-                        $uploadError = 'Failed to upload profile picture to storage.';
-                    } else {
-                        $localProfilePath = $localProfileDir . '/' . $newFileName;
-                        $storedLocally = saveOptimizedUploadedImage($_FILES['profile_picture'], $localProfilePath);
-                        if ($storedLocally) {
-                            $profilePicture = 'uploads/profiles/' . $newFileName;
-                            error_log('Profile picture upload fell back to local storage for user ' . $userId . '.');
-                        } else {
-                            $uploadError = 'Failed to upload profile picture to storage.';
-                        }
-                    }
+                    $uploadError = $uploadStorageError ?: 'Failed to upload profile picture to storage.';
                 }
 
-                // Delete old profile picture if it exists and is different
-                if ($uploadError === null && $profilePicture !== null && !empty($oldPicturePath) && $oldPicturePath !== $profilePicture) {
-                    $oldObjectName = $minioClient->extractObjectNameFromUrl((string)$oldPicturePath);
-                    if (!empty($oldObjectName)) {
-                        $minioClient->deleteFile($oldObjectName);
-                    } else {
-                        $normalizedOldPath = ltrim(str_replace('\\', '/', (string)$oldPicturePath), '/');
-                        $oldLocalCandidates = [__DIR__ . '/uploads/profiles/' . basename((string)$oldPicturePath)];
-                        if (strpos($normalizedOldPath, 'uploads/profiles/') === 0) {
-                            $oldLocalCandidates[] = __DIR__ . '/' . $normalizedOldPath;
-                        }
-
-                        foreach (array_unique($oldLocalCandidates) as $oldLocalPath) {
-                            if (is_file($oldLocalPath)) {
-                                unlink($oldLocalPath);
-                                break;
-                            }
-                        }
-                    }
-                }
             } else {
                 $uploadError = 'Only JPG, JPEG, and PNG files are allowed.';
             }
@@ -703,7 +676,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $activeProfilePicture = trim((string)($profilePicture ?: $oldPicturePath));
             if ($activeProfilePicture !== '') {
                 $_SESSION['profile_picture'] = $activeProfilePicture;
+                if ($isActorAdmin || $isActorSuperadmin) {
+                    $_SESSION['admin_profile_picture'] = $activeProfilePicture;
+                }
+                if ($isActorStaffSession && !$isActorAdmin) {
+                    $_SESSION['staff_profile_picture'] = $activeProfilePicture;
+                }
             }
+        }
+        if (
+            $hasNewProfilePictureUpload
+            && $newUploadedProfilePicturePath !== ''
+            && !empty($oldPicturePath)
+            && trim((string)$oldPicturePath) !== trim((string)$newUploadedProfilePicturePath)
+        ) {
+            efind_delete_profile_picture_asset($oldPicturePath);
         }
         unset(
             $_SESSION['profile_edit_verify_otp'],
@@ -734,6 +721,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header("Location: $redirectUrl");
         exit;
     } else {
+        if (
+            $hasNewProfilePictureUpload
+            && $newUploadedProfilePicturePath !== ''
+            && trim((string)$newUploadedProfilePicturePath) !== trim((string)($oldPicturePath ?? ''))
+        ) {
+            efind_delete_profile_picture_asset($newUploadedProfilePicturePath);
+        }
         $dbError = '';
         if (isset($stmt) && $stmt instanceof mysqli_stmt) {
             $dbError = trim((string)$stmt->error);
