@@ -126,6 +126,26 @@ class MinioS3Client {
         return $endpoints;
     }
 
+    private function getBuiltInFallbackEndpoints(): array
+    {
+        $endpoints = [];
+        $append = function (string $candidate) use (&$endpoints): void {
+            $candidate = trim((string)$candidate);
+            if ($candidate !== '' && !in_array($candidate, $endpoints, true)) {
+                $endpoints[] = $candidate;
+            }
+        };
+
+        if (defined('MINIO_DEFAULT_API_URL')) {
+            $append((string)MINIO_DEFAULT_API_URL);
+        }
+        if (defined('MINIO_DEFAULT_ENDPOINT')) {
+            $append((string)MINIO_DEFAULT_ENDPOINT);
+        }
+
+        return $endpoints;
+    }
+
     private function canReachEndpoint(string $endpoint): bool
     {
         $parts = $this->parseEndpointHostAndPort($endpoint);
@@ -194,6 +214,10 @@ class MinioS3Client {
             $requestHost = $this->resolveRequestHostForBrowserUpload();
             if ($requestHost !== null && !$this->isLocalOnlyHost($requestHost)) {
                 $append($requestHost . ':' . $defaultPort);
+            }
+
+            foreach ($this->getBuiltInFallbackEndpoints() as $fallbackEndpoint) {
+                $append($fallbackEndpoint);
             }
         }
 
@@ -379,15 +403,21 @@ class MinioS3Client {
             return null;
         }
 
-        $scheme = strtolower((string)($parts['scheme'] ?? ($this->useSSL ? 'https' : 'http')));
-        if (!in_array($scheme, ['http', 'https'], true)) {
-            $scheme = $this->useSSL ? 'https' : 'http';
-        }
-
         $explicitPort = isset($parts['port']);
         $port = $explicitPort ? (int)$parts['port'] : null;
         if ($port !== null && ($port <= 0 || $port > 65535)) {
             $port = null;
+        }
+
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            if ($port === 443) {
+                $scheme = 'https';
+            } elseif ($port === 80) {
+                $scheme = 'http';
+            } else {
+                $scheme = $this->useSSL ? 'https' : 'http';
+            }
         }
 
         if ($port === null) {
@@ -417,6 +447,7 @@ class MinioS3Client {
         }
 
         $candidates[] = trim((string)(getenv('MINIO_API_URL') ?: ''));
+        $candidates = array_merge($candidates, $this->getBuiltInFallbackEndpoints());
         $candidates = array_merge($candidates, $this->getConfiguredFallbackEndpoints());
         $candidates[] = trim((string)$this->endpoint);
         $deferredLocalReplacement = null;
@@ -798,8 +829,19 @@ class MinioS3Client {
      * Get endpoint URL
      */
     private function buildEndpointUrl($endpoint) {
+        $normalizedEndpoint = trim((string)$endpoint);
         $protocol = $this->useSSL ? 'https' : 'http';
-        return $protocol . '://' . trim((string)$endpoint);
+
+        $parts = $this->parseEndpointHostAndPort($normalizedEndpoint);
+        if (is_array($parts) && isset($parts['port'])) {
+            if ((int)$parts['port'] === 443) {
+                $protocol = 'https';
+            } elseif ((int)$parts['port'] === 80) {
+                $protocol = 'http';
+            }
+        }
+
+        return $protocol . '://' . $normalizedEndpoint;
     }
 
     private function getRequestEndpointUrl() {

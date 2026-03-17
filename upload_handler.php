@@ -84,28 +84,43 @@ function getAllowedRemoteUploadHosts() {
     }
 
     $hostMap = [];
+    $appendHost = static function (string $candidate) use (&$hostMap): void {
+        $candidate = trim((string)$candidate);
+        if ($candidate === '') {
+            return;
+        }
+
+        $parsed = parse_url(str_contains($candidate, '://') ? $candidate : ('https://' . $candidate));
+        $host = strtolower(trim((string)($parsed['host'] ?? '')));
+        if ($host === '') {
+            return;
+        }
+
+        $hostMap[preg_replace('/:\d+$/', '', $host)] = true;
+    };
 
     $currentHost = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
     if ($currentHost !== '') {
-        $hostMap[strtolower(preg_replace('/:\d+$/', '', $currentHost))] = true;
+        $appendHost($currentHost);
     }
 
     $configuredHosts = trim((string)(getenv('UPLOAD_ALLOWED_REMOTE_HOSTS') ?: ''));
     if ($configuredHosts !== '') {
         foreach (explode(',', $configuredHosts) as $host) {
-            $host = strtolower(trim((string)$host));
-            if ($host !== '') {
-                $hostMap[preg_replace('/:\d+$/', '', $host)] = true;
-            }
+            $appendHost($host);
         }
     }
 
-    $minioEndpoint = trim((string)(getenv('MINIO_ENDPOINT') ?: ''));
-    if ($minioEndpoint !== '') {
-        $minioParts = parse_url(str_contains($minioEndpoint, '://') ? $minioEndpoint : ('https://' . $minioEndpoint));
-        $minioHost = strtolower(trim((string)($minioParts['host'] ?? '')));
-        if ($minioHost !== '') {
-            $hostMap[$minioHost] = true;
+    $minioRelatedHosts = [
+        getenv('MINIO_ENDPOINT') ?: '',
+        getenv('MINIO_API_URL') ?: '',
+        getenv('MINIO_PUBLIC_URL') ?: '',
+        getenv('MINIO_BROWSER_ENDPOINT') ?: '',
+        getenv('MINIO_BROWSER_URL') ?: '',
+    ];
+    foreach ($minioRelatedHosts as $hostCandidate) {
+        if ($hostCandidate !== '') {
+            $appendHost((string)$hostCandidate);
         }
     }
 

@@ -593,37 +593,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle profile picture upload
     $profilePicture = null;
     $uploadError = null;
-    if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-        $fileExtension = strtolower(pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION));
-        $allowedExtensions = ['jpg', 'jpeg', 'png'];
+    if (isset($_FILES['profile_picture']) && is_array($_FILES['profile_picture'])) {
+        $profileUploadErrorCode = (int)($_FILES['profile_picture']['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($profileUploadErrorCode === UPLOAD_ERR_OK) {
+            $fileExtension = strtolower(pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION));
+            $allowedExtensions = ['jpg', 'jpeg', 'png'];
 
-        if (in_array($fileExtension, $allowedExtensions, true)) {
-            $minioClient = new MinioS3Client();
-            $newFileName = 'profile_' . $userId . '_' . str_replace('.', '', uniqid('', true)) . '.' . $fileExtension;
-            $objectName = 'profiles/' . date('Y/m/') . $newFileName;
-            $contentType = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
-            $uploadResult = $minioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $objectName, $contentType);
+            if (in_array($fileExtension, $allowedExtensions, true)) {
+                $newFileName = 'profile_' . $userId . '_' . str_replace('.', '', uniqid('', true)) . '.' . $fileExtension;
+                $minioClient = new MinioS3Client();
+                $objectName = 'profiles/' . date('Y/m/') . $newFileName;
+                $contentType = MinioS3Client::getMimeType($_FILES['profile_picture']['name']);
+                $uploadResult = $minioClient->uploadFile($_FILES['profile_picture']['tmp_name'], $objectName, $contentType);
+                $minioError = '';
 
-            if (!empty($uploadResult['success'])) {
-                $profilePicture = (string)$uploadResult['url'];
+                if (!empty($uploadResult['success'])) {
+                    $profilePicture = (string)$uploadResult['url'];
+                } else {
+                    $minioError = trim((string)($uploadResult['error'] ?? 'Unknown MinIO upload error.'));
+                    error_log('Profile picture MinIO upload failed for user ' . $userId . ': ' . $minioError);
+
+                    // Fallback: store profile pictures locally when MinIO is unavailable.
+                    $localProfileDir = __DIR__ . '/uploads/profiles';
+                    if (!is_dir($localProfileDir) && !mkdir($localProfileDir, 0755, true) && !is_dir($localProfileDir)) {
+                        $uploadError = 'Failed to upload profile picture to storage.';
+                    } else {
+                        $localProfilePath = $localProfileDir . '/' . $newFileName;
+                        $storedLocally = saveOptimizedUploadedImage($_FILES['profile_picture'], $localProfilePath);
+                        if ($storedLocally) {
+                            $profilePicture = 'uploads/profiles/' . $newFileName;
+                            error_log('Profile picture upload fell back to local storage for user ' . $userId . '.');
+                        } else {
+                            $uploadError = 'Failed to upload profile picture to storage.';
+                        }
+                    }
+                }
 
                 // Delete old profile picture if it exists and is different
-                if (!empty($oldPicturePath) && $oldPicturePath !== $profilePicture) {
+                if ($uploadError === null && $profilePicture !== null && !empty($oldPicturePath) && $oldPicturePath !== $profilePicture) {
                     $oldObjectName = $minioClient->extractObjectNameFromUrl((string)$oldPicturePath);
                     if (!empty($oldObjectName)) {
                         $minioClient->deleteFile($oldObjectName);
                     } else {
-                        $oldFullPath = __DIR__ . '/uploads/profiles/' . basename((string)$oldPicturePath);
-                        if (file_exists($oldFullPath)) {
-                            unlink($oldFullPath);
+                        $normalizedOldPath = ltrim(str_replace('\\', '/', (string)$oldPicturePath), '/');
+                        $oldLocalCandidates = [__DIR__ . '/uploads/profiles/' . basename((string)$oldPicturePath)];
+                        if (strpos($normalizedOldPath, 'uploads/profiles/') === 0) {
+                            $oldLocalCandidates[] = __DIR__ . '/' . $normalizedOldPath;
+                        }
+
+                        foreach (array_unique($oldLocalCandidates) as $oldLocalPath) {
+                            if (is_file($oldLocalPath)) {
+                                unlink($oldLocalPath);
+                                break;
+                            }
                         }
                     }
                 }
             } else {
-                $uploadError = 'Failed to upload profile picture to storage.';
+                $uploadError = 'Only JPG, JPEG, and PNG files are allowed.';
             }
-        } else {
-            $uploadError = 'Only JPG, JPEG, and PNG files are allowed.';
+        } elseif ($profileUploadErrorCode !== UPLOAD_ERR_NO_FILE) {
+            $uploadErrorMessages = [
+                UPLOAD_ERR_INI_SIZE => 'Profile picture exceeds the server upload limit.',
+                UPLOAD_ERR_FORM_SIZE => 'Profile picture exceeds the allowed form size.',
+                UPLOAD_ERR_PARTIAL => 'Profile picture upload was interrupted. Please try again.',
+                UPLOAD_ERR_NO_TMP_DIR => 'Server temporary upload directory is missing.',
+                UPLOAD_ERR_CANT_WRITE => 'Server failed to write the uploaded profile picture.',
+                UPLOAD_ERR_EXTENSION => 'Profile picture upload blocked by server extension.',
+            ];
+            $uploadError = $uploadErrorMessages[$profileUploadErrorCode] ?? 'Profile picture upload failed. Please try again.';
         }
     }
 

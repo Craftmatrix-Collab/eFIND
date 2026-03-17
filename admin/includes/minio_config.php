@@ -6,9 +6,16 @@ $minioUseSsl = in_array($minioUseSslRaw, ['1', 'true', 'yes', 'on'], true);
 $minioInsecureSslRaw = strtolower((string)(getenv('MINIO_INSECURE_SSL') ?: 'false'));
 $minioInsecureSsl = in_array($minioInsecureSslRaw, ['1', 'true', 'yes', 'on'], true);
 $minioPort = (int)(getenv('MINIO_PORT') ?: 443);
+$minioDefaultEndpoint = 'minio-gckgwk48ccskg4ogswwgk88s.craftmatrix.org';
+$minioDefaultConsoleUrl = 'https://console-gckgwk48ccskg4ogswwgk88s.craftmatrix.org';
+$minioDefaultApiUrl = 'https://minio-gckgwk48ccskg4ogswwgk88s.craftmatrix.org';
 
 // MinIO S3 Configuration
-define('MINIO_ENDPOINT', getenv('MINIO_ENDPOINT') ?: 'minio-gckgwk48ccskg4ogswwgk88s.craftmatrix.org');
+define('MINIO_DEFAULT_ENDPOINT', $minioDefaultEndpoint);
+define('MINIO_DEFAULT_CONSOLE_URL', $minioDefaultConsoleUrl);
+define('MINIO_DEFAULT_API_URL', $minioDefaultApiUrl);
+
+define('MINIO_ENDPOINT', getenv('MINIO_ENDPOINT') ?: MINIO_DEFAULT_ENDPOINT);
 define('MINIO_ACCESS_KEY', getenv('MINIO_ACCESS_KEY') ?: (getenv('MINIO_ROOT_USER') ?: ''));
 define('MINIO_SECRET_KEY', getenv('MINIO_SECRET_KEY') ?: (getenv('MINIO_ROOT_PASSWORD') ?: ''));
 define('MINIO_BUCKET', getenv('MINIO_BUCKET') ?: 'efind-documents'); // Default bucket name
@@ -18,6 +25,6 @@ define('MINIO_INSECURE_SSL', $minioInsecureSsl);
 define('MINIO_PORT', $minioPort);
 
 // MinIO URLs
-define('MINIO_CONSOLE_URL', getenv('MINIO_CONSOLE_URL') ?: 'https://console-gckgwk48ccskg4ogswwgk88s.craftmatrix.org');
-define('MINIO_API_URL', getenv('MINIO_API_URL') ?: 'https://minio-gckgwk48ccskg4ogswwgk88s.craftmatrix.org');
+define('MINIO_CONSOLE_URL', getenv('MINIO_CONSOLE_URL') ?: MINIO_DEFAULT_CONSOLE_URL);
+define('MINIO_API_URL', getenv('MINIO_API_URL') ?: MINIO_DEFAULT_API_URL);
 ?>
