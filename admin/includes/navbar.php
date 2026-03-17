@@ -272,7 +272,7 @@ if (isset($conn) && (isset($_SESSION['admin_id']) || isset($_SESSION['user_id'])
                 <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteSelfProfileModal" data-bs-dismiss="modal">
                     <i class="fas fa-trash-alt me-1"></i>Delete
                 </button>
-                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#editProfileModal" data-bs-dismiss="modal">Edit Profile</button>
+                <button type="button" class="btn btn-primary" id="openEditProfileFromViewBtn" data-bs-toggle="modal" data-bs-target="#editProfileModal" data-bs-dismiss="modal">Edit Profile</button>
             </div>
         </div>
     </div>
@@ -795,18 +795,68 @@ initInactivityAutoLogout();
 
 function initNavbarJQueryHandlers() {
     $(document).ready(function() {
+        const editProfileModal = $('#editProfileModal');
+        const editProfileModalBody = $('#editProfileModalBody');
+        const currentScriptDirectory = <?php
+            $navbarCurrentScript = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/admin/dashboard.php'));
+            $navbarScriptDir = rtrim(dirname($navbarCurrentScript), '/');
+            if ($navbarScriptDir === '') {
+                $navbarScriptDir = '/';
+            }
+            echo json_encode($navbarScriptDir . '/');
+        ?>;
+        const editProfileRoutes = [
+            `${currentScriptDirectory}edit_profile_content`,
+            `${currentScriptDirectory}edit_profile_content.php`,
+            'edit_profile_content',
+            'edit_profile_content.php'
+        ].filter(function(route, index, routes) {
+            return route && routes.indexOf(route) === index;
+        });
+        let editProfileLoadRequest = null;
+
+        function abortEditProfileLoadRequest() {
+            if (editProfileLoadRequest && editProfileLoadRequest.readyState !== 4) {
+                editProfileLoadRequest.abort();
+            }
+            editProfileLoadRequest = null;
+        }
+
+        function renderEditProfileLoadError(httpStatus, reason) {
+            editProfileModalBody.html(
+                '<div class="alert alert-danger">' +
+                '<i class="fas fa-exclamation-circle me-2"></i>' +
+                'Error loading edit form' + httpStatus + '. ' + reason + ' ' +
+                '<a href="edit_profile.php" class="alert-link">Open full edit page</a>.' +
+                '</div>'
+            );
+        }
+
         function loadEditProfileForm(routeIndex = 0) {
-            const routes = ['edit_profile_content', 'edit_profile_content.php'];
-            const route = routes[routeIndex] || routes[routes.length - 1];
-            $.ajax({
+            const route = editProfileRoutes[routeIndex];
+            if (!route) {
+                renderEditProfileLoadError('', 'No valid edit form route is configured.');
+                return;
+            }
+
+            abortEditProfileLoadRequest();
+            editProfileLoadRequest = $.ajax({
                 url: route,
                 type: 'GET',
                 cache: false,
+                timeout: 15000,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
                 success: function(response) {
-                    $('#editProfileModalBody').html(response);
+                    editProfileModalBody.html(response);
                 },
                 error: function(xhr, status, error) {
-                    if (routeIndex + 1 < routes.length) {
+                    if (status === 'abort') {
+                        return;
+                    }
+
+                    if (routeIndex + 1 < editProfileRoutes.length) {
                         loadEditProfileForm(routeIndex + 1);
                         return;
                     }
@@ -820,24 +870,46 @@ function initNavbarJQueryHandlers() {
                     } else if (xhr && xhr.status === 500) {
                         reason = 'The server returned an error.';
                     } else if (xhr && xhr.status === 0) {
-                        reason = 'The request was blocked or lost.';
+                        reason = navigator.onLine
+                            ? 'The request was interrupted before the server responded.'
+                            : 'Your device appears to be offline.';
                     }
 
-                    console.error('Edit profile load error:', route, status, error, xhr && xhr.responseText ? xhr.responseText : '');
-                    $('#editProfileModalBody').html(
-                        '<div class="alert alert-danger">' +
-                        '<i class="fas fa-exclamation-circle me-2"></i>' +
-                        'Error loading edit form' + httpStatus + '. ' + reason + ' ' +
-                        '<a href="edit_profile.php" class="alert-link">Open full edit page</a>.' +
-                        '</div>'
-                    );
+                    const responseSnippet = xhr && xhr.responseText ? xhr.responseText.slice(0, 300) : '';
+                    console.error('Edit profile load error:', {
+                        route: route,
+                        status: status,
+                        error: error,
+                        httpStatus: xhr && xhr.status ? xhr.status : 0,
+                        readyState: xhr && xhr.readyState ? xhr.readyState : 0,
+                        online: navigator.onLine,
+                        responseSnippet: responseSnippet
+                    });
+                    renderEditProfileLoadError(httpStatus, reason);
+                },
+                complete: function(xhr, status) {
+                    if (status !== 'abort') {
+                        editProfileLoadRequest = null;
+                    }
                 }
             });
         }
 
         // Load edit form when edit profile modal is shown
-        $('#editProfileModal').on('show.bs.modal', function () {
+        editProfileModal.on('show.bs.modal', function () {
+            editProfileModalBody.html(
+                '<div class="text-center">' +
+                '<div class="spinner-border text-primary" role="status">' +
+                '<span class="visually-hidden">Loading...</span>' +
+                '</div>' +
+                '<p class="mt-2 mb-0">Loading edit form...</p>' +
+                '</div>'
+            );
             loadEditProfileForm(0);
+        });
+
+        editProfileModal.on('hidden.bs.modal', function () {
+            abortEditProfileLoadRequest();
         });
 
         // Handle save button click
@@ -906,12 +978,6 @@ function initNavbarJQueryHandlers() {
                     btn.prop('disabled', false).html(originalText);
                 }
             });
-        });
-
-        // Handle edit profile button click
-        $('#profileModal').on('click', '.btn-primary', function() {
-            $('#profileModal').modal('hide');
-            $('#editProfileModal').modal('show');
         });
 
         const selfDeleteModal = $('#deleteSelfProfileModal');
