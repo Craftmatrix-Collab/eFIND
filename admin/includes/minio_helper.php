@@ -10,6 +10,7 @@ class MinioS3Client {
     private $endpoint;
     private $requestEndpoint;
     private $publicBaseUrl;
+    private $endpointProbeResults = [];
     private $accessKey;
     private $secretKey;
     private $bucket;
@@ -34,11 +35,6 @@ class MinioS3Client {
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
     }
 
-    private function isRunningInContainer(): bool
-    {
-        return is_file('/.dockerenv') || getenv('container') !== false;
-    }
-
     private function parseEndpointHostAndPort($endpoint): ?array
     {
         $normalized = trim((string)$endpoint);
@@ -61,6 +57,136 @@ class MinioS3Client {
         ];
     }
 
+    private function resolveEndpointPort(?int $port): int
+    {
+        if ($port !== null && $port > 0 && $port <= 65535) {
+            return $port;
+        }
+
+        $configuredPort = defined('MINIO_PORT') ? (int)MINIO_PORT : 0;
+        if ($configuredPort > 0 && $configuredPort <= 65535) {
+            return $configuredPort;
+        }
+
+        return $this->useSSL ? 443 : 80;
+    }
+
+    private function normalizeEndpointCandidate(string $endpoint, int $defaultPort): ?string
+    {
+        $parts = $this->parseEndpointHostAndPort($endpoint);
+        if ($parts === null) {
+            return null;
+        }
+
+        $host = trim((string)$parts['host']);
+        if ($host === '') {
+            return null;
+        }
+
+        $port = $parts['port'];
+        if ($port === null || $port <= 0 || $port > 65535) {
+            $port = $defaultPort;
+        }
+
+        return $host . ':' . (int)$port;
+    }
+
+    private function canReachEndpoint(string $endpoint): bool
+    {
+        $parts = $this->parseEndpointHostAndPort($endpoint);
+        if ($parts === null) {
+            return false;
+        }
+
+        $host = trim((string)$parts['host']);
+        if ($host === '') {
+            return false;
+        }
+
+        $port = $this->resolveEndpointPort($parts['port']);
+        $targetHost = $host;
+        if (strpos($targetHost, ':') !== false && $targetHost[0] !== '[') {
+            $targetHost = '[' . $targetHost . ']';
+        }
+
+        $errno = 0;
+        $errstr = '';
+        $socket = @stream_socket_client(
+            'tcp://' . $targetHost . ':' . $port,
+            $errno,
+            $errstr,
+            0.75,
+            STREAM_CLIENT_CONNECT
+        );
+
+        if (!is_resource($socket)) {
+            return false;
+        }
+
+        fclose($socket);
+        return true;
+    }
+
+    private function buildRequestEndpointCandidates(string $configuredEndpoint, array $parts): array
+    {
+        $defaultPort = $this->resolveEndpointPort($parts['port']);
+        $candidates = [];
+        $append = function (string $candidate) use (&$candidates, $defaultPort): void {
+            $normalized = $this->normalizeEndpointCandidate($candidate, $defaultPort);
+            if ($normalized !== null && !in_array($normalized, $candidates, true)) {
+                $candidates[] = $normalized;
+            }
+        };
+
+        $append($configuredEndpoint);
+
+        $localHosts = ['localhost', '127.0.0.1', '::1'];
+        if (in_array($parts['host'], $localHosts, true)) {
+            $append('minio:' . $defaultPort);
+
+            $dockerHost = trim((string)(getenv('MINIO_DOCKER_HOST') ?: 'host.docker.internal'));
+            if ($dockerHost !== '') {
+                $append($dockerHost . ':' . $defaultPort);
+            }
+        }
+
+        if (in_array($parts['host'], ['minio', 'host.docker.internal'], true)) {
+            $append('localhost:' . $defaultPort);
+            $append('127.0.0.1:' . $defaultPort);
+        }
+
+        $apiUrl = trim((string)(getenv('MINIO_API_URL') ?: (defined('MINIO_API_URL') ? MINIO_API_URL : '')));
+        if ($apiUrl !== '') {
+            $append($apiUrl);
+        }
+
+        $fallbackRaw = trim((string)(getenv('MINIO_FALLBACK_ENDPOINTS') ?: ''));
+        if ($fallbackRaw !== '') {
+            foreach (explode(',', $fallbackRaw) as $fallbackEndpoint) {
+                $fallbackEndpoint = trim((string)$fallbackEndpoint);
+                if ($fallbackEndpoint !== '') {
+                    $append($fallbackEndpoint);
+                }
+            }
+        }
+
+        return $candidates;
+    }
+
+    private function formatEndpointProbeResults(): string
+    {
+        if (empty($this->endpointProbeResults)) {
+            return '';
+        }
+
+        $summary = [];
+        foreach ($this->endpointProbeResults as $endpoint => $reachable) {
+            $summary[] = $endpoint . ($reachable ? ' (reachable)' : ' (unreachable)');
+        }
+
+        return implode(', ', $summary);
+    }
+
     private function resolveRequestEndpoint($configuredEndpoint)
     {
         $endpoint = trim((string)$configuredEndpoint);
@@ -69,29 +195,33 @@ class MinioS3Client {
             return $endpoint;
         }
 
-        $localHosts = ['localhost', '127.0.0.1', '::1'];
-        if (!$this->isRunningInContainer() || !in_array($parts['host'], $localHosts, true)) {
-            return $endpoint;
+        $defaultPort = $this->resolveEndpointPort($parts['port']);
+        $normalizedConfigured = $this->normalizeEndpointCandidate($endpoint, $defaultPort) ?? $endpoint;
+
+        $probeHosts = ['localhost', '127.0.0.1', '::1', 'minio', 'host.docker.internal'];
+        $hasFallbackEndpoints = trim((string)(getenv('MINIO_FALLBACK_ENDPOINTS') ?: '')) !== '';
+        if (!$hasFallbackEndpoints && !in_array($parts['host'], $probeHosts, true)) {
+            return $normalizedConfigured;
         }
 
-        $dockerHost = trim((string)(getenv('MINIO_DOCKER_HOST') ?: 'host.docker.internal'));
-        if ($dockerHost === '') {
-            return $endpoint;
+        $candidates = $this->buildRequestEndpointCandidates($endpoint, $parts);
+        if (empty($candidates)) {
+            return $normalizedConfigured;
         }
 
-        if ($dockerHost === 'host.docker.internal') {
-            $resolved = gethostbyname($dockerHost);
-            if ($resolved === $dockerHost) {
-                return $endpoint;
+        $this->endpointProbeResults = [];
+        foreach ($candidates as $candidate) {
+            $reachable = $this->canReachEndpoint($candidate);
+            $this->endpointProbeResults[$candidate] = $reachable;
+            if ($reachable) {
+                if ($candidate !== $normalizedConfigured) {
+                    error_log("MinIO request endpoint fallback selected: {$normalizedConfigured} -> {$candidate}");
+                }
+                return $candidate;
             }
         }
 
-        $mappedEndpoint = $dockerHost . ($parts['port'] !== null ? ':' . $parts['port'] : '');
-        if ($mappedEndpoint !== $endpoint) {
-            error_log("MinIO endpoint remapped for container runtime: {$endpoint} -> {$mappedEndpoint}");
-        }
-
-        return $mappedEndpoint;
+        return $normalizedConfigured;
     }
 
     private function resolvePublicBaseUrl(): string
@@ -128,6 +258,10 @@ class MinioS3Client {
             $message .= " MinIO upload endpoint: {$this->requestEndpoint}.";
             if ($this->requestEndpoint !== $this->endpoint) {
                 $message .= " Configured MINIO_ENDPOINT: {$this->endpoint}.";
+            }
+            $probeSummary = $this->formatEndpointProbeResults();
+            if ($probeSummary !== '') {
+                $message .= " Endpoint probe results: {$probeSummary}.";
             }
             $message .= ' Ensure MinIO is running and reachable from the PHP runtime.';
         }
