@@ -418,7 +418,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
     echo '<table>
             <thead>
                 <tr>
-                    <th>ID</th>
+                    <th>No.</th>
                     <th>User</th>
                     <th>Role</th>
                     <th>Action</th>
@@ -1478,7 +1478,7 @@ function logDocumentDownload($documentId, $documentType, $filePath = null) {
         <table class="table table-bordered table-hover align-middle text-center">
             <thead class="table-dark">
                 <tr>
-                    <th style="width:5%">ID</th>
+                    <th style="width:5%">No.</th>
                     <th style="width:12%">User</th>
                     <th style="width:10%">Action</th>
                     <th style="width:25%">Description</th>

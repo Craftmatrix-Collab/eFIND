@@ -31,6 +31,44 @@ if (!function_exists('logProfileUpdate')) {
     }
 }
 
+// Contact number normalization helper for profile updates
+if (!function_exists('normalizeProfileContactNumber')) {
+    function normalizeProfileContactNumber(string $rawContact): array
+    {
+        $raw = trim($rawContact);
+        if ($raw === '') {
+            return ['is_valid' => true, 'value' => ''];
+        }
+
+        $digits = preg_replace('/\D+/', '', $raw);
+        if ($digits === null) {
+            $digits = '';
+        }
+
+        if (preg_match('/^639\d{9}$/', $digits) === 1) {
+            return ['is_valid' => true, 'value' => '0' . substr($digits, 2)];
+        }
+
+        if (preg_match('/^9\d{9}$/', $digits) === 1) {
+            return ['is_valid' => true, 'value' => '0' . $digits];
+        }
+
+        if (preg_match('/^09\d{9}$/', $digits) === 1) {
+            return ['is_valid' => true, 'value' => $digits];
+        }
+
+        // Keep existing short legacy values so old records remain editable.
+        if (strlen($raw) <= 11) {
+            return ['is_valid' => true, 'value' => $raw];
+        }
+
+        return [
+            'is_valid' => false,
+            'message' => 'Invalid contact number. Use 09XXXXXXXXX or +639XXXXXXXXX.'
+        ];
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Ensure user is authenticated
     if (!isLoggedIn()) {
@@ -114,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fullName = trim($_POST['full_name'] ?? '');
     $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
-    $contactNumber = trim($_POST['contact_number'] ?? '');
+    $contactNumberRaw = trim($_POST['contact_number'] ?? '');
     $userRole = $isActorSuperadmin ? 'superadmin' : ($isActorAdmin ? 'admin' : 'staff');
     $userName = trim((string)($_SESSION['full_name'] ?? $_SESSION['admin_username'] ?? $_SESSION['staff_username'] ?? $_SESSION['username'] ?? 'Unknown'));
     $action = trim((string)($_POST['action'] ?? ''));
@@ -487,6 +525,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    $normalizedContact = normalizeProfileContactNumber($contactNumberRaw);
+    if (empty($normalizedContact['is_valid'])) {
+        $contactError = (string)($normalizedContact['message'] ?? 'Invalid contact number.');
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => $contactError]);
+            exit;
+        }
+        $_SESSION['error'] = $contactError;
+        header("Location: $redirectUrl");
+        exit;
+    }
+    $contactNumber = (string)($normalizedContact['value'] ?? '');
+
     // Fetch current email/profile picture before upload
     $oldPicturePath = null;
     $currentEmail = '';
@@ -643,15 +695,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header("Location: $redirectUrl");
         exit;
     } else {
-        if (isset($stmt)) $stmt->close();
+        $dbError = '';
+        if (isset($stmt) && $stmt instanceof mysqli_stmt) {
+            $dbError = trim((string)$stmt->error);
+            $stmt->close();
+        }
+        if ($dbError === '') {
+            $dbError = trim((string)$conn->error);
+        }
+        if ($dbError === '') {
+            $dbError = 'Unknown database error.';
+        }
         
         if ($is_ajax) {
             header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Failed to update profile: ' . $conn->error]);
+            echo json_encode(['success' => false, 'message' => 'Failed to update profile: ' . $dbError]);
             exit;
         }
         
-        $_SESSION['error'] = "Failed to update profile: " . $conn->error;
+        $_SESSION['error'] = "Failed to update profile: " . $dbError;
         header("Location: $redirectUrl");
         exit;
     }
