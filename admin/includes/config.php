@@ -203,6 +203,7 @@ if ($resendApiKey === false || $resendApiKey === '') {
     // Backward-compatible fallback for SMTP-style deployment variables.
     $resendApiKey = getenv('SMTP_PASSWORD') ?: '';
 }
+$resendApiKey = trim((string)$resendApiKey);
 
 $fromEmail = getenv('FROM_EMAIL');
 if ($fromEmail === false || trim((string)$fromEmail) === '') {
@@ -212,8 +213,9 @@ if ($fromEmail === false || trim((string)$fromEmail) === '') {
     }
 }
 if ($fromEmail === false || trim((string)$fromEmail) === '') {
-    $fromEmail = 'eFIND System <youremail@craftmatrix.org>';
+    $fromEmail = 'eFIND System <onboarding@resend.dev>';
 }
+$fromEmail = trim((string)$fromEmail);
 
 define('RESEND_API_KEY', $resendApiKey);
 define('FROM_EMAIL', $fromEmail);

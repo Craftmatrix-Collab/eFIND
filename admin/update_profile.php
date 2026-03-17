@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 include 'includes/config.php';
+require_once __DIR__ . '/includes/resend_delivery_helper.php';
 require_once __DIR__ . '/includes/image_compression_helper.php';
 require_once __DIR__ . '/includes/minio_helper.php';
 
@@ -352,24 +353,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $dupStmt->close();
 
+        $configIssue = efind_validate_resend_otp_config();
+        if ($configIssue !== null) {
+            echo json_encode(['success' => false, 'message' => $configIssue]);
+            exit;
+        }
+
         $otp = sprintf("%06d", random_int(0, 999999));
-        $_SESSION['profile_edit_verify_otp'] = $otp;
-        $_SESSION['profile_edit_verify_email'] = $emailForOtp;
-        $_SESSION['profile_edit_verify_expires'] = time() + 600; // 10 min
-        $_SESSION['profile_edit_verify_user_id'] = $userId;
-        $_SESSION['profile_edit_verify_user_type'] = $userType;
-        unset(
-            $_SESSION['profile_edit_verified_email'],
-            $_SESSION['profile_edit_verified_user_id'],
-            $_SESSION['profile_edit_verified_user_type']
-        );
+        efind_clear_otp_session_state([
+            'profile_edit_verify_otp',
+            'profile_edit_verify_email',
+            'profile_edit_verify_expires',
+            'profile_edit_verify_user_id',
+            'profile_edit_verify_user_type',
+            'profile_edit_verified_email',
+            'profile_edit_verified_user_id',
+            'profile_edit_verified_user_type',
+        ]);
 
         require_once __DIR__ . '/vendor/autoload.php';
         try {
-            if (trim((string)RESEND_API_KEY) === '') {
-                throw new RuntimeException('RESEND_API_KEY is not configured.');
-            }
-            $resend = \Resend::client(RESEND_API_KEY);
+            $resend = \Resend::client(trim((string)RESEND_API_KEY));
             $resend->emails->send([
                 'from'    => FROM_EMAIL,
                 'to'      => [$emailForOtp],
@@ -390,10 +394,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>"
             ]);
+            $_SESSION['profile_edit_verify_otp'] = $otp;
+            $_SESSION['profile_edit_verify_email'] = $emailForOtp;
+            $_SESSION['profile_edit_verify_expires'] = time() + 600; // 10 min
+            $_SESSION['profile_edit_verify_user_id'] = $userId;
+            $_SESSION['profile_edit_verify_user_type'] = $userType;
+
             echo json_encode(['success' => true, 'message' => 'OTP sent to ' . htmlspecialchars($emailForOtp)]);
         } catch (Throwable $e) {
+            efind_clear_otp_session_state([
+                'profile_edit_verify_otp',
+                'profile_edit_verify_email',
+                'profile_edit_verify_expires',
+                'profile_edit_verify_user_id',
+                'profile_edit_verify_user_type',
+                'profile_edit_verified_email',
+                'profile_edit_verified_user_id',
+                'profile_edit_verified_user_type',
+            ]);
             error_log('Resend Error (profile edit verify): ' . $e->getMessage());
-            echo json_encode(['success' => false, 'message' => 'Failed to send OTP email. Please contact the system administrator.']);
+            echo json_encode(['success' => false, 'message' => efind_resend_otp_error_message($e)]);
         }
         exit;
     }
