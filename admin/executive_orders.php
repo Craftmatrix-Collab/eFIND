@@ -386,7 +386,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             <table>
                 <thead>
                     <tr>
-                        <th class="col-id">ID</th>
+                        <th class="col-id">No.</th>
                         <!-- <th class="col-ref">Reference No.</th> -->
                         <th class="col-title">Title</th>
                         <th class="col-date-posted">Date Posted</th>
@@ -405,7 +405,7 @@ if (isset($_GET['print']) && $_GET['print'] === '1') {
             // Add page break every 25 rows to prevent table cutting
             if ($count % 25 === 0) {
                 echo '</tbody></table></div><div class="page-break"></div><div class="table-container"><table><thead><tr>
-                    <th class="col-id">ID</th>
+                    <th class="col-id">No.</th>
                     <!-- <th class="col-ref">Reference No.</th> -->
                     <th class="col-title">Title</th>
                     <th class="col-date-posted">Date Posted</th>
@@ -1886,7 +1886,7 @@ $count_stmt->close();
                     <table class="table table-bordered table-hover align-middle text-center">
                         <thead class="table-dark">
                             <tr>
-                                <th style="width:5%">ID</th>
+                                <th style="width:5%">No.</th>
                                 <!-- <th>Reference No.</th> -->
                                 <th style="width:20%">Title</th>
                                 <th style="width:9%">Date Posted</th>

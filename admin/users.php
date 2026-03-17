@@ -1754,7 +1754,7 @@ $count_stmt->close();
                     <table class="table table-bordered table-hover align-middle text-center">
                         <thead class="table-dark">
                             <tr>
-                                <th style="width:5%">ID</th>
+                                <th style="width:5%">No.</th>
                                 <th style="width:18%">Full Name</th>
                                 <th style="width:12%">Contact Number</th>
                                 <th style="width:18%">Email</th>

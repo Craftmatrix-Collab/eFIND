@@ -789,7 +789,7 @@ unset($_SESSION['error'], $_SESSION['success']);
                     <table class="table table-bordered table-hover align-middle text-center">
                         <thead class="table-dark">
                             <tr>
-                                <th style="width: 7%;">ID</th>
+                                <th style="width: 7%;">No.</th>
                                 <th style="width: 15%;">Document Type</th>
                                 <th style="width: 8%;">Original ID</th>
                                 <th style="width: 15%;">Deleted By</th>
@@ -805,9 +805,10 @@ unset($_SESSION['error'], $_SESSION['success']);
                                     <td colspan="8" class="text-center py-4">Recover document is empty.</td>
                                 </tr>
                             <?php else: ?>
+                                <?php $row_num = $offset + 1; ?>
                                 <?php foreach ($entries as $entry): ?>
                                     <tr>
-                                        <td><?php echo (int)$entry['id']; ?></td>
+                                        <td><?php echo $row_num++; ?></td>
                                         <td><span class="badge bg-primary"><?php echo htmlspecialchars(recycleDocumentTypeLabel((string)$entry['original_table'])); ?></span></td>
                                         <td><?php echo (int)$entry['original_id']; ?></td>
                                         <td><?php echo htmlspecialchars((string)($entry['deleted_by'] ?? 'N/A')); ?></td>
