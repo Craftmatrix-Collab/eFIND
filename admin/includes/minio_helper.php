@@ -10,6 +10,8 @@ class MinioS3Client {
     private $endpoint;
     private $requestEndpoint;
     private $publicBaseUrl;
+    private $browserUploadEndpoint;
+    private $browserUploadScheme;
     private $endpointProbeResults = [];
     private $accessKey;
     private $secretKey;
@@ -26,6 +28,9 @@ class MinioS3Client {
         $this->useSSL = MINIO_USE_SSL;
         $this->requestEndpoint = $this->resolveRequestEndpoint($this->endpoint);
         $this->publicBaseUrl = $this->resolvePublicBaseUrl();
+        $browserUploadConfig = $this->resolveBrowserUploadEndpoint();
+        $this->browserUploadEndpoint = $browserUploadConfig['endpoint'];
+        $this->browserUploadScheme = $browserUploadConfig['scheme'];
     }
 
     private function applyCurlTlsOptions($ch): void
@@ -244,6 +249,152 @@ class MinioS3Client {
         }
 
         return rtrim($publicUrl, '/');
+    }
+
+    private function extractHostFromServerValue(string $rawHost): ?string
+    {
+        $rawHost = trim((string)$rawHost);
+        if ($rawHost === '') {
+            return null;
+        }
+
+        $rawHost = trim((string)explode(',', $rawHost)[0]);
+        if ($rawHost === '') {
+            return null;
+        }
+
+        if ($rawHost[0] !== '[' && substr_count($rawHost, ':') > 1) {
+            $rawHost = '[' . $rawHost . ']';
+        }
+
+        $parsed = parse_url('http://' . $rawHost);
+        if (!is_array($parsed) || empty($parsed['host'])) {
+            return null;
+        }
+
+        return strtolower(rtrim((string)$parsed['host'], '.'));
+    }
+
+    private function resolveRequestHostForBrowserUpload(): ?string
+    {
+        $candidates = [
+            $_SERVER['HTTP_X_FORWARDED_HOST'] ?? '',
+            $_SERVER['HTTP_HOST'] ?? '',
+            $_SERVER['SERVER_NAME'] ?? '',
+        ];
+
+        foreach ($candidates as $candidate) {
+            $host = $this->extractHostFromServerValue((string)$candidate);
+            if ($host !== null) {
+                return $host;
+            }
+        }
+
+        return null;
+    }
+
+    private function isLocalOnlyHost(string $host): bool
+    {
+        $normalized = trim(strtolower($host), '[]');
+        if ($normalized === '') {
+            return true;
+        }
+
+        $localHosts = ['localhost', '127.0.0.1', '::1', '0.0.0.0', 'minio', 'host.docker.internal'];
+        return in_array($normalized, $localHosts, true);
+    }
+
+    private function parseEndpointForBrowser(string $endpoint): ?array
+    {
+        $rawEndpoint = trim((string)$endpoint);
+        if ($rawEndpoint === '') {
+            return null;
+        }
+
+        $hasScheme = strpos($rawEndpoint, '://') !== false;
+        $normalizedEndpoint = $hasScheme
+            ? $rawEndpoint
+            : (($this->useSSL ? 'https' : 'http') . '://' . $rawEndpoint);
+
+        $parts = parse_url($normalizedEndpoint);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return null;
+        }
+
+        $scheme = strtolower((string)($parts['scheme'] ?? ($this->useSSL ? 'https' : 'http')));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            $scheme = $this->useSSL ? 'https' : 'http';
+        }
+
+        $explicitPort = isset($parts['port']);
+        $port = $explicitPort ? (int)$parts['port'] : null;
+        if ($port !== null && ($port <= 0 || $port > 65535)) {
+            $port = null;
+        }
+
+        if ($port === null) {
+            $port = $hasScheme
+                ? ($scheme === 'https' ? 443 : 80)
+                : $this->resolveEndpointPort(null);
+        }
+
+        return [
+            'scheme' => $scheme,
+            'host' => strtolower((string)$parts['host']),
+            'port' => $port,
+            'explicit_port' => $explicitPort,
+        ];
+    }
+
+    private function resolveBrowserUploadEndpoint(): array
+    {
+        $candidates = [
+            trim((string)(getenv('MINIO_BROWSER_ENDPOINT') ?: '')),
+            trim((string)(getenv('MINIO_BROWSER_URL') ?: '')),
+            trim((string)(getenv('MINIO_PUBLIC_URL') ?: '')),
+        ];
+
+        if (defined('MINIO_API_URL')) {
+            $candidates[] = trim((string)MINIO_API_URL);
+        }
+
+        $candidates[] = trim((string)(getenv('MINIO_API_URL') ?: ''));
+        $candidates[] = trim((string)$this->endpoint);
+
+        foreach ($candidates as $candidate) {
+            if ($candidate === '') {
+                continue;
+            }
+
+            $parsed = $this->parseEndpointForBrowser($candidate);
+            if ($parsed === null) {
+                continue;
+            }
+
+            $host = $parsed['host'];
+            if ($this->isLocalOnlyHost($host)) {
+                $requestHost = $this->resolveRequestHostForBrowserUpload();
+                if ($requestHost !== null && !$this->isLocalOnlyHost($requestHost)) {
+                    $host = $requestHost;
+                }
+            }
+
+            $defaultPort = $parsed['scheme'] === 'https' ? 443 : 80;
+            $hostWithPort = $host;
+            if ($parsed['explicit_port'] || $parsed['port'] !== $defaultPort) {
+                $hostWithPort .= ':' . $parsed['port'];
+            }
+
+            return [
+                'scheme' => $parsed['scheme'],
+                'endpoint' => $hostWithPort,
+            ];
+        }
+
+        return [
+            'scheme' => $this->useSSL ? 'https' : 'http',
+            'endpoint' => $this->endpoint,
+        ];
     }
 
     private function buildUploadFailureMessage($httpCode, $curlError, $response): string
@@ -622,7 +773,7 @@ class MinioS3Client {
         $datetime = $now->format('Ymd\THis\Z');
         $date     = $now->format('Ymd');
 
-        $host   = $this->endpoint;
+        $host   = $this->browserUploadEndpoint ?: $this->endpoint;
         $region = $this->region;
 
         // Encode each path segment individually
@@ -662,7 +813,7 @@ class MinioS3Client {
         $signingKey = $this->_deriveSigV4Key($date, $region);
         $signature  = hash_hmac('sha256', $stringToSign, $signingKey);
 
-        $protocol = $this->useSSL ? 'https' : 'http';
+        $protocol = $this->browserUploadScheme ?: ($this->useSSL ? 'https' : 'http');
         return $protocol . '://' . $host . $canonicalUri
              . '?' . $canonicalQueryString
              . '&X-Amz-Signature=' . $signature;
