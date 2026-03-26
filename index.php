@@ -87,6 +87,19 @@ if (isLoggedIn()) {
             outline: 3px solid #ffd166;
             outline-offset: 2px;
         }
+
+        .square-button.coming-soon {
+            opacity: 0.6;
+            cursor: not-allowed;
+            pointer-events: none;
+            background: #e0e0e0;
+            color: #999;
+        }
+
+        .square-button.coming-soon:hover {
+            transform: none;
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+        }
     </style>
 </head>
 <body>
@@ -95,6 +108,7 @@ if (isLoggedIn()) {
         <p>Select a module to continue.</p>
         <div class="button-grid">
             <a class="square-button" href="/admin/login.php?redirect=%2Fadmin%2Fdashboard.php">Document Archiving</a>
+            <div class="square-button coming-soon">Coming Soon: Profiling</div>
         </div>
     </main>
 </body>
