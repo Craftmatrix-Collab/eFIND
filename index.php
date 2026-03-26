@@ -95,7 +95,6 @@ if (isLoggedIn()) {
         <p>Select a module to continue.</p>
         <div class="button-grid">
             <a class="square-button" href="/admin/login.php?redirect=%2Fadmin%2Fdashboard.php">Document Archiving</a>
-            <a class="square-button" href="/admin/login.php?redirect=%2Fadmin%2Fadmin_profile.php">Profiling</a>
         </div>
     </main>
 </body>
