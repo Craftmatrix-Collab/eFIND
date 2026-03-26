@@ -1,3 +1,17 @@
+<?php
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
+include('admin/includes/config.php');
+include('admin/includes/auth.php');
+
+// Redirect if already logged in
+if (isLoggedIn()) {
+    header("Location: admin/dashboard.php");
+    exit();
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
